@@ -1,0 +1,104 @@
+/* Global styles */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Extend container to full viewport height */
+  .container {
+    display: flex;
+    flex-wrap: wrap;
+    margin: 0;
+    min-height: 100vh;
+  }
+  
+  /* Left column: form (approximately 30% width) */
+  .form-container {
+    flex: 1 1 30%;
+    max-width: 30%;
+    padding: 20px;
+    box-sizing: border-box;
+    background-color: #f8f8f8;
+  }
+  
+  /* Right column: output (approximately 70% width) */
+  .output-container {
+    flex: 1 1 70%;
+    max-width: 70%;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+  
+  /* Row and column layout for form fields */
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-bottom: 15px;
+  }
+  .col-full {
+    flex: 1 1 100%;
+    padding: 0 10px;
+    box-sizing: border-box;
+  }
+  .col-half {
+    flex: 1 1 50%;
+    padding: 0 10px;
+    box-sizing: border-box;
+  }
+  
+  /* Styling for labels */
+  label.small-label {
+    font-size: 0.9em;
+    font-weight: normal;
+    margin-bottom: 3px;
+    display: block;
+  }
+  .inline-label {
+    font-size: 0.9em;
+    font-weight: normal;
+    margin-left: 5px;
+  }
+  
+  /* Styling for optional parameter rows */
+  .optional-row {
+    margin-bottom: 15px;
+    width: 100%;
+  }
+  
+  /* Input and select styling */
+  input[type="text"],
+  select {
+    width: 100%;
+    padding: 8px;
+    font-size: 0.9em;
+    margin-bottom: 5px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+  }
+  
+  /* Submit button styling */
+  input[type="submit"] {
+    padding: 10px 20px;
+    font-size: 0.9em;
+    background-color: #4285f4;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  input[type="submit"]:hover {
+    background-color: #357ae8;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .form-container, .output-container {
+      flex: 1 1 100%;
+      max-width: 100%;
+    }
+    .row {
+      flex-direction: column;
+    }
+  }
+  

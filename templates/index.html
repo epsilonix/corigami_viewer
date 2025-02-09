@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>C.Origami Viewer</title>
+  <link rel="stylesheet" type="text/css" href="{{ url_for('templates', filename='style.css') }}">
+  <script>
+    // Toggle optional fields and enforce mutual exclusivity.
+    function toggleOptionalFields() {
+      var delCheckbox = document.getElementById("show_deletion");
+      var scrCheckbox = document.getElementById("show_screening");
+      var delFields = document.getElementById("deletion-fields");
+      var scrFields = document.getElementById("screening-fields");
+      var scrFields2 = document.getElementById("screening-fields-2");
+
+      // Enforce mutual exclusivity.
+      if (delCheckbox.checked) {
+          scrCheckbox.checked = false;
+      }
+      if (scrCheckbox.checked) {
+          delCheckbox.checked = false;
+      }
+
+      delFields.style.display = delCheckbox.checked ? "flex" : "none";
+      if (scrCheckbox.checked) {
+          scrFields.style.display = "flex";
+          scrFields2.style.display = "flex";
+      } else {
+          scrFields.style.display = "none";
+          scrFields2.style.display = "none";
+      }
+    }
+    window.onload = toggleOptionalFields;
+  </script>
+</head>
+<body>
+  <div class="container">
+    <div class="form-container">
+      <h1>C.Origami Viewer</h1>
+      <form method="post" action="/">
+        <div class="row">
+          <div class="col-full">
+            <label for="celltype" class="small-label">Cell Type*:</label>
+            <select id="celltype" name="celltype">
+              <option value="imr90" {% if request.form.celltype == 'imr90' or not request.form.celltype %}selected{% endif %}>IMR-90</option>
+              <option value="gm12878" {% if request.form.celltype == 'gm12878' %}selected{% endif %}>GM12878</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-full">
+            <label for="region_chr" class="small-label">Chromosome*:</label>
+            <select id="region_chr" name="region_chr">
+              {% for i in range(1, 24) %}
+                {% set chrom_val = "chr" ~ i %}
+                <option value="{{ chrom_val }}" {% if request.form.region_chr == chrom_val %}selected{% endif %}>
+                  {{ chrom_val }}
+                </option>
+              {% endfor %}
+              <option value="chrX" {% if request.form.region_chr == 'chrX' %}selected{% endif %}>chrX</option>
+              <option value="chrY" {% if request.form.region_chr == 'chrY' %}selected{% endif %}>chrY</option>
+            </select>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-half">
+            <label for="region_start" class="small-label">Start Position (bp)*:</label>
+            <input type="text" id="region_start" name="region_start" value="{{ request.form.region_start or '500000' }}">
+          </div>
+          <div class="col-half">
+            <label for="region_end" class="small-label">End Position (bp)*:</label>
+            <input type="text" id="region_end" name="region_end" value="{{ request.form.region_end or '2500000' }}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-full">
+            <label for="ctcf_bw_path" class="small-label">CTCF bigWig File Path*:</label>
+            <input type="text" id="ctcf_bw_path" name="ctcf_bw_path" value="{{ request.form.ctcf_bw_path or './corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw' }}">
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-full">
+            <label for="atac_bw_path" class="small-label">ATAC-seq bigWig File Path*:</label>
+            <input type="text" id="atac_bw_path" name="atac_bw_path" value="{{ request.form.atac_bw_path or './corigami_data/data/hg38/imr90/genomic_features/atac.bw' }}">
+          </div>
+        </div>
+        <!-- Mutually exclusive checkboxes -->
+        <div class="row">
+          <div class="col-half">
+            <input type="checkbox" id="show_deletion" name="show_deletion" value="yes" onclick="toggleOptionalFields()" {% if request.form.show_deletion %}checked{% endif %}>
+            <label for="show_deletion" class="inline-label">Show deletion</label>
+          </div>
+          <div class="col-half">
+            <input type="checkbox" id="show_screening" name="show_screening" value="yes" onclick="toggleOptionalFields()" {% if request.form.show_screening %}checked{% endif %}>
+            <label for="show_screening" class="inline-label">Show screening</label>
+          </div>
+        </div>
+        <!-- Deletion parameters: two columns (only shown if "Show deletion" is checked) -->
+        <div id="deletion-fields" class="row optional-row" style="display: none;">
+          <div class="col-half">
+            <label for="del_start" class="small-label">Deletion Start (bp):</label>
+            <input type="text" id="del_start" name="del_start" value="{{ request.form.del_start or '' }}">
+          </div>
+          <div class="col-half">
+            <label for="del_width" class="small-label">Deletion Width (bp):</label>
+            <input type="text" id="del_width" name="del_width" value="{{ request.form.del_width or '' }}">
+          </div>
+        </div>
+        <!-- Screening parameters: two rows, two columns each (only shown if "Show screening" is checked) -->
+        <div id="screening-fields" class="row optional-row" style="display: none;">
+          <div class="col-half">
+            <label for="screen_start" class="small-label">Screen Start (bp):</label>
+            <input type="text" id="screen_start" name="screen_start" value="{{ request.form.screen_start or '1250000' }}">
+          </div>
+          <div class="col-half">
+            <label for="screen_end" class="small-label">Screen End (bp):</label>
+            <input type="text" id="screen_end" name="screen_end" value="{{ request.form.screen_end or '2250000' }}">
+          </div>
+        </div>
+        <div id="screening-fields-2" class="row optional-row" style="display: none;">
+          <div class="col-half">
+            <label for="perturb_width" class="small-label">Perturb Width (bp):</label>
+            <input type="text" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}">
+          </div>
+          <div class="col-half">
+            <label for="step_size" class="small-label">Step Size (bp):</label>
+            <input type="text" id="step_size" name="step_size" value="{{ request.form.step_size or '1000' }}">
+          </div>
+        </div>
+        <input type="submit" value="Generate Composite Map">
+      </form>
+    </div>
+    <div class="output-container">
+      {% if hic_image %}
+        <img src="{{ url_for('static', filename=hic_image) }}" alt="Triangle Hi-C Map" style="max-width:100%;">
+      {% endif %}
+      {% if signal_image %}
+        <img src="{{ url_for('static', filename=signal_image) }}" alt="Signal Tracks" style="max-width:100%;">
+      {% endif %}
+      {% if screening_image %}
+        <img src="{{ url_for('static', filename=screening_image) }}" alt="Screening Output" style="max-width:100%;">
+      {% endif %}
+    </div>
+  </div>
+</body>
+</html>
