@@ -43,6 +43,12 @@ def get_bigwig_signal(bw_path, chrom, start, end, bins=256):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
+        # --- Set up PYTHONPATH for subprocesses ---
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        PYTHON_SRC_PATH = os.path.join(BASE_DIR, "C.Origami", "src")
+        env = os.environ.copy()
+        env["PYTHONPATH"] = PYTHON_SRC_PATH
+
         # Retrieve required user inputs.
         celltype = request.form.get('celltype', 'imr90')
         region_chr = request.form.get('region_chr', 'chr2')
@@ -93,7 +99,7 @@ def index():
                 "--out", output_dir
             ]
             try:
-                subprocess.run(cmd, check=True)
+                subprocess.run(cmd, check=True, env=env)
             except subprocess.CalledProcessError as e:
                 return f"Error running screening script: {e}"
             hi_c_matrix_path = f"{output_dir}/{celltype}/screening/imgs/{region_chr}_screen_{screen_start}_{screen_end}_width_{perturb_width}_step_{step_size}.png"
@@ -120,7 +126,7 @@ def index():
                 "--out", output_dir
             ]
             try:
-                subprocess.run(cmd, check=True)
+                subprocess.run(cmd, check=True, env=env)
             except subprocess.CalledProcessError as e:
                 return f"Error running editing script: {e}"
             hi_c_matrix_path = f"{output_dir}/{celltype}/deletion/npy/{region_chr}_{region_start}_del_{del_start}_{del_width}_padding_zero.npy"
@@ -138,7 +144,7 @@ def index():
                 "--out", output_dir
             ]
             try:
-                subprocess.run(cmd, check=True)
+                subprocess.run(cmd, check=True, env=env)
             except subprocess.CalledProcessError as e:
                 return f"Error running prediction script: {e}"
             hi_c_matrix_path = f"{output_dir}/{celltype}/prediction/npy/{region_chr}_{region_start}.npy"

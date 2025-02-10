@@ -2,4 +2,7 @@
 /corigami_data/
 /output_baseline/
 /venv/
-/static/
+# Ignore everything in the static/ folder
+static/*
+# But explicitly include styles.css
+!static/style.css
