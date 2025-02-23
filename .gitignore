@@ -4,7 +4,8 @@
 /output_new/
 /ctcf_output/
 /uploads/
-/user_data/
+/user_data/*
+user_data/
 /venv/
 # Ignore everything in the static/ folder
 static/*
