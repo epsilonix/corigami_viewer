@@ -5,11 +5,7 @@ import argparse
 import json
 import numpy as np
 import pandas as pd
-import torch
 from tqdm import tqdm
-
-# For fallback if needed:
-from scipy.signal import find_peaks
 
 import corigami.inference.utils.inference_utils as infer
 from corigami.inference import editing 

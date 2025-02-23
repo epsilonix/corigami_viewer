@@ -13,8 +13,6 @@ from PIL import Image
 from scipy.ndimage import rotate
 import numpy.ma as ma
 from matplotlib.ticker import FuncFormatter
-from scipy.signal import find_peaks
-import sys
 
 ###############################################################################
 # Flask App and Config
