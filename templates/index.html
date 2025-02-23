@@ -4,7 +4,26 @@
   <meta charset="UTF-8">
   <title>C.Origami Viewer</title>
   <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+  <!-- Global variables for screening mode -->
+  {% if screening_mode %}
+  <script>
+    var screening_mode = true;
+    var screening_params = {{ screening_params|safe }};
+  </script>
+  {% else %}
+  <script>
+    var screening_mode = false;
+  </script>
+  {% endif %}
   <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <style>
+    /* Optional: Style read-only input fields */
+    input[readonly] {
+      background-color: #e0e0e0;
+      color: #555;
+      cursor: not-allowed;
+    }
+  </style>
 </head>
 <body>
   <div class="container">
@@ -26,7 +45,8 @@
         </div>
       </div>
       
-      <form method="post" action="/" enctype="multipart/form-data">
+      <!-- The main form now has an id to allow JS validation on submit -->
+      <form id="corigami-form" method="post" action="/" enctype="multipart/form-data">
         <!-- Model and Chromosome Row -->
         <div class="row">
           <div class="col-half">
@@ -52,11 +72,14 @@
         <div class="row">
           <div class="col-half">
             <label for="region_start" class="small-label">Start Position (bp)*:</label>
-            <input type="number" id="region_start" name="region_start" value="{{ request.form.region_start or '1500000' }}" required>
+            <input type="number" id="region_start" name="region_start"
+                   value="{{ request.form.region_start or '1500000' }}" required>
           </div>
           <div class="col-half">
             <label for="region_end" class="small-label">End Position (bp):</label>
-            <input type="number" id="region_end" name="region_end" required>
+            <!-- Added readonly attribute for grey background -->
+            <input type="number" id="region_end" name="region_end"
+                   style="background-color: #e0e0e0;" readonly>
           </div>
         </div>
         <!-- ATAC‑seq BigWig File (Preset only) -->
@@ -119,11 +142,14 @@
           <div class="col-full">
             <label class="small-label">Deletion/screening?*:</label>
             <div class="switch ds-toggle">
-              <input id="ds_none" name="ds_option" type="radio" value="none" class="switch-input" required {% if request.form.ds_option == 'none' or not request.form.ds_option %}checked{% endif %}>
+              <input id="ds_none" name="ds_option" type="radio" value="none" class="switch-input" required
+                     {% if request.form.ds_option == 'none' or not request.form.ds_option %}checked{% endif %}>
               <label for="ds_none" class="switch-label">None</label>
-              <input id="ds_deletion" name="ds_option" type="radio" value="deletion" class="switch-input" required {% if request.form.ds_option == 'deletion' %}checked{% endif %}>
+              <input id="ds_deletion" name="ds_option" type="radio" value="deletion" class="switch-input" required
+                     {% if request.form.ds_option == 'deletion' %}checked{% endif %}>
               <label for="ds_deletion" class="switch-label">Deletion</label>
-              <input id="ds_screening" name="ds_option" type="radio" value="screening" class="switch-input" required {% if request.form.ds_option == 'screening' %}checked{% endif %}>
+              <input id="ds_screening" name="ds_option" type="radio" value="screening" class="switch-input" required
+                     {% if request.form.ds_option == 'screening' %}checked{% endif %}>
               <label for="ds_screening" class="switch-label">Screening</label>
               <span class="switch-selector"></span>
             </div>
@@ -133,12 +159,15 @@
         <div id="deletion-fields" class="optional-row" style="display: none;">
           <div class="row">
             <div class="col-half">
-              <label for="del_start" class="small-label">Deletion Start (bp):</label>
-              <input type="number" id="del_start" name="del_start" value="{{ request.form.del_start or '1500000' }}">
+              <label for="del_start" class="small-label">Deletion Start (bp):*</label>
+              <!-- No 'required' attribute; we'll check conditionally in JS -->
+              <input type="number" id="del_start" name="del_start"
+                     value="{{ request.form.del_start or '1500000' }}">
             </div>
             <div class="col-half">
-              <label for="del_width" class="small-label">Deletion Width (bp):</label>
-              <input type="number" id="del_width" name="del_width" value="{{ request.form.del_width or '500000' }}">
+              <label for="del_width" class="small-label">Deletion Width (bp):*</label>
+              <input type="number" id="del_width" name="del_width"
+                     value="{{ request.form.del_width or '500000' }}">
             </div>
           </div>
           <div id="deletion-error" class="error-message" style="display: none;">
@@ -152,7 +181,9 @@
             <div class="file-upload-group">
               <select id="peaks_file_path" name="peaks_file_path">
                 <option value="none" selected>None</option>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/MACS2_peaks.narrowPeak.txt">Preset (hg38/imr90)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/MACS2_peaks.narrowPeak.txt">
+                  Preset (hg38/imr90)
+                </option>
               </select>
               <label class="upload-button" for="peaks_file_upload">Upload</label>
             </div>
@@ -163,17 +194,21 @@
         <div id="screening-fields-2" class="optional-row" style="display: none;">
           <div class="row">
             <div class="col-half">
-              <label for="perturb_width" class="small-label">Perturb Width (bp):</label>
-              <input type="number" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}">
+              <label for="perturb_width" class="small-label">Perturb Width (bp):*</label>
+              <!-- No 'required' attribute; we'll check conditionally in JS -->
+              <input type="number" id="perturb_width" name="perturb_width"
+                     value="{{ request.form.perturb_width or '1000' }}">
             </div>
             <div class="col-half">
-              <label for="step_size" class="small-label">Step Size (bp):</label>
-              <input type="number" id="step_size" name="step_size" value="{{ request.form.step_size or '1000' }}">
+              <label for="step_size" class="small-label">Step Size (bp):*</label>
+              <input type="number" id="step_size" name="step_size"
+                     value="{{ request.form.step_size or '1000' }}">
             </div>
           </div>
         </div>
         <input type="submit" value="Generate Composite Map" class="submit-button">
       </form>
+
       <div id="screening_message" style="color:red;"></div>
     </div>
     <div class="output-container">
@@ -198,5 +233,7 @@
       </div>
     </div>
   </div>
+  <!-- Link the updated script last -->
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
