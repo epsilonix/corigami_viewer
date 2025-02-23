@@ -4,142 +4,198 @@
   <meta charset="UTF-8">
   <title>C.Origami Viewer</title>
   <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
-  <script>
-    // Toggle optional fields and enforce mutual exclusivity.
-    function toggleOptionalFields() {
-      var delCheckbox = document.getElementById("show_deletion");
-      var scrCheckbox = document.getElementById("show_screening");
-      var delFields = document.getElementById("deletion-fields");
-      var scrFields = document.getElementById("screening-fields");
-      var scrFields2 = document.getElementById("screening-fields-2");
-
-      // Enforce mutual exclusivity.
-      if (delCheckbox.checked) {
-          scrCheckbox.checked = false;
-      }
-      if (scrCheckbox.checked) {
-          delCheckbox.checked = false;
-      }
-
-      delFields.style.display = delCheckbox.checked ? "flex" : "none";
-      if (scrCheckbox.checked) {
-          scrFields.style.display = "flex";
-          scrFields2.style.display = "flex";
-      } else {
-          scrFields.style.display = "none";
-          scrFields2.style.display = "none";
-      }
-    }
-    window.onload = toggleOptionalFields;
-  </script>
+  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </head>
 <body>
   <div class="container">
     <div class="form-container">
-      <h1>C.Origami Viewer</h1>
-      <form method="post" action="/">
+      <div class="form-header">
+        <h1>C.Origami Viewer</h1>
+        <p class="instructions-link"><a href="#" id="openModal">Instructions</a></p>
+      </div>
+      <!-- Modal for instructions -->
+      <div id="instructions-modal" class="modal">
+        <div class="modal-content">
+          <span class="close">&times;</span>
+          <h2>Instructions</h2>
+          <p>
+            Note: Please use the same normalization method for your ATAC and CTCF files.
+            If you do not provide a CTCF file, you must select "minmax" for your ATAC file (select "no norm" if it is already normalized)
+            and a minmax-normalized CTCF file will be generated using maxATAC.
+          </p>
+        </div>
+      </div>
+      
+      <form method="post" action="/" enctype="multipart/form-data">
+        <!-- Model and Chromosome Row -->
         <div class="row">
-          <div class="col-full">
-            <label for="celltype" class="small-label">Cell Type*:</label>
-            <select id="celltype" name="celltype">
-              <option value="imr90" {% if request.form.celltype == 'imr90' or not request.form.celltype %}selected{% endif %}>IMR-90</option>
-              <option value="gm12878" {% if request.form.celltype == 'gm12878' %}selected{% endif %}>GM12878</option>
+          <div class="col-half">
+            <label for="model_select" class="small-label">Model*:</label>
+            <select id="model_select" name="model_select" required>
+              <option value="V1" {% if request.form.model_select != 'V2' %}selected{% endif %}>V1</option>
+              <option value="V2" {% if request.form.model_select == 'V2' %}selected{% endif %}>V2</option>
             </select>
           </div>
-        </div>
-        <div class="row">
-          <div class="col-full">
+          <div class="col-half">
             <label for="region_chr" class="small-label">Chromosome*:</label>
-            <select id="region_chr" name="region_chr">
+            <select id="region_chr" name="region_chr" required>
               {% for i in range(1, 24) %}
                 {% set chrom_val = "chr" ~ i %}
-                <option value="{{ chrom_val }}" {% if request.form.region_chr == chrom_val %}selected{% endif %}>
-                  {{ chrom_val }}
-                </option>
+                <option value="{{ chrom_val }}" {% if request.form.region_chr == chrom_val %}selected{% endif %}>{{ chrom_val }}</option>
               {% endfor %}
               <option value="chrX" {% if request.form.region_chr == 'chrX' %}selected{% endif %}>chrX</option>
               <option value="chrY" {% if request.form.region_chr == 'chrY' %}selected{% endif %}>chrY</option>
             </select>
           </div>
         </div>
+        <!-- Start and End Position Row -->
         <div class="row">
           <div class="col-half">
             <label for="region_start" class="small-label">Start Position (bp)*:</label>
-            <input type="text" id="region_start" name="region_start" value="{{ request.form.region_start or '500000' }}">
+            <input type="number" id="region_start" name="region_start" value="{{ request.form.region_start or '1500000' }}" required>
           </div>
           <div class="col-half">
-            <label for="region_end" class="small-label">End Position (bp)*:</label>
-            <input type="text" id="region_end" name="region_end" value="{{ request.form.region_end or '2500000' }}">
+            <label for="region_end" class="small-label">End Position (bp):</label>
+            <input type="number" id="region_end" name="region_end" required>
           </div>
         </div>
+        <!-- ATAC‑seq BigWig File (Preset only) -->
+        <div class="row file-input-container atac-input-container">
+          <div class="col-full">
+            <label for="atac_bw_path" class="small-label">ATAC‑seq BigWig File*:</label>
+            <div class="file-upload-group">
+              <select id="atac_bw_path" name="atac_bw_path" required>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/atac.bw" selected>Preset (hg38/imr90)</option>
+              </select>
+              <label class="upload-button" for="atac_bw_file">Upload</label>
+            </div>
+            <input type="file" id="atac_bw_file" name="atac_bw_file">
+          </div>
+        </div>
+        <!-- ATAC Normalization Toggle (default "log") -->
         <div class="row">
           <div class="col-full">
-            <label for="ctcf_bw_path" class="small-label">CTCF bigWig File Path*:</label>
-            <input type="text" id="ctcf_bw_path" name="ctcf_bw_path" value="{{ request.form.ctcf_bw_path or './corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw' }}">
+            <div class="switch norm-toggle" id="atac-switch">
+              <input id="atac-no-norm" name="norm_atac" type="radio" value="none" class="switch-input">
+              <label for="atac-no-norm" class="switch-label">no norm</label>
+              <input id="atac-log" name="norm_atac" type="radio" value="log" class="switch-input" checked>
+              <label for="atac-log" class="switch-label">log</label>
+              <input id="atac-minmax" name="norm_atac" type="radio" value="minmax" class="switch-input">
+              <label for="atac-minmax" class="switch-label">minmax</label>
+              <span class="switch-selector"></span>
+            </div>
           </div>
         </div>
+        <!-- CTCF BigWig File -->
+        <div class="row file-input-container ctcf-input-container">
+          <div class="col-full">
+            <label for="ctcf_bw_path" class="small-label">CTCF BigWig File:</label>
+            <div class="file-upload-group">
+              <select id="ctcf_bw_path" name="ctcf_bw_path">
+                <option value="none" selected>None</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw">Preset (hg38/imr90, log norm)</option>
+              </select>
+              <label class="upload-button" for="ctcf_bw_file">Upload</label>
+            </div>
+            <input type="file" id="ctcf_bw_file" name="ctcf_bw_file">
+          </div>
+        </div>
+        <!-- CTCF Normalization Toggle (default "no norm") -->
         <div class="row">
           <div class="col-full">
-            <label for="atac_bw_path" class="small-label">ATAC-seq bigWig File Path*:</label>
-            <input type="text" id="atac_bw_path" name="atac_bw_path" value="{{ request.form.atac_bw_path or './corigami_data/data/hg38/imr90/genomic_features/atac.bw' }}">
+            <div class="switch norm-toggle" id="ctcf-switch">
+              <input id="ctcf-no-norm" name="norm_ctcf" type="radio" value="none" class="switch-input" checked>
+              <label for="ctcf-no-norm" class="switch-label">no norm</label>
+              <input id="ctcf-log" name="norm_ctcf" type="radio" value="log" class="switch-input">
+              <label for="ctcf-log" class="switch-label">log</label>
+              <input id="ctcf-minmax" name="norm_ctcf" type="radio" value="minmax" class="switch-input">
+              <label for="ctcf-minmax" class="switch-label">minmax</label>
+              <span class="switch-selector"></span>
+            </div>
           </div>
         </div>
-        <!-- Mutually exclusive checkboxes -->
+        <!-- Deletion/Screening Toggle -->
         <div class="row">
-          <div class="col-half">
-            <input type="checkbox" id="show_deletion" name="show_deletion" value="yes" onclick="toggleOptionalFields()" {% if request.form.show_deletion %}checked{% endif %}>
-            <label for="show_deletion" class="inline-label">Show deletion</label>
-          </div>
-          <div class="col-half">
-            <input type="checkbox" id="show_screening" name="show_screening" value="yes" onclick="toggleOptionalFields()" {% if request.form.show_screening %}checked{% endif %}>
-            <label for="show_screening" class="inline-label">Show screening</label>
-          </div>
-        </div>
-        <!-- Deletion parameters: two columns (only shown if "Show deletion" is checked) -->
-        <div id="deletion-fields" class="row optional-row" style="display: none;">
-          <div class="col-half">
-            <label for="del_start" class="small-label">Deletion Start (bp):</label>
-            <input type="text" id="del_start" name="del_start" value="{{ request.form.del_start or '' }}">
-          </div>
-          <div class="col-half">
-            <label for="del_width" class="small-label">Deletion Width (bp):</label>
-            <input type="text" id="del_width" name="del_width" value="{{ request.form.del_width or '' }}">
+          <div class="col-full">
+            <label class="small-label">Deletion/screening?*:</label>
+            <div class="switch ds-toggle">
+              <input id="ds_none" name="ds_option" type="radio" value="none" class="switch-input" required {% if request.form.ds_option == 'none' or not request.form.ds_option %}checked{% endif %}>
+              <label for="ds_none" class="switch-label">None</label>
+              <input id="ds_deletion" name="ds_option" type="radio" value="deletion" class="switch-input" required {% if request.form.ds_option == 'deletion' %}checked{% endif %}>
+              <label for="ds_deletion" class="switch-label">Deletion</label>
+              <input id="ds_screening" name="ds_option" type="radio" value="screening" class="switch-input" required {% if request.form.ds_option == 'screening' %}checked{% endif %}>
+              <label for="ds_screening" class="switch-label">Screening</label>
+              <span class="switch-selector"></span>
+            </div>
           </div>
         </div>
-        <!-- Screening parameters: two rows, two columns each (only shown if "Show screening" is checked) -->
-        <div id="screening-fields" class="row optional-row" style="display: none;">
-          <div class="col-half">
-            <label for="screen_start" class="small-label">Screen Start (bp):</label>
-            <input type="text" id="screen_start" name="screen_start" value="{{ request.form.screen_start or '1250000' }}">
+        <!-- Deletion Parameters (grouped on one row) -->
+        <div id="deletion-fields" class="optional-row" style="display: none;">
+          <div class="row">
+            <div class="col-half">
+              <label for="del_start" class="small-label">Deletion Start (bp):</label>
+              <input type="number" id="del_start" name="del_start" value="{{ request.form.del_start or '1500000' }}">
+            </div>
+            <div class="col-half">
+              <label for="del_width" class="small-label">Deletion Width (bp):</label>
+              <input type="number" id="del_width" name="del_width" value="{{ request.form.del_width or '500000' }}">
+            </div>
           </div>
-          <div class="col-half">
-            <label for="screen_end" class="small-label">Screen End (bp):</label>
-            <input type="text" id="screen_end" name="screen_end" value="{{ request.form.screen_end or '2250000' }}">
-          </div>
-        </div>
-        <div id="screening-fields-2" class="row optional-row" style="display: none;">
-          <div class="col-half">
-            <label for="perturb_width" class="small-label">Perturb Width (bp):</label>
-            <input type="text" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}">
-          </div>
-          <div class="col-half">
-            <label for="step_size" class="small-label">Step Size (bp):</label>
-            <input type="text" id="step_size" name="step_size" value="{{ request.form.step_size or '1000' }}">
+          <div id="deletion-error" class="error-message" style="display: none;">
+            Deletion area must be within start and end position
           </div>
         </div>
-        <input type="submit" value="Generate Composite Map">
+        <!-- Peaks File Container (only appears in screening mode) -->
+        <div id="peaks_file_container" class="optional-row" style="display: none;">
+          <div class="col-full">
+            <label for="peaks_file_path" class="small-label">Peaks File (MACS2 narrowPeak):</label>
+            <div class="file-upload-group">
+              <select id="peaks_file_path" name="peaks_file_path">
+                <option value="none" selected>None</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/MACS2_peaks.narrowPeak.txt">Preset (hg38/imr90)</option>
+              </select>
+              <label class="upload-button" for="peaks_file_upload">Upload</label>
+            </div>
+            <input type="file" id="peaks_file_upload" name="peaks_file">
+          </div>
+        </div>
+        <!-- Screening Fields (Perturb Width and Step Size on the same row) -->
+        <div id="screening-fields-2" class="optional-row" style="display: none;">
+          <div class="row">
+            <div class="col-half">
+              <label for="perturb_width" class="small-label">Perturb Width (bp):</label>
+              <input type="number" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}">
+            </div>
+            <div class="col-half">
+              <label for="step_size" class="small-label">Step Size (bp):</label>
+              <input type="number" id="step_size" name="step_size" value="{{ request.form.step_size or '1000' }}">
+            </div>
+          </div>
+        </div>
+        <input type="submit" value="Generate Composite Map" class="submit-button">
       </form>
+      <div id="screening_message" style="color:red;"></div>
     </div>
     <div class="output-container">
       {% if hic_image %}
-        <img src="{{ url_for('static', filename=hic_image) }}" alt="Triangle Hi-C Map" style="max-width:100%;">
+        <img class="hic_image" src="{{ hic_image }}" alt="Hi-C Map" style="max-width:100%;">
       {% endif %}
-      {% if signal_image %}
-        <img src="{{ url_for('static', filename=signal_image) }}" alt="Signal Tracks" style="max-width:100%;">
+      {% if ctcf_image %}
+        <img class="ctcf_image" src="{{ ctcf_image }}" alt="CTCF Signal" style="max-width:100%;">
       {% endif %}
-      {% if screening_image %}
-        <img src="{{ url_for('static', filename=screening_image) }}" alt="Screening Output" style="max-width:100%;">
+      {% if atac_image %}
+        <img class="atac_image" src="{{ atac_image }}" alt="ATAC‑seq Signal" style="max-width:100%;">
       {% endif %}
+      <div id="screening_placeholder">
+        <div id="screening_loader" style="display: none;">
+          <div class="spinner">
+            <div class="double-bounce1"></div>
+            <div class="double-bounce2"></div>
+          </div>
+          <p>Loading screening plot...</p>
+        </div>
+        <div id="screening_image_container"></div>
+      </div>
     </div>
   </div>
 </body>

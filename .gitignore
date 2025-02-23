@@ -1,8 +1,12 @@
 /C.Origami/
 /corigami_data/
 /output_baseline/
+/output_new/
+/ctcf_output/
+/uploads/
 /venv/
 # Ignore everything in the static/ folder
 static/*
 # But explicitly include styles.css
 !static/style.css
+!static/script.js
