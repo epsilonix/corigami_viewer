@@ -6,12 +6,7 @@ const WINDOW_WIDTH = 2097152;
 /*************************************************************
  * Local Storage Helpers
  *************************************************************/
-
-/**
- * Saves relevant form field values to localStorage so they persist.
- */
 function storeFormFields() {
-  // Save numeric or text inputs
   localStorage.setItem("region_chr", document.getElementById("region_chr").value);
   localStorage.setItem("region_start", document.getElementById("region_start").value);
   localStorage.setItem("del_start", document.getElementById("del_start").value);
@@ -19,8 +14,6 @@ function storeFormFields() {
   localStorage.setItem("perturb_width", document.getElementById("perturb_width").value);
   localStorage.setItem("step_size", document.getElementById("step_size").value);
   localStorage.setItem("model_select", document.getElementById("model_select").value);
-
-  // Save ds_option (radio)
   var dsRadios = document.getElementsByName("ds_option");
   for (var i = 0; i < dsRadios.length; i++) {
     if (dsRadios[i].checked) {
@@ -28,55 +21,35 @@ function storeFormFields() {
       break;
     }
   }
-
-  // Save currently selected file from dropdowns
   localStorage.setItem("atac_bw_path", document.getElementById("atac_bw_path").value);
   localStorage.setItem("ctcf_bw_path", document.getElementById("ctcf_bw_path").value);
   localStorage.setItem("peaks_file_path", document.getElementById("peaks_file_path").value);
 }
 
-/**
- * Restores saved form field values from localStorage, if available.
- */
 function restoreFormFields() {
-  // Basic numeric or text inputs
   var regionChr = localStorage.getItem("region_chr");
   if (regionChr) document.getElementById("region_chr").value = regionChr;
-
   var regionStart = localStorage.getItem("region_start");
   if (regionStart) document.getElementById("region_start").value = regionStart;
-
   var delStart = localStorage.getItem("del_start");
   if (delStart) document.getElementById("del_start").value = delStart;
-
   var delWidth = localStorage.getItem("del_width");
   if (delWidth) document.getElementById("del_width").value = delWidth;
-
   var perturbWidth = localStorage.getItem("perturb_width");
   if (perturbWidth) document.getElementById("perturb_width").value = perturbWidth;
-
   var stepSize = localStorage.getItem("step_size");
   if (stepSize) document.getElementById("step_size").value = stepSize;
-
   var modelSelect = localStorage.getItem("model_select");
   if (modelSelect) document.getElementById("model_select").value = modelSelect;
-
-  // ds_option (radio)
   var dsOption = localStorage.getItem("ds_option");
   if (dsOption) {
     var radioElem = document.getElementById("ds_" + dsOption);
-    if (radioElem) {
-      radioElem.checked = true;
-    }
+    if (radioElem) radioElem.checked = true;
   }
-
-  // File dropdowns – store only the selected value here
   var storedAtac = localStorage.getItem("atac_bw_path");
   if (storedAtac) document.getElementById("atac_bw_path").value = storedAtac;
-
   var storedCtcf = localStorage.getItem("ctcf_bw_path");
   if (storedCtcf) document.getElementById("ctcf_bw_path").value = storedCtcf;
-
   var storedPeaks = localStorage.getItem("peaks_file_path");
   if (storedPeaks) document.getElementById("peaks_file_path").value = storedPeaks;
 }
@@ -84,10 +57,6 @@ function restoreFormFields() {
 /*************************************************************
  * Form Behavior Helpers
  *************************************************************/
-
-/**
- * Update the region_end field based on region_start + WINDOW_WIDTH.
- */
 function updateEndPosition() {
   var startField = document.getElementById("region_start");
   var endField = document.getElementById("region_end");
@@ -99,15 +68,11 @@ function updateEndPosition() {
   }
 }
 
-/**
- * Show/hide the deletion/screening parameters based on the ds_option radio.
- */
 function toggleOptionalFields() {
   var dsOption = document.querySelector('input[name="ds_option"]:checked');
   var delFields = document.getElementById("deletion-fields");
   var scrFields = document.getElementById("screening-fields-2");
   var peaksContainer = document.getElementById("peaks_file_container");
-
   if (dsOption) {
     if (dsOption.value === "deletion") {
       if (delFields) delFields.style.display = "block";
@@ -125,9 +90,6 @@ function toggleOptionalFields() {
   }
 }
 
-/**
- * Validate that the deletion region is within the 2 Mb window.
- */
 function validateDeletionArea() {
   var regionStart = parseInt(document.getElementById("region_start").value);
   var regionEnd = regionStart + WINDOW_WIDTH;
@@ -135,7 +97,6 @@ function validateDeletionArea() {
   var deletionWidth = parseInt(document.getElementById("del_width").value);
   var deletionEnd = deletionStart + deletionWidth;
   var errorElem = document.getElementById("deletion-error");
-
   if (deletionStart < regionStart || deletionEnd > regionEnd) {
     errorElem.style.display = "block";
   } else {
@@ -143,14 +104,9 @@ function validateDeletionArea() {
   }
 }
 
-/**
- * Check if required fields (del_start/del_width for deletion,
- * or perturb_width/step_size for screening) are filled before submitting.
- */
 function checkFormRequirements() {
   var dsOption = document.querySelector('input[name="ds_option"]:checked');
-  if (!dsOption) return true; // If nothing selected, or 'none', no special fields
-
+  if (!dsOption) return true;
   var dsVal = dsOption.value;
   if (dsVal === "deletion") {
     var delStartVal = document.getElementById("del_start").value.trim();
@@ -159,8 +115,7 @@ function checkFormRequirements() {
       alert("Please provide both Deletion Start and Deletion Width for Deletion mode.");
       return false;
     }
-  }
-  else if (dsVal === "screening") {
+  } else if (dsVal === "screening") {
     var perturbVal = document.getElementById("perturb_width").value.trim();
     var stepVal = document.getElementById("step_size").value.trim();
     if (!perturbVal || !stepVal) {
@@ -168,64 +123,42 @@ function checkFormRequirements() {
       return false;
     }
   }
-
-  // If dsVal === "none", no extra fields required
   return true;
 }
 
 /*************************************************************
  * File Dropdown Handling
  *************************************************************/
-
-/**
- * Call the server to list currently uploaded files for this user session,
- * then populate the <select> with those filenames.
- * Finally, attach a listener to the <input type="file"> for new uploads.
- */
-function populateDropdownFromServer(selectId, fileInputId, storageKey) {
+function populateDropdownFromServer(selectId, fileType) {
   var selectElem = document.getElementById(selectId);
-
-  // 1. Fetch the user’s existing upload list
   var xhr = new XMLHttpRequest();
-  xhr.open("GET", "/list_uploads");
+  xhr.open("GET", "/list_uploads?file_type=" + encodeURIComponent(fileType));
   xhr.onload = function() {
     if (xhr.status === 200) {
-      var serverFiles = JSON.parse(xhr.responseText); // array of filenames
-      // Remove previously added dynamic options (optional)
+      var serverFiles = JSON.parse(xhr.responseText);
       for (var i = selectElem.options.length - 1; i >= 0; i--) {
-        var val = selectElem.options[i].value;
-        // Keep "none" or "preset" or known static options, remove dynamic
-        if (
-          val !== "none" &&
-          !val.startsWith("./corigami_data") &&
-          val !== "Preset (hg38/imr90)" &&
-          val !== "preset"
-        ) {
+        var option = selectElem.options[i];
+        if (option.value !== "none" && !option.value.startsWith("./corigami_data")) {
           selectElem.remove(i);
         }
       }
-      // Add the server files to the dropdown
-      serverFiles.forEach(function(filename) {
-        // Check if it already exists
+      serverFiles.forEach(function(file) {
         var exists = false;
         for (var j = 0; j < selectElem.options.length; j++) {
-          if (selectElem.options[j].value === filename) {
+          if (selectElem.options[j].value === file.value) {
             exists = true;
             break;
           }
         }
         if (!exists) {
           var newOption = document.createElement("option");
-          newOption.value = filename;
-          newOption.text = filename;
+          newOption.value = file.value;
+          newOption.text = file.name;
           selectElem.appendChild(newOption);
         }
       });
-
-      // Now restore the user’s previously selected file if it still exists
       var storedVal = localStorage.getItem(selectId);
       if (storedVal) {
-        // Only re-select if it exists in the current <select> after refresh
         for (var k = 0; k < selectElem.options.length; k++) {
           if (selectElem.options[k].value === storedVal) {
             selectElem.value = storedVal;
@@ -233,67 +166,78 @@ function populateDropdownFromServer(selectId, fileInputId, storageKey) {
           }
         }
       }
+      console.log("Dropdown", selectId, "populated with:", serverFiles);
     }
   };
   xhr.send();
-
-  // 2. Attach a listener to the file input so that any new upload
-  //    gets stored in localStorage and appended to the dropdown
-  updateDropdown(fileInputId, selectId, storageKey);
-}
-
-/**
- * Original function to handle user picking a new file in the <input type="file">.
- * This also updates localStorage so next time we see the file name in the dropdown.
- */
-function updateDropdown(fileInputId, selectId, storageKey) {
-  var fileInput = document.getElementById(fileInputId);
-  var selectElem = document.getElementById(selectId);
-
-  fileInput.addEventListener("change", function() {
-    if (fileInput.files.length > 0) {
-      var filename = fileInput.files[0].name;
-      // Add it to the dropdown (client side) - the server will rename it,
-      // but for user convenience we show the local name here
-      var newOption = document.createElement("option");
-      newOption.value = filename;
-      newOption.text = filename;
-
-      // Check if it already exists
-      var exists = false;
-      for (var i = 0; i < selectElem.options.length; i++) {
-        if (selectElem.options[i].value === filename) {
-          exists = true;
-          break;
-        }
-      }
-      if (!exists) {
-        selectElem.appendChild(newOption);
-      }
-      selectElem.value = filename;
-
-      // Save to localStorage for future page loads
-      localStorage.setItem(selectId, filename);
-    }
-  });
 }
 
 /*************************************************************
- * Screening
+ * AJAX File Upload Helper
  *************************************************************/
+function ajaxUploadFile(fileInputId, fileType, dropdownId) {
+  var fileInput = document.getElementById(fileInputId);
+  if (!fileInput.files || fileInput.files.length === 0) {
+    console.log("No file selected for", fileType);
+    return;
+  }
+  var file = fileInput.files[0];
+  console.log("Selected file for", fileType + ":", file.name);
+  
+  var formData = new FormData();
+  if (fileType === "peaks") {
+    formData.append("peaks_file", file);
+  } else {
+    formData.append(fileType + "_bw_file", file);
+  }
+  
+  fetch("/upload_file?file_type=" + encodeURIComponent(fileType), {
+    method: "POST",
+    body: formData
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.error) {
+      console.error("Upload error for " + fileType + ":", data.error);
+    } else {
+      console.log("Upload successful for " + fileType + ":", data);
+      var dropdown = document.getElementById(dropdownId);
+      var newOption = document.createElement("option");
+      newOption.value = data.saved_path;
+      newOption.text = data.display_name;
+      dropdown.appendChild(newOption);
+      dropdown.value = data.saved_path;
+      localStorage.setItem(dropdownId, data.saved_path);
+    }
+  })
+  .catch(error => console.error("Error uploading file for " + fileType + ":", error));
+}
 
+/*************************************************************
+ * Screening, CTCF Normalization & Training Norm Field
+ *************************************************************/
 function runScreening() {
-  if (parseInt(document.getElementById("region_start").value) < 1048576) {
+  console.log("runScreening() is called");
+  
+  // Validate region_start
+  const regionStartElem = document.getElementById("region_start");
+  if (parseInt(regionStartElem.value) < 1048576) {
     alert("Cannot run screening on start position below 1,048,576!");
     return;
   }
-  document.getElementById("screening_loader").style.display = "block";
-  document.getElementById("screening_image_container").style.display = "none";
-
-  // Use the global screening_params passed from the server (if available)
-  var paramsObj = screening_params || {};
-
-  // Fallback: build parameters manually if screening_params not defined
+  
+  // Show the loader and hide the image container
+  const loaderElem = document.getElementById("screening_loader");
+  const imageContainerElem = document.getElementById("screening_image_container");
+  if (loaderElem) {
+    loaderElem.style.display = "block";
+  }
+  if (imageContainerElem) {
+    imageContainerElem.style.display = "none";
+  }
+  
+  // Build parameters object, either from screening_params or from the form elements
+  var paramsObj = window.screening_params || {};
   if (!paramsObj.region_chr) {
     paramsObj = {
       region_chr: document.getElementById("region_chr").value,
@@ -304,47 +248,61 @@ function runScreening() {
       step_size: document.getElementById("step_size").value,
       ctcf_bw_path: document.getElementById("ctcf_bw_path").value,
       atac_bw_path: document.getElementById("atac_bw_path").value,
-      // The server code in app.py should override or handle if output_dir is session-specific
-      output_dir: "./output_new",
+      output_dir: document.getElementById("output_dir").value,
       peaks_file: document.getElementById("peaks_file_path").value
     };
   }
+
   
-  // Make an AJAX GET request to /run_screening with these params
-  var xhr = new XMLHttpRequest();
-  var queryParams = new URLSearchParams(paramsObj).toString();
+  // Log the parameters being sent
+  console.log("Sending screening request with parameters:", paramsObj);
+  const queryParams = new URLSearchParams(paramsObj).toString();
+  console.log("Query string:", queryParams);
   
+  // Create and send the AJAX request
+  const xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function() {
+    console.log("XHR state changed: readyState =", xhr.readyState, "status =", xhr.status);
     if (xhr.readyState === 4) {
-      document.getElementById("screening_loader").style.display = "none";
+      if (loaderElem) {
+        loaderElem.style.display = "none";
+      }
       if (xhr.status === 200) {
-        var response = JSON.parse(xhr.responseText);
+        console.log("XHR request successful. Response:", xhr.responseText);
+        const response = JSON.parse(xhr.responseText);
         if (response.message) {
-          document.getElementById("screening_image_container").innerHTML = "<p>" + response.message + "</p>";
+          if (imageContainerElem) {
+            imageContainerElem.innerHTML = "<p>" + response.message + "</p>";
+          }
         } else {
-          document.getElementById("screening_image_container").innerHTML =
-            '<img src="' + response.screening_image + '" alt="Screening Plot" style="max-width:100%;">';
+          if (imageContainerElem) {
+            imageContainerElem.innerHTML =
+              '<img src="' + response.screening_image + '" alt="Screening Plot" style="max-width:100%;">';
+          }
         }
       } else {
-        document.getElementById("screening_image_container").innerHTML = "<p>Error generating screening plot.</p>";
+        console.error("Error generating screening plot. Status:", xhr.status);
+        if (imageContainerElem) {
+          imageContainerElem.innerHTML = "<p>Error generating screening plot.</p>";
+        }
       }
-      document.getElementById("screening_image_container").style.display = "block";
+      if (imageContainerElem) {
+        imageContainerElem.style.display = "block";
+      }
     }
   };
   xhr.open("GET", "/run_screening?" + queryParams, true);
+  console.log("Sending XHR request to /run_screening");
   xhr.send();
 }
 
-/*************************************************************
- * CTCF Normalization Toggle
- *************************************************************/
+
 function updateCtcfNormalization() {
   var ctcfSelect = document.getElementById('ctcf_bw_path');
   var ctcfSwitch = document.getElementById('ctcf-switch');
   var ctcfNoNorm = document.getElementById('ctcf-no-norm');
   var ctcfLog = document.getElementById('ctcf-log');
   var ctcfMinmax = document.getElementById('ctcf-minmax');
-
   if (ctcfSelect.value === 'none') {
     ctcfNoNorm.disabled = true;
     ctcfLog.disabled = true;
@@ -358,23 +316,50 @@ function updateCtcfNormalization() {
   }
 }
 
+function updateTrainingNormField() {
+  var ctcfFile = document.getElementById("ctcf_bw_path").value;
+  var atacState = document.querySelector('input[name="norm_atac"]:checked').value;
+  var ctcfState = document.querySelector('input[name="norm_ctcf"]:checked').value;
+  var trainingContainer = document.getElementById("training-norm-container");
+  if (ctcfFile === "none") {
+    document.getElementById("training-minmax").checked = true;
+    document.getElementById("training-log").disabled = true;
+    trainingContainer.classList.add("disabled-toggle");
+  } else if (atacState !== "none") {
+    if (atacState === "log") {
+      document.getElementById("training-log").checked = true;
+    } else if (atacState === "minmax") {
+      document.getElementById("training-minmax").checked = true;
+    }
+    document.getElementById("training-log").disabled = true;
+    document.getElementById("training-minmax").disabled = true;
+    trainingContainer.classList.add("disabled-toggle");
+  } else if (ctcfState !== "none") {
+    if (ctcfState === "log") {
+      document.getElementById("training-log").checked = true;
+    } else if (ctcfState === "minmax") {
+      document.getElementById("training-minmax").checked = true;
+    }
+    document.getElementById("training-log").disabled = true;
+    document.getElementById("training-minmax").disabled = true;
+    trainingContainer.classList.add("disabled-toggle");
+  } else {
+    document.getElementById("training-log").disabled = false;
+    document.getElementById("training-minmax").disabled = false;
+    trainingContainer.classList.remove("disabled-toggle");
+  }
+}
+
 /*************************************************************
- * Window onload
+ * Updated Form Submission via AJAX
  *************************************************************/
 window.onload = function() {
-  // 1. Restore fields from localStorage
   restoreFormFields();
-
-  // 2. Update region_end once region_start is known
   updateEndPosition();
-
-  // 3. Toggle optional fields (deletion/screening) accordingly
   toggleOptionalFields();
-
-  // 4. CTCF normalization toggle
   updateCtcfNormalization();
+  updateTrainingNormField();
 
-  // 5. Attach listeners to store new values in localStorage
   document.getElementById("region_start").addEventListener("input", function() {
     storeFormFields();
     updateEndPosition();
@@ -391,7 +376,7 @@ window.onload = function() {
   document.getElementById("step_size").addEventListener("input", storeFormFields);
   document.getElementById("region_chr").addEventListener("change", storeFormFields);
   document.getElementById("model_select").addEventListener("change", storeFormFields);
-
+  
   var dsRadios = document.getElementsByName("ds_option");
   for (var i = 0; i < dsRadios.length; i++) {
     dsRadios[i].addEventListener("change", function() {
@@ -399,20 +384,40 @@ window.onload = function() {
       toggleOptionalFields();
     });
   }
-
-  // 6. When CTCF file selection changes
+  
   var ctcfSelectElem = document.getElementById("ctcf_bw_path");
   ctcfSelectElem.addEventListener("change", function() {
     storeFormFields();
     updateCtcfNormalization();
+    updateTrainingNormField();
+  });
+  
+  var normRadios = document.getElementsByName("norm_atac");
+  for (var i = 0; i < normRadios.length; i++) {
+    normRadios[i].addEventListener("change", updateTrainingNormField);
+  }
+  
+  var ctcfNormRadios = document.getElementsByName("norm_ctcf");
+  for (var i = 0; i < ctcfNormRadios.length; i++) {
+    ctcfNormRadios[i].addEventListener("change", updateTrainingNormField);
+  }
+
+  // Initial population of dropdowns
+  populateDropdownFromServer("atac_bw_path", "atac");
+  populateDropdownFromServer("ctcf_bw_path", "ctcf");
+  populateDropdownFromServer("peaks_file_path", "peaks");
+
+  // Attach change event listeners for immediate AJAX upload of files:
+  document.getElementById("atac_bw_file").addEventListener("change", function() {
+    ajaxUploadFile("atac_bw_file", "atac", "atac_bw_path");
+  });
+  document.getElementById("ctcf_bw_file").addEventListener("change", function() {
+    ajaxUploadFile("ctcf_bw_file", "ctcf", "ctcf_bw_path");
+  });
+  document.getElementById("peaks_file_upload").addEventListener("change", function() {
+    ajaxUploadFile("peaks_file_upload", "peaks", "peaks_file_path");
   });
 
-  // 7. Populate dropdowns from server (actual existing uploaded files)
-  populateDropdownFromServer("atac_bw_path", "atac_bw_file", "atac_bw_options");
-  populateDropdownFromServer("ctcf_bw_path", "ctcf_bw_file", "ctcf_bw_options");
-  populateDropdownFromServer("peaks_file_path", "peaks_file_upload", "peaks_file_options");
-
-  // 8. Modal functionality
   var modal = document.getElementById("instructions-modal");
   var btn = document.getElementById("openModal");
   var span = document.getElementsByClassName("close")[0];
@@ -433,16 +438,47 @@ window.onload = function() {
     }
   };
 
-  // 9. Attach a submit event listener on the form to validate required fields dynamically
+  // Updated form submission: intercept submit and send via AJAX
   var formElem = document.getElementById("corigami-form");
   formElem.addEventListener("submit", function(e) {
+    e.preventDefault();
     if (!checkFormRequirements()) {
-      e.preventDefault(); // Stop submission if validation fails
       return false;
     }
+    var formData = new FormData(formElem);
+    fetch("/", {
+      method: "POST",
+      body: formData,
+      headers: {
+        "X-Requested-With": "XMLHttpRequest"
+      }
+    })
+    .then(response => {
+      if (!response.ok) {
+        throw new Error("Network response was not ok");
+      }
+      return response.text();
+    })
+    .then(html => {
+      // Update the output container with only the plots
+      document.getElementById("output-container").innerHTML = html;
+      // Query for the plots container inside the output container
+      const plotsContainer = document.querySelector("#output-container #plots-container");
+      if (plotsContainer) {
+        console.log("Found plots container with screening flag:", plotsContainer.dataset.screening);
+        if (plotsContainer.dataset.screening === "true") {
+          runScreening();
+        }
+      } else {
+        console.log("No plots container found in the updated output.");
+      }
+    })
+    .catch(error => {
+      console.error("Error during form submission:", error);
+    });
   });
 
-  // 10. If screening_mode was set by the server, automatically run screening
+  // If the page was loaded with screening mode already set, trigger screening
   if (typeof screening_mode !== "undefined" && screening_mode === true) {
     runScreening();
   }

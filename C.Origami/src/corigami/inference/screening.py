@@ -110,19 +110,28 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
     
     # Determine screening windows.
     if peaks_file:
+        # If the peaks file comes from auto-generation, skip one header row.
         skip_rows = 1 if "auto_peaks.narrowPeak" in peaks_file else 0
         peaks_df = pd.read_csv(peaks_file, sep='\t', header=None, skiprows=skip_rows)
         # Filter to the selected chromosome.
         peaks_df = peaks_df[peaks_df[0] == chr_name]
-        # Compute midpoint for each peak (using columns 1 and 2)
+        # Compute the midpoint for each peak (using columns 1 and 2)
         peaks_df['mid'] = peaks_df[[1, 2]].mean(axis=1).astype(int)
-        # Filter peaks whose midpoints are within [screen_start, screen_end]
+        # Filter peaks within [screen_start, screen_end]
         peaks_df = peaks_df[(peaks_df['mid'] >= screen_start) & (peaks_df['mid'] <= screen_end)]
+        
+        # Determine number of peaks to select.
+        num_peaks = int((screen_end - screen_start) // 200000)
+        print("Selecting top {} peaks by score from {} available peaks".format(num_peaks, len(peaks_df)))
+        
+        # Sort peaks by score (column index 4) in descending order and take the top num_peaks.
+        peaks_df = peaks_df.sort_values(by=4, ascending=False).head(num_peaks)
         windows = peaks_df['mid'].tolist()
-        print("Total windows based on peaks file: {}".format(len(windows)))
+        print("Total windows based on peaks file (after selection): {}".format(len(windows)))
     else:
         windows = [w * step_size + screen_start for w in range(int((screen_end - screen_start) / step_size))]
         print("Total windows (uniform): {}".format(len(windows)))
+
     
     preds = np.empty((0, 256, 256))
     preds_deletion = np.empty((0, 256, 256))

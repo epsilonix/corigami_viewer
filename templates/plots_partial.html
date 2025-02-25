@@ -1,0 +1,30 @@
+<div id="plots-container" data-screening="{{ 'true' if screening_mode else 'false' }}">
+    {% if hic_image %}
+      <img class="hic_image" src="{{ hic_image }}" alt="Hi-C Map" style="max-width:100%;">
+    {% endif %}
+    {% if atac_image %}
+      <img class="atac_image" src="{{ atac_image }}" alt="ATAC‑seq Signal" style="max-width:100%;">
+    {% endif %}
+    {% if ctcf_image %}
+      <img class="ctcf_image" src="{{ ctcf_image }}" alt="CTCF Signal" style="max-width:100%;">
+    {% endif %}
+</div>
+<!-- Add these elements so runScreening() can control them -->
+<div id="screening_loader" style="display:none;">
+  <div class="spinner">
+    <div class="double-bounce1"></div>
+    <div class="double-bounce2"></div>
+  </div>
+  <p>Loading screening plot...</p>
+</div>
+<div id="screening_image_container" style="display:none;"></div>
+{% if screening_mode %}
+  <div id="screening-params" data-screening='{{ screening_params | safe }}' style="display:none;"></div>
+  <script>
+    // Set global variables for screening so the JS can detect it.
+    window.screening_mode = true;
+    window.screening_params = JSON.parse(document.getElementById('screening-params').getAttribute('data-screening'));
+  </script>
+{% else %}
+  <script>window.screening_mode = false;</script>
+{% endif %}

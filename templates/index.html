@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <title>C.Origami Viewer</title>
   <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
-  <!-- Global variables for screening mode -->
   {% if screening_mode %}
   <script>
     var screening_mode = true;
@@ -17,7 +16,6 @@
   {% endif %}
   <script src="{{ url_for('static', filename='script.js') }}"></script>
   <style>
-    /* Optional: Style read-only input fields */
     input[readonly] {
       background-color: #e0e0e0;
       color: #555;
@@ -32,21 +30,18 @@
         <h1>C.Origami Viewer</h1>
         <p class="instructions-link"><a href="#" id="openModal">Instructions</a></p>
       </div>
-      <!-- Modal for instructions -->
       <div id="instructions-modal" class="modal">
         <div class="modal-content">
           <span class="close">&times;</span>
           <h2>Instructions</h2>
           <p>
-            Note: Please use the same normalization method for your ATAC and CTCF files.
-            If you do not provide a CTCF file, you must select "minmax" for your ATAC file (select "no norm" if it is already normalized)
-            and a minmax-normalized CTCF file will be generated using maxATAC.
+            When uploading files, please indicate the current normalization state of your ATAC and CTCF files.
+            If you do not provide a CTCF file, a raw ATAC file is required, and the CTCF signal will be generated automatically using maxATAC.
           </p>
         </div>
       </div>
-      
-      <!-- The main form now has an id to allow JS validation on submit -->
       <form id="corigami-form" method="post" action="/" enctype="multipart/form-data">
+        <input type="hidden" id="output_dir" value="{{ user_output_folder }}">
         <!-- Model and Chromosome Row -->
         <div class="row">
           <div class="col-half">
@@ -72,17 +67,14 @@
         <div class="row">
           <div class="col-half">
             <label for="region_start" class="small-label">Start Position (bp)*:</label>
-            <input type="number" id="region_start" name="region_start"
-                   value="{{ request.form.region_start or '1500000' }}" required>
+            <input type="number" id="region_start" name="region_start" value="{{ request.form.region_start or '1500000' }}" required>
           </div>
           <div class="col-half">
             <label for="region_end" class="small-label">End Position (bp):</label>
-            <!-- Added readonly attribute for grey background -->
-            <input type="number" id="region_end" name="region_end"
-                   style="background-color: #e0e0e0;" readonly>
+            <input type="number" id="region_end" name="region_end" style="background-color: #e0e0e0;" readonly>
           </div>
         </div>
-        <!-- ATAC‑seq BigWig File (Preset only) -->
+        <!-- ATAC‑seq BigWig File -->
         <div class="row file-input-container atac-input-container">
           <div class="col-full">
             <label for="atac_bw_path" class="small-label">ATAC‑seq BigWig File*:</label>
@@ -95,15 +87,15 @@
             <input type="file" id="atac_bw_file" name="atac_bw_file">
           </div>
         </div>
-        <!-- ATAC Normalization Toggle (default "log") -->
+        <!-- ATAC File Normalization (current state) -->
         <div class="row">
           <div class="col-full">
             <div class="switch norm-toggle" id="atac-switch">
-              <input id="atac-no-norm" name="norm_atac" type="radio" value="none" class="switch-input">
-              <label for="atac-no-norm" class="switch-label">no norm</label>
-              <input id="atac-log" name="norm_atac" type="radio" value="log" class="switch-input" checked>
+              <input id="atac-no-norm" name="norm_atac" type="radio" value="none" class="switch-input" {% if request.form.norm_atac == 'none' or not request.form.norm_atac %}checked{% endif %}>
+              <label for="atac-no-norm" class="switch-label">raw</label>
+              <input id="atac-log" name="norm_atac" type="radio" value="log" class="switch-input" {% if request.form.norm_atac == 'log' %}checked{% endif %}>
               <label for="atac-log" class="switch-label">log</label>
-              <input id="atac-minmax" name="norm_atac" type="radio" value="minmax" class="switch-input">
+              <input id="atac-minmax" name="norm_atac" type="radio" value="minmax" class="switch-input" {% if request.form.norm_atac == 'minmax' %}checked{% endif %}>
               <label for="atac-minmax" class="switch-label">minmax</label>
               <span class="switch-selector"></span>
             </div>
@@ -123,20 +115,34 @@
             <input type="file" id="ctcf_bw_file" name="ctcf_bw_file">
           </div>
         </div>
-        <!-- CTCF Normalization Toggle (default "no norm") -->
+        <!-- CTCF File Normalization (current state) -->
         <div class="row">
           <div class="col-full">
             <div class="switch norm-toggle" id="ctcf-switch">
               <input id="ctcf-no-norm" name="norm_ctcf" type="radio" value="none" class="switch-input" checked>
-              <label for="ctcf-no-norm" class="switch-label">no norm</label>
-              <input id="ctcf-log" name="norm_ctcf" type="radio" value="log" class="switch-input">
+              <label for="ctcf-no-norm" class="switch-label">raw</label>
+              <input id="ctcf-log" name="norm_ctcf" type="radio" value="log" class="switch-input" {% if request.form.norm_ctcf == 'log' %}checked{% endif %}>
               <label for="ctcf-log" class="switch-label">log</label>
-              <input id="ctcf-minmax" name="norm_ctcf" type="radio" value="minmax" class="switch-input">
+              <input id="ctcf-minmax" name="norm_ctcf" type="radio" value="minmax" class="switch-input" {% if request.form.norm_ctcf == 'minmax' %}checked{% endif %}>
               <label for="ctcf-minmax" class="switch-label">minmax</label>
               <span class="switch-selector"></span>
             </div>
           </div>
         </div>
+        <!-- Training Normalization: Only two toggles (log and minmax) -->
+        <div class="row" id="training-norm-container">
+          <div class="col-full">
+            <label class="small-label">Apply norm method for training*:</label>
+            <div class="switch norm-toggle" id="training-norm-switch">
+              <input id="training-log" name="training_norm" type="radio" value="log" class="switch-input">
+              <label for="training-log" class="switch-label">log</label>
+              <input id="training-minmax" name="training_norm" type="radio" value="minmax" class="switch-input" checked>
+              <label for="training-minmax" class="switch-label">minmax</label>
+              <span class="switch-selector"></span>
+            </div>
+          </div>
+        </div>
+        <hr class="separator">
         <!-- Deletion/Screening Toggle -->
         <div class="row">
           <div class="col-full">
@@ -155,26 +161,23 @@
             </div>
           </div>
         </div>
-        <!-- Deletion Parameters (grouped on one row) -->
+        <!-- Deletion Parameters -->
         <div id="deletion-fields" class="optional-row" style="display: none;">
           <div class="row">
             <div class="col-half">
               <label for="del_start" class="small-label">Deletion Start (bp):*</label>
-              <!-- No 'required' attribute; we'll check conditionally in JS -->
-              <input type="number" id="del_start" name="del_start"
-                     value="{{ request.form.del_start or '1500000' }}">
+              <input type="number" id="del_start" name="del_start" value="{{ request.form.del_start or '1500000' }}">
             </div>
             <div class="col-half">
               <label for="del_width" class="small-label">Deletion Width (bp):*</label>
-              <input type="number" id="del_width" name="del_width"
-                     value="{{ request.form.del_width or '500000' }}">
+              <input type="number" id="del_width" name="del_width" value="{{ request.form.del_width or '500000' }}">
             </div>
           </div>
           <div id="deletion-error" class="error-message" style="display: none;">
             Deletion area must be within start and end position
           </div>
         </div>
-        <!-- Peaks File Container (only appears in screening mode) -->
+        <!-- Peaks File Container (for screening) -->
         <div id="peaks_file_container" class="optional-row" style="display: none;">
           <div class="col-full">
             <label for="peaks_file_path" class="small-label">Peaks File (MACS2 narrowPeak):</label>
@@ -190,36 +193,32 @@
             <input type="file" id="peaks_file_upload" name="peaks_file">
           </div>
         </div>
-        <!-- Screening Fields (Perturb Width and Step Size on the same row) -->
+        <!-- Screening Fields -->
         <div id="screening-fields-2" class="optional-row" style="display: none;">
           <div class="row">
             <div class="col-half">
               <label for="perturb_width" class="small-label">Perturb Width (bp):*</label>
-              <!-- No 'required' attribute; we'll check conditionally in JS -->
-              <input type="number" id="perturb_width" name="perturb_width"
-                     value="{{ request.form.perturb_width or '1000' }}">
+              <input type="number" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}">
             </div>
             <div class="col-half">
               <label for="step_size" class="small-label">Step Size (bp):*</label>
-              <input type="number" id="step_size" name="step_size"
-                     value="{{ request.form.step_size or '1000' }}">
+              <input type="number" id="step_size" name="step_size" value="{{ request.form.step_size or '1000' }}">
             </div>
           </div>
         </div>
-        <input type="submit" value="Generate Composite Map" class="submit-button">
+        <input type="submit" value="Generate plots" class="submit-button">
       </form>
-
       <div id="screening_message" style="color:red;"></div>
     </div>
-    <div class="output-container">
+    <div id="output-container" class="output-container">
       {% if hic_image %}
         <img class="hic_image" src="{{ hic_image }}" alt="Hi-C Map" style="max-width:100%;">
       {% endif %}
+      {% if atac_image %}
+      <img class="atac_image" src="{{ atac_image }}" alt="ATAC‑seq Signal" style="max-width:100%;">
+      {% endif %}
       {% if ctcf_image %}
         <img class="ctcf_image" src="{{ ctcf_image }}" alt="CTCF Signal" style="max-width:100%;">
-      {% endif %}
-      {% if atac_image %}
-        <img class="atac_image" src="{{ atac_image }}" alt="ATAC‑seq Signal" style="max-width:100%;">
       {% endif %}
       <div id="screening_placeholder">
         <div id="screening_loader" style="display: none;">
@@ -233,7 +232,6 @@
       </div>
     </div>
   </div>
-  <!-- Link the updated script last -->
   <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
