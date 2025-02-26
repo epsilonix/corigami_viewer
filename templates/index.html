@@ -22,6 +22,10 @@
       cursor: not-allowed;
     }
   </style>
+  <!-- Bokeh CSS -->
+  <link rel="stylesheet" href="https://cdn.bokeh.org/bokeh/release/bokeh-3.6.3.min.css" type="text/css">
+  <script src="https://cdn.bokeh.org/bokeh/release/bokeh-3.6.3.min.js"></script>
+
 </head>
 <body>
   <div class="container">
@@ -211,27 +215,14 @@
       <div id="screening_message" style="color:red;"></div>
     </div>
     <div id="output-container" class="output-container">
-      {% if hic_image %}
-        <img class="hic_image" src="{{ hic_image }}" alt="Hi-C Map" style="max-width:100%;">
-      {% endif %}
-      {% if atac_image %}
-      <img class="atac_image" src="{{ atac_image }}" alt="ATAC‑seq Signal" style="max-width:100%;">
-      {% endif %}
-      {% if ctcf_image %}
-        <img class="ctcf_image" src="{{ ctcf_image }}" alt="CTCF Signal" style="max-width:100%;">
-      {% endif %}
-      <div id="screening_placeholder">
-        <div id="screening_loader" style="display: none;">
-          <div class="spinner">
-            <div class="double-bounce1"></div>
-            <div class="double-bounce2"></div>
-          </div>
-          <p>Loading screening plot...</p>
-        </div>
-        <div id="screening_image_container"></div>
+      {# Render the Bokeh plots here #}
+      <div id="plots-container">
+        {{ bokeh_div|safe }}
       </div>
     </div>
   </div>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
+  {# Include the Bokeh-generated script #}
+  {{ bokeh_script|safe }}
 </body>
 </html>

@@ -226,7 +226,7 @@ function runScreening() {
     return;
   }
   
-  // Show the loader and hide the image container
+  // Show the loader and hide the screening container
   const loaderElem = document.getElementById("screening_loader");
   const imageContainerElem = document.getElementById("screening_image_container");
   if (loaderElem) {
@@ -236,25 +236,20 @@ function runScreening() {
     imageContainerElem.style.display = "none";
   }
   
-  // Build parameters object, either from screening_params or from the form elements
-  var paramsObj = window.screening_params || {};
-  if (!paramsObj.region_chr) {
-    paramsObj = {
-      region_chr: document.getElementById("region_chr").value,
-      model_select: document.getElementById("model_select").value,
-      region_start: document.getElementById("region_start").value,
-      region_end: document.getElementById("region_end").value,
-      perturb_width: document.getElementById("perturb_width").value,
-      step_size: document.getElementById("step_size").value,
-      ctcf_bw_path: document.getElementById("ctcf_bw_path").value,
-      atac_bw_path: document.getElementById("atac_bw_path").value,
-      output_dir: document.getElementById("output_dir").value,
-      peaks_file: document.getElementById("peaks_file_path").value
-    };
-  }
-
+  // Build parameters object from global screening_params or form fields
+  var paramsObj = window.screening_params || {
+    region_chr: document.getElementById("region_chr").value,
+    model_select: document.getElementById("model_select").value,
+    region_start: document.getElementById("region_start").value,
+    region_end: document.getElementById("region_end").value,
+    perturb_width: document.getElementById("perturb_width").value,
+    step_size: document.getElementById("step_size").value,
+    ctcf_bw_path: document.getElementById("ctcf_bw_path").value,
+    atac_bw_path: document.getElementById("atac_bw_path").value,
+    output_dir: document.getElementById("output_dir").value,
+    peaks_file: document.getElementById("peaks_file_path").value
+  };
   
-  // Log the parameters being sent
   console.log("Sending screening request with parameters:", paramsObj);
   const queryParams = new URLSearchParams(paramsObj).toString();
   console.log("Query string:", queryParams);
@@ -276,8 +271,35 @@ function runScreening() {
           }
         } else {
           if (imageContainerElem) {
-            imageContainerElem.innerHTML =
-              '<img src="' + response.screening_image + '" alt="Screening Plot" style="max-width:100%;">';
+            console.log("Bokeh div from response:", response.bokeh_div);
+            imageContainerElem.innerHTML = response.bokeh_div;
+            // Instead of re-executing inline scripts from the container,
+            // look for a dedicated placeholder element for the Bokeh script.
+            var scriptHolder = document.getElementById("bokeh_script_holder");
+            if (scriptHolder) {
+              var code = scriptHolder.textContent || "";
+              // Remove any <script> tags from the code
+              code = code.replace(/<\/?script[^>]*>/g, "");
+              console.log("Evaluating Bokeh script (first 100 chars):", code.slice(0, 100));
+              try {
+                eval(code);
+              } catch (err) {
+                console.error("Error evaluating Bokeh script:", err);
+              }
+            } else {
+              // Fallback: iterate over script tags in the container
+              var scripts = imageContainerElem.querySelectorAll("script");
+              scripts.forEach(function(oldScript) {
+                var code = oldScript.textContent || "";
+                code = code.replace(/<\/?script[^>]*>/g, "");
+                console.log("Evaluating inline script (first 100 chars):", code.slice(0, 100));
+                try {
+                  eval(code);
+                } catch (err) {
+                  console.error("Error evaluating inline script:", err);
+                }
+              });
+            }
           }
         }
       } else {
@@ -295,7 +317,6 @@ function runScreening() {
   console.log("Sending XHR request to /run_screening");
   xhr.send();
 }
-
 
 function updateCtcfNormalization() {
   var ctcfSelect = document.getElementById('ctcf_bw_path');
@@ -346,7 +367,7 @@ function updateTrainingNormField() {
   } else {
     document.getElementById("training-log").disabled = false;
     document.getElementById("training-minmax").disabled = false;
-    trainingContainer.classList.remove("disabled-toggle");
+    trainingContainer.classList.remove('disabled-toggle');
   }
 }
 
@@ -460,15 +481,38 @@ window.onload = function() {
       return response.text();
     })
     .then(html => {
-      // Update the output container with only the plots
+      // Update the output container with the returned HTML (Bokeh components)
       document.getElementById("output-container").innerHTML = html;
-      // Query for the plots container inside the output container
+      // Instead of iterating over script tags inside the container,
+      // assume the full HTML includes dedicated placeholders.
+      var bokehScriptHolder = document.getElementById("bokeh_script_holder");
+      if (bokehScriptHolder) {
+        var code = bokehScriptHolder.textContent || "";
+        code = code.replace(/<\/?script[^>]*>/g, "");
+        console.log("Evaluating Bokeh script (first 100 chars):", code.slice(0, 100));
+        try {
+          eval(code);
+        } catch (err) {
+          console.error("Error evaluating Bokeh script:", err);
+        }
+      } else {
+        // Fallback: try to execute any inline scripts within the output container.
+        var scripts = document.getElementById("output-container").querySelectorAll("script");
+        scripts.forEach(function(oldScript) {
+          var code = oldScript.textContent || "";
+          code = code.replace(/<\/?script[^>]*>/g, "");
+          console.log("Evaluating inline script (first 100 chars):", code.slice(0, 100));
+          try {
+            eval(code);
+          } catch (err) {
+            console.error("Error evaluating inline script:", err);
+          }
+        });
+      }
+      // Query for the plots container inside the updated output (for logging)
       const plotsContainer = document.querySelector("#output-container #plots-container");
       if (plotsContainer) {
         console.log("Found plots container with screening flag:", plotsContainer.dataset.screening);
-        if (plotsContainer.dataset.screening === "true") {
-          runScreening();
-        }
       } else {
         console.log("No plots container found in the updated output.");
       }
