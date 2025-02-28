@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
+sys.path.insert(0, "/Users/everett/corigami_viewer/C.Origami/src")
 import argparse
 import json
 import numpy as np

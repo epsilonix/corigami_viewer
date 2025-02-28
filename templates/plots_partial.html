@@ -6,18 +6,19 @@
   <div id="screening_chart"></div>
   {% endif %}
 </div>
-<script src="https://code.highcharts.com/highcharts.js"></script>
-<script src="https://code.highcharts.com/modules/heatmap.js"></script>
+<!-- Remove Highcharts scripts and load D3.js with our custom plotting script -->
+<script src="https://d3js.org/d3.v7.min.js"></script>
+<script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
 <script>
   var hiCConfig = {{ hi_c_config|safe }};
   var ctcfConfig = {{ ctcf_config|safe }};
   var atacConfig = {{ atac_config|safe }};
-  Highcharts.chart('hi_c_chart', hiCConfig);
-  Highcharts.chart('ctcf_chart', ctcfConfig);
-  Highcharts.chart('atac_chart', atacConfig);
+  drawHiCChart('#hi_c_chart', hiCConfig);
+  drawLineChart('#ctcf_chart', ctcfConfig);
+  drawLineChart('#atac_chart', atacConfig);
   {% if screening_mode and screening_config %}
   var screeningConfig = {{ screening_config|safe }};
-  Highcharts.chart('screening_chart', screeningConfig);
+  drawColumnChart('#screening_chart', screeningConfig);
   {% endif %}
 </script>
 {% if screening_mode %}
@@ -29,5 +30,13 @@
 {% else %}
   <script>
     window.screening_mode = false;
+  </script>
+{% endif %}
+<!-- In plots_partial.html -->
+{% if screening_mode %}
+  <script>
+    // We already set window.screening_mode = true above.
+    // Now actually call runScreening().
+    runScreening();
   </script>
 {% endif %}

@@ -240,23 +240,20 @@ function executeScripts(container) {
  *************************************************************/
 function runScreening() {
   console.log("runScreening() is called");
-  
+
   const regionStartElem = document.getElementById("region_start");
   if (parseInt(regionStartElem.value) < 1048576) {
     alert("Cannot run screening on start position below 1,048,576!");
     return;
   }
-  
-  const loaderElem = document.getElementById("screening_loader");
-  const imageContainerElem = document.getElementById("screening_image_container");
-  if (loaderElem) {
-    loaderElem.style.display = "block";
+
+  // Use the screening_chart element as the container.
+  const screeningContainerElem = document.getElementById("screening_chart");
+  if (screeningContainerElem) {
+    screeningContainerElem.innerHTML = "<p>Loading screening plot...</p>";
   }
-  if (imageContainerElem) {
-    imageContainerElem.style.display = "none";
-  }
-  
-  var paramsObj = window.screening_params || {
+
+  var paramsObj = {
     region_chr: document.getElementById("region_chr").value,
     model_select: document.getElementById("model_select").value,
     region_start: document.getElementById("region_start").value,
@@ -268,33 +265,36 @@ function runScreening() {
     output_dir: document.getElementById("output_dir").value,
     peaks_file: document.getElementById("peaks_file_path").value
   };
-  
+
   console.log("Sending screening request with parameters:", paramsObj);
   const queryParams = new URLSearchParams(paramsObj).toString();
   console.log("Query string for screening request:", queryParams);
-  
+
   const xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function() {
     console.log("XHR readyState:", xhr.readyState, "status:", xhr.status);
     if (xhr.readyState === 4) {
-      if (loaderElem) {
-        loaderElem.style.display = "none";
-      }
       if (xhr.status === 200) {
         console.log("Screening request successful. Response:", xhr.responseText);
         const response = JSON.parse(xhr.responseText);
-        if (imageContainerElem) {
-          imageContainerElem.innerHTML = response.bokeh_div || "<p>Screening plot updated.</p>";
-          executeScripts(imageContainerElem);
+        if (response.screening_config) {
+          // Parse the screening config JSON
+          const screeningConfig = JSON.parse(response.screening_config);
+          // Clear the container and render the plot with your D3 drawing function.
+          if (screeningContainerElem) {
+            screeningContainerElem.innerHTML = "";
+            drawColumnChart('#screening_chart', screeningConfig);
+          }
+        } else {
+          if (screeningContainerElem) {
+            screeningContainerElem.innerHTML = "<p>No screening config returned.</p>";
+          }
         }
       } else {
         console.error("Error generating screening plot. Status:", xhr.status);
-        if (imageContainerElem) {
-          imageContainerElem.innerHTML = "<p>Error generating screening plot.</p>";
+        if (screeningContainerElem) {
+          screeningContainerElem.innerHTML = "<p>Error generating screening plot.</p>";
         }
-      }
-      if (imageContainerElem) {
-        imageContainerElem.style.display = "block";
       }
     }
   };
@@ -302,6 +302,8 @@ function runScreening() {
   console.log("Sending screening request to /run_screening?" + queryParams);
   xhr.send();
 }
+
+
 
 function updateCtcfNormalization() {
   var ctcfSelect = document.getElementById('ctcf_bw_path');

@@ -14,7 +14,9 @@
     var screening_mode = false;
   </script>
   {% endif %}
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
+  <!-- Remove Highcharts and load D3.js with our custom plotting script -->
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
   <style>
     input[readonly] {
       background-color: #e0e0e0;
@@ -22,9 +24,6 @@
       cursor: not-allowed;
     }
   </style>
-  <!-- Highcharts JS -->
-  <script src="https://code.highcharts.com/highcharts.js"></script>
-  <script src="https://code.highcharts.com/modules/heatmap.js"></script>
 </head>
 <body>
   <div class="container">
@@ -214,7 +213,7 @@
       <div id="screening_message" style="color:red;"></div>
     </div>
     <div id="output-container" class="output-container">
-      <!-- Highcharts chart containers -->
+      <!-- D3 chart containers -->
       <div id="hi_c_chart"></div>
       <div id="ctcf_chart"></div>
       <div id="atac_chart"></div>
@@ -225,16 +224,16 @@
   </div>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
   <script>
-    // Render Highcharts using the configuration objects passed from the server
+    // Render D3 plots using the configuration objects passed from the server
     var hiCConfig = {{ hi_c_config|safe }};
     var ctcfConfig = {{ ctcf_config|safe }};
     var atacConfig = {{ atac_config|safe }};
-    Highcharts.chart('hi_c_chart', hiCConfig);
-    Highcharts.chart('ctcf_chart', ctcfConfig);
-    Highcharts.chart('atac_chart', atacConfig);
+    drawHiCChart('#hi_c_chart', hiCConfig);
+    drawLineChart('#ctcf_chart', ctcfConfig);
+    drawLineChart('#atac_chart', atacConfig);
     {% if screening_mode and screening_config %}
     var screeningConfig = {{ screening_config|safe }};
-    Highcharts.chart('screening_chart', screeningConfig);
+    drawColumnChart('#screening_chart', screeningConfig);
     {% endif %}
   </script>
 </body>

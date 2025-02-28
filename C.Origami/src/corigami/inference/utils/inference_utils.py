@@ -4,6 +4,7 @@ import pandas as pd
 import sys
 import torch
 
+
 from corigami.inference.utils.model_utils import load_default
 
 def preprocess_default(seq, ctcf, atac):
