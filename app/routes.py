@@ -10,14 +10,13 @@ from PIL import Image
 from scipy.ndimage import rotate
 from flask import Blueprint, render_template, request, url_for, jsonify, session, current_app
 
+
 from app.utils import (
-    get_user_folder,
     get_upload_folder,
     get_user_upload_folder,
     get_user_output_folder,
     cleanup_session_folders,
     generate_peaks_from_bigwig_macs2,
-    create_aligned_figure,
     get_bigwig_signal,
     save_uploaded_file,
     normalize_file,
@@ -68,208 +67,20 @@ def upload_file():
 ###############################################################################
 # Main Page: Handle Form Submission or Render
 ###############################################################################
-import numpy as np
-from scipy.ndimage import rotate
 
 def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_option,
-                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None):
-    """
-    Prepares the D3-based plot configurations for Hi-C, CTCF, and ATAC,
-    including logic for two-subplot "broken" x-axis if ds_option == 'deletion'.
-    """
-
-    # Convert to Mb
-    x_start_mb = region_start / 1e6
-    x_end_mb   = region_end / 1e6
-
-    # If there's a deletion, define the skip region in Mb.
-    deletion_start_mb = None
-    deletion_end_mb   = None
-    if ds_option == "deletion" and del_start is not None and del_width is not None:
-        deletion_start_mb = del_start / 1e6
-        deletion_end_mb   = (del_start + del_width) / 1e6
-
-    # ---------------------------
-    # HI-C Heatmap
-    # ---------------------------
-    hi_c_rot = rotate(hi_c_matrix, angle=45, reshape=True)
-    num_rows = hi_c_rot.shape[0]
-    hi_c_rot = hi_c_rot[:num_rows // 2, :]
-    hi_c_rot = np.flipud(hi_c_rot)
-
-    n_rows, n_cols = hi_c_rot.shape
-    total_mb = x_end_mb - x_start_mb
-
-    x_step = total_mb / n_cols
-    y_range = 100.0
-    y_step  = y_range / n_rows
-
-    heatmap_data = []
-    for i in range(n_rows):
-        for j in range(n_cols):
-            heatmap_data.append([j, i, float(hi_c_rot[i, j])])
-
-    x_categories = [round(x_start_mb + (j + 0.5) * x_step, 4) for j in range(n_cols)]
-    y_categories = [round((i + 0.5) * y_step, 2) for i in range(n_rows)]
-
-    hi_c_chart_config = {
-        "chart": {"type": "heatmap", "height": 500},
-        "xAxis": {
-            "categories": x_categories,
-            "title": {"text": "Genomic position (Mb)"}
-        },
-        "yAxis": {
-            "categories": y_categories,
-            "title": {"text": ""},
-            "reversed": False
-        },
-        "colorAxis": {
-            "min": float(np.nanmin(hi_c_rot)),
-            "max": float(np.nanmax(hi_c_rot)),
-            "minColor": "#ffffff",
-            "maxColor": "#7f0000"
-        },
-        "series": [{
-            "name": "Hi-C Signal",
-            "data": heatmap_data,
-            "borderWidth": 0
-        }],
-        "tooltip": {
-            "pointFormat": "<b>Value:</b> {point.value}"
-        }
-    }
-    if ds_option == "deletion" and deletion_start_mb is not None and deletion_end_mb is not None:
-        hi_c_chart_config["deletion"] = {
-            "start":  deletion_start_mb,
-            "end":    deletion_end_mb
-        }
-
-    # ---------------------------
-    # CTCF and ATAC signals
-    # ---------------------------
-    from app.utils import get_bigwig_signal
-
-    def get_signal_data(bw_path):
-        positions, values = get_bigwig_signal(bw_path, region_chr, region_start, region_end, bins=256)
-        data = []
-        if ds_option == "deletion" and deletion_start_mb is not None and deletion_end_mb is not None:
-            for p, v in zip(positions, values):
-                p_mb = p / 1e6
-                if p_mb < deletion_start_mb or p_mb > deletion_end_mb:
-                    data.append([p_mb, v])
-        else:
-            for p, v in zip(positions, values):
-                data.append([p / 1e6, v])
-        return data
-
-    ctcf_data = get_signal_data(ctcf_bw_for_model)
-    ctcf_chart_config = {
-        "chart": {"type": "line", "height": 250},
-        "title": {"text": "CTCF Signal"},
-        "xAxis": {
-            "title": {"text": "Genomic position (Mb)"},
-            "min": x_start_mb,
-            "max": x_end_mb
-        },
-        "yAxis": {"title": {"text": "CTCF Signal"}},
-        "series": [{
-            "name": "CTCF Signal",
-            "data": ctcf_data,
-            "color": "blue"
-        }]
-    }
-    if ds_option == "deletion" and deletion_start_mb is not None and deletion_end_mb is not None:
-        ctcf_chart_config["deletion"] = {
-            "start": deletion_start_mb,
-            "end":   deletion_end_mb
-        }
-
-    atac_data = get_signal_data(raw_atac_path)
-    atac_chart_config = {
-        "chart": {"type": "line", "height": 250},
-        "title": {"text": "ATAC Signal"},
-        "xAxis": {
-            "title": {"text": "Genomic position (Mb)"},
-            "min": x_start_mb,
-            "max": x_end_mb
-        },
-        "yAxis": {"title": {"text": "ATAC Signal"}},
-        "series": [{
-            "name": "ATAC Signal",
-            "data": atac_data,
-            "color": "green"
-        }]
-    }
-    if ds_option == "deletion" and deletion_start_mb is not None and deletion_end_mb is not None:
-        atac_chart_config["deletion"] = {
-            "start": deletion_start_mb,
-            "end":   deletion_end_mb
-        }
-
-    # ---------------------------
-    # Screening chart
-    # ---------------------------
-    screening_chart_config = None
-    screening_params = {}
-    if ds_option == "screening":
-        try:
-            perturb_width = int(request.form.get('perturb_width', '1000'))
-            step_size     = int(request.form.get('step_size', '1000'))
-        except ValueError:
-            perturb_width, step_size = 1000, 1000
-
-        from app.utils import get_user_output_folder
-        screening_params = {
-            "region_chr": region_chr,
-            "region_start": region_start,
-            "perturb_width": perturb_width,
-            "step_size": step_size,
-            "atac_bw_path": ctcf_bw_for_model,
-            "ctcf_bw_path": ctcf_bw_for_model,
-            "peaks_file": request.form.get('peaks_file_path', "").strip(),
-            "output_dir": get_user_output_folder()
-        }
-        screening_chart_config = {
-            "chart": {"type": "column", "height": 250},
-            "title": {"text": "Screening Impact Score"},
-            "xAxis": {"title": {"text": "Genomic position (Mb)"}},
-            "yAxis": {"title": {"text": "Impact Score"}},
-            "series": [{
-                "name": "Impact Score",
-                "data": [],
-                "color": "dodgerblue"
-            }]
-        }
-
-    return (
-        hi_c_chart_config,
-        ctcf_chart_config,
-        atac_chart_config,
-        screening_chart_config,
-        screening_params
-    )
-
-###############################################################################
-# Bokeh Plot Configurations (Alternate version)
-###############################################################################
-def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_option,
-                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None):
+                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None, norm_atac=None, norm_ctcf=None):
     import numpy as np
     from scipy.ndimage import rotate
 
     x_start_mb = region_start / 1e6
     x_end_mb   = region_end / 1e6
 
-    deletion = None
-    scale_factor = 1.0
-    if ds_option == "deletion" and del_start and del_width:
-        deletion = {"start": del_start / 1e6, "width": del_width / 1e6}
-        effective_length_mb = (x_end_mb - x_start_mb) - deletion["width"]
-        scale_factor = (x_end_mb - x_start_mb) / effective_length_mb
-    else:
-        effective_length_mb = x_end_mb - x_start_mb
-
     hi_c_matrix = rotate(hi_c_matrix, angle=45, reshape=True)
+
+    mask = np.any(hi_c_matrix > 0, axis=1)
+    hi_c_matrix = hi_c_matrix[mask, :]
+
     num_rows = hi_c_matrix.shape[0]
     hi_c_matrix = hi_c_matrix[:num_rows // 2, :]
     n_rows, n_cols = hi_c_matrix.shape
@@ -284,7 +95,6 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
         "xAxis": {
             "min": x_start_mb,
             "max": x_end_mb,
-            "hideTicks": (deletion is not None)
         },
         "yAxis": {"min": 0, "max": 100},
         "colorAxis": {
@@ -297,12 +107,8 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
             "name": "Hi-C Signal",
             "data": hi_c_data
         }],
-        "n_cols": n_cols,
-        "effective_length_mb": effective_length_mb,
-        "scaleFactor": scale_factor
+        "n_cols": n_cols
     }
-    if deletion:
-        hi_c_chart_config["deletion"] = deletion
 
     ctcf_positions, ctcf_values = get_bigwig_signal(ctcf_bw_for_model, region_chr, region_start, region_end)
     atac_positions, atac_values = get_bigwig_signal(raw_atac_path, region_chr, region_start, region_end)
@@ -313,15 +119,30 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
     ctcf_data = [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)]
     atac_data = [[x, y] for x, y in zip(atac_positions_mb, atac_values)]
 
+    if norm_ctcf is None or norm_ctcf == "none":
+        ctcf_title = "raw"
+    elif "predicted with maxATAC" in norm_ctcf:
+        ctcf_title = norm_ctcf
+    else:
+        ctcf_title = norm_ctcf + " normalized"
+
     ctcf_chart_config = {
         "chart": {"height": 100},
+        "title": {
+            "text": f"CTCF signal ({ctcf_title})",
+            "style": {"fontSize": "9px"}  # Adjust the font size here
+        },
         "xAxis": {"min": x_start_mb, "max": x_end_mb},
         "yAxis": {"title": "CTCF Signal"},
         "series": [{"name": "CTCF Signal", "data": ctcf_data, "color": "blue"}]
     }
     atac_chart_config = {
         "chart": {"height": 100},
-        "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": "Genomic position (Mb)"},
+        "title": {
+            "text": f"ATAC signal ({'raw' if (norm_atac is None or norm_atac == 'none') else norm_atac + ' normalized'})",
+            "style": {"fontSize": "9px"}  # Adjust the font size here
+        },
+        "xAxis": {"min": x_start_mb, "max": x_end_mb},
         "yAxis": {"title": "ATAC Signal"},
         "series": [{"name": "ATAC Signal", "data": atac_data, "color": "green"}]
     }
@@ -346,9 +167,8 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
         }
         screening_chart_config = {
             "chart": {"height": 250},
-            "xAxis": {"title": "Genomic position (Mb)"},
-            "yAxis": {"title": "Impact Score"},
-            "series": [{"name": "Impact Score", "data": [], "color": "dodgerblue"}]
+            "yAxis": {"title": "Impact score"},
+            "series": [{"name": "Impact score", "data": [], "color": "dodgerblue"}]
         }
 
     return hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params
@@ -376,9 +196,20 @@ def index():
         region_start = int(request.form.get('region_start'))
     except ValueError:
         return "Invalid start position. Please enter an integer value."
-    WINDOW_WIDTH = 2097152
-    region_end = region_start + WINDOW_WIDTH
+    DEFAULT_WINDOW = 2097152
+    MAX_WINDOW = 20971520
+    if request.form.get("allow_wider_windows"):
+        try:
+            region_end = int(request.form.get("region_end"))
+        except ValueError:
+            return "Invalid end position. Please enter an integer value."
+        if region_end > region_start + MAX_WINDOW:
+            return f"End position must be no greater than {region_start + MAX_WINDOW}."
+    else:
+        region_end = region_start + DEFAULT_WINDOW
+
     print(f"Window: {region_chr}:{region_start}-{region_end}")
+
 
     atac_bw_path = request.form.get('atac_bw_path')
     print("ATAC file path (from dropdown):", os.path.abspath(atac_bw_path))
@@ -437,10 +268,15 @@ def index():
             "--name", "predicted_ctcf"
         ]
         print("Running maxATAC for CTCF generation:", " ".join(generate_cmd))
+        # Create a temporary environment for this subprocess call.
+        temp_env = env.copy()
+        temp_env["PATH"] = "/Users/everett/anaconda3/bin:" + temp_env["PATH"]
         try:
-            subprocess.run(generate_cmd, check=True, env=env, capture_output=True, text=True)
+            subprocess.run(generate_cmd, check=True, env=temp_env, capture_output=True, text=True)
             normalized_predicted_ctcf = normalize_file(ctcf_generated, region_chr, region_start, region_end, "minmax", output_folder, "normalized_predicted_ctcf")
             ctcf_bw_for_model = normalized_predicted_ctcf
+            # Set norm_ctcf to a special string indicating it was predicted.
+            norm_ctcf = "minmax normalized, predicted with maxATAC"
             print("Predicted CTCF file generated and normalized:", ctcf_bw_for_model)
         except subprocess.CalledProcessError as e:
             return f"Error generating CTCF file: {e.stderr}"
@@ -449,6 +285,8 @@ def index():
                 os.remove(roi_file)
     else:
         ctcf_bw_for_model = normalized_ctcf
+
+
 
     model_path = "corigami_data/model_weights/atac_ctcf_model.ckpt"
     ds_option = request.form.get('ds_option', 'none')
@@ -494,13 +332,20 @@ def index():
             "--out", output_folder,
             "--ctcf", ctcf_bw_for_model
         ]
+        if region_end > region_start + DEFAULT_WINDOW:
+            cmd.extend(["--full_end", str(region_end)])
         print("Command:", " ".join(cmd))
         try:
             subprocess.run(cmd, check=True, env=env, text=True)
             print("Prediction script completed.")
         except subprocess.CalledProcessError as e:
             return f"Error running prediction script: {e.stderr}"
-        hi_c_matrix_path = os.path.join(output_folder, "prediction", "npy", f"{region_chr}_{region_start}.npy")
+        if region_end > region_start + 2097152:
+            # Consensus prediction was run, adjust the expected file path accordingly.
+            hi_c_matrix_path = os.path.join(output_folder, f"{region_chr}_{region_start}_{region_end}_consensus.npy")
+        else:
+            hi_c_matrix_path = os.path.join(output_folder, "prediction", "npy", f"{region_chr}_{region_start}.npy")
+
 
     print("Waiting for Hi-C matrix file...")
     timeout = 60
@@ -528,7 +373,7 @@ def index():
     hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params = \
         prepare_plot_configs(
             hi_c_matrix, region_chr, region_start, region_end, ds_option,
-            ctcf_bw_for_model, raw_atac_path, del_start, del_width
+            ctcf_bw_for_model, raw_atac_path, del_start, del_width, norm_atac, norm_ctcf
         )
 
     hi_c_config_json = json.dumps(hi_c_chart_config)
@@ -725,12 +570,14 @@ def run_screening_endpoint():
 
         # Build line chart config
         screening_chart_config = {
-           "chart": {"type": "line", "height": 200},
-           "title": {"text": "Screening Impact"}, 
+           "chart": {"type": "line", "height": 100},
+           "title": {
+                "text": "Impact score",
+                "style": {"fontSize": "12px"}  # Adjust the font size here
+            },
            "xAxis": {
                "min": min_val,
-               "max": max_val,
-               "title": {"text": "Genomic position (Mb)"}
+               "max": max_val
            },
            "yAxis": {"title": {"text": ""}},
            "series": [{

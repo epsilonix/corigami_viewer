@@ -3,11 +3,6 @@
 /output_new/
 /ctcf_output/
 /uploads/
-/user_data/*
-user_data/
+/user_data/
 /venv/
-# Ignore everything in the static/ folder
-static/*
-# But explicitly include styles.css
-!static/style.css
-!static/script.js
+

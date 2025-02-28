@@ -14,6 +14,8 @@ function storeFormFields() {
   localStorage.setItem("perturb_width", document.getElementById("perturb_width").value);
   localStorage.setItem("step_size", document.getElementById("step_size").value);
   localStorage.setItem("model_select", document.getElementById("model_select").value);
+  localStorage.setItem("allow_wider_windows", document.getElementById("allow_wider_windows").checked);
+
   var dsRadios = document.getElementsByName("ds_option");
   for (var i = 0; i < dsRadios.length; i++) {
     if (dsRadios[i].checked) {
@@ -52,6 +54,11 @@ function restoreFormFields() {
   if (storedCtcf) document.getElementById("ctcf_bw_path").value = storedCtcf;
   var storedPeaks = localStorage.getItem("peaks_file_path");
   if (storedPeaks) document.getElementById("peaks_file_path").value = storedPeaks;
+  var allowWider = localStorage.getItem("allow_wider_windows");
+  if (allowWider !== null) {
+    document.getElementById("allow_wider_windows").checked = (allowWider === "true");
+    toggleWiderWindow();
+  }
 }
 
 /*************************************************************
@@ -378,6 +385,11 @@ window.onload = function() {
     storeFormFields();
     validateDeletionArea();
   });
+
+  document.getElementById("allow_wider_windows").addEventListener("change", function() {
+    storeFormFields();
+    toggleWiderWindow();
+  });
   document.getElementById("perturb_width").addEventListener("input", storeFormFields);
   document.getElementById("step_size").addEventListener("input", storeFormFields);
   document.getElementById("region_chr").addEventListener("change", storeFormFields);
@@ -480,3 +492,17 @@ window.onload = function() {
     runScreening();
   }
 };
+
+function toggleWiderWindow() {
+  var allowCheckbox = document.getElementById("allow_wider_windows");
+  var endField = document.getElementById("region_end");
+  if (allowCheckbox.checked) {
+    endField.readOnly = false;
+    endField.style.backgroundColor = "#fff"; // make editable
+  } else {
+    endField.readOnly = true;
+    endField.style.backgroundColor = "#e0e0e0";
+    updateEndPosition();  // reset the field to start + default window
+  }
+}
+

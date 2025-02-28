@@ -113,11 +113,6 @@ def generate_peaks_from_bigwig_macs2(bw_path, chrom, start, end, outdir):
     print("macs2 bdgpeakcall stderr:", result_macs2.stderr)
     return auto_peaks, temp_bedgraph
 
-def create_aligned_figure(figsize, left_margin, bottom_margin):
-    fig, ax = plt.subplots(figsize=figsize)
-    fig.subplots_adjust(left=left_margin, right=0.95, top=0.95, bottom=bottom_margin)
-    return fig, ax
-
 def get_bigwig_signal(bw_path, chrom, start, end, bins=256):
     try:
         bw = pyBigWig.open(bw_path)
