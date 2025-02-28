@@ -22,10 +22,9 @@
       cursor: not-allowed;
     }
   </style>
-  <!-- Bokeh CSS -->
-  <link rel="stylesheet" href="https://cdn.bokeh.org/bokeh/release/bokeh-3.6.3.min.css" type="text/css">
-  <script src="https://cdn.bokeh.org/bokeh/release/bokeh-3.6.3.min.js"></script>
-
+  <!-- Highcharts JS -->
+  <script src="https://code.highcharts.com/highcharts.js"></script>
+  <script src="https://code.highcharts.com/modules/heatmap.js"></script>
 </head>
 <body>
   <div class="container">
@@ -91,7 +90,7 @@
             <input type="file" id="atac_bw_file" name="atac_bw_file">
           </div>
         </div>
-        <!-- ATAC File Normalization (current state) -->
+        <!-- ATAC File Normalization -->
         <div class="row">
           <div class="col-full">
             <div class="switch norm-toggle" id="atac-switch">
@@ -119,7 +118,7 @@
             <input type="file" id="ctcf_bw_file" name="ctcf_bw_file">
           </div>
         </div>
-        <!-- CTCF File Normalization (current state) -->
+        <!-- CTCF File Normalization -->
         <div class="row">
           <div class="col-full">
             <div class="switch norm-toggle" id="ctcf-switch">
@@ -133,7 +132,7 @@
             </div>
           </div>
         </div>
-        <!-- Training Normalization: Only two toggles (log and minmax) -->
+        <!-- Training Normalization -->
         <div class="row" id="training-norm-container">
           <div class="col-full">
             <label class="small-label">Apply norm method for training*:</label>
@@ -215,14 +214,28 @@
       <div id="screening_message" style="color:red;"></div>
     </div>
     <div id="output-container" class="output-container">
-      {# Render the Bokeh plots here #}
-      <div id="plots-container">
-        {{ bokeh_div|safe }}
-      </div>
+      <!-- Highcharts chart containers -->
+      <div id="hi_c_chart"></div>
+      <div id="ctcf_chart"></div>
+      <div id="atac_chart"></div>
+      {% if screening_mode %}
+      <div id="screening_chart"></div>
+      {% endif %}
     </div>
   </div>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
-  {# Include the Bokeh-generated script #}
-  {{ bokeh_script|safe }}
+  <script>
+    // Render Highcharts using the configuration objects passed from the server
+    var hiCConfig = {{ hi_c_config|safe }};
+    var ctcfConfig = {{ ctcf_config|safe }};
+    var atacConfig = {{ atac_config|safe }};
+    Highcharts.chart('hi_c_chart', hiCConfig);
+    Highcharts.chart('ctcf_chart', ctcfConfig);
+    Highcharts.chart('atac_chart', atacConfig);
+    {% if screening_mode and screening_config %}
+    var screeningConfig = {{ screening_config|safe }};
+    Highcharts.chart('screening_chart', screeningConfig);
+    {% endif %}
+  </script>
 </body>
 </html>

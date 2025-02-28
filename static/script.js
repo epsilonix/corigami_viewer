@@ -214,19 +214,39 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
 }
 
 /*************************************************************
+ * Helper to Execute Inline Scripts After AJAX Update
+ *************************************************************/
+function executeScripts(container) {
+  console.log("Executing scripts from container:", container);
+  const scripts = container.querySelectorAll("script");
+  scripts.forEach(script => {
+    console.log("Found script:", script);
+    const newScript = document.createElement("script");
+    if (script.src) {
+      newScript.src = script.src;
+      newScript.onload = function() {
+        console.log("Loaded external script:", script.src);
+      };
+    } else {
+      newScript.text = script.textContent;
+      console.log("Executing inline script (first 100 chars):", script.textContent.substring(0, 100));
+    }
+    document.head.appendChild(newScript);
+  });
+}
+
+/*************************************************************
  * Screening, CTCF Normalization & Training Norm Field
  *************************************************************/
 function runScreening() {
   console.log("runScreening() is called");
   
-  // Validate region_start
   const regionStartElem = document.getElementById("region_start");
   if (parseInt(regionStartElem.value) < 1048576) {
     alert("Cannot run screening on start position below 1,048,576!");
     return;
   }
   
-  // Show the loader and hide the screening container
   const loaderElem = document.getElementById("screening_loader");
   const imageContainerElem = document.getElementById("screening_image_container");
   if (loaderElem) {
@@ -236,7 +256,6 @@ function runScreening() {
     imageContainerElem.style.display = "none";
   }
   
-  // Build parameters object from global screening_params or form fields
   var paramsObj = window.screening_params || {
     region_chr: document.getElementById("region_chr").value,
     model_select: document.getElementById("model_select").value,
@@ -252,55 +271,21 @@ function runScreening() {
   
   console.log("Sending screening request with parameters:", paramsObj);
   const queryParams = new URLSearchParams(paramsObj).toString();
-  console.log("Query string:", queryParams);
+  console.log("Query string for screening request:", queryParams);
   
-  // Create and send the AJAX request
   const xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function() {
-    console.log("XHR state changed: readyState =", xhr.readyState, "status =", xhr.status);
+    console.log("XHR readyState:", xhr.readyState, "status:", xhr.status);
     if (xhr.readyState === 4) {
       if (loaderElem) {
         loaderElem.style.display = "none";
       }
       if (xhr.status === 200) {
-        console.log("XHR request successful. Response:", xhr.responseText);
+        console.log("Screening request successful. Response:", xhr.responseText);
         const response = JSON.parse(xhr.responseText);
-        if (response.message) {
-          if (imageContainerElem) {
-            imageContainerElem.innerHTML = "<p>" + response.message + "</p>";
-          }
-        } else {
-          if (imageContainerElem) {
-            console.log("Bokeh div from response:", response.bokeh_div);
-            imageContainerElem.innerHTML = response.bokeh_div;
-            // Instead of re-executing inline scripts from the container,
-            // look for a dedicated placeholder element for the Bokeh script.
-            var scriptHolder = document.getElementById("bokeh_script_holder");
-            if (scriptHolder) {
-              var code = scriptHolder.textContent || "";
-              // Remove any <script> tags from the code
-              code = code.replace(/<\/?script[^>]*>/g, "");
-              console.log("Evaluating Bokeh script (first 100 chars):", code.slice(0, 100));
-              try {
-                eval(code);
-              } catch (err) {
-                console.error("Error evaluating Bokeh script:", err);
-              }
-            } else {
-              // Fallback: iterate over script tags in the container
-              var scripts = imageContainerElem.querySelectorAll("script");
-              scripts.forEach(function(oldScript) {
-                var code = oldScript.textContent || "";
-                code = code.replace(/<\/?script[^>]*>/g, "");
-                console.log("Evaluating inline script (first 100 chars):", code.slice(0, 100));
-                try {
-                  eval(code);
-                } catch (err) {
-                  console.error("Error evaluating inline script:", err);
-                }
-              });
-            }
-          }
+        if (imageContainerElem) {
+          imageContainerElem.innerHTML = response.bokeh_div || "<p>Screening plot updated.</p>";
+          executeScripts(imageContainerElem);
         }
       } else {
         console.error("Error generating screening plot. Status:", xhr.status);
@@ -314,7 +299,7 @@ function runScreening() {
     }
   };
   xhr.open("GET", "/run_screening?" + queryParams, true);
-  console.log("Sending XHR request to /run_screening");
+  console.log("Sending screening request to /run_screening?" + queryParams);
   xhr.send();
 }
 
@@ -371,10 +356,8 @@ function updateTrainingNormField() {
   }
 }
 
-/*************************************************************
- * Updated Form Submission via AJAX
- *************************************************************/
 window.onload = function() {
+  console.log("Window loaded. Restoring form fields...");
   restoreFormFields();
   updateEndPosition();
   toggleOptionalFields();
@@ -459,7 +442,6 @@ window.onload = function() {
     }
   };
 
-  // Updated form submission: intercept submit and send via AJAX
   var formElem = document.getElementById("corigami-form");
   formElem.addEventListener("submit", function(e) {
     e.preventDefault();
@@ -481,48 +463,17 @@ window.onload = function() {
       return response.text();
     })
     .then(html => {
-      // Update the output container with the returned HTML (Bokeh components)
-      document.getElementById("output-container").innerHTML = html;
-      // Instead of iterating over script tags inside the container,
-      // assume the full HTML includes dedicated placeholders.
-      var bokehScriptHolder = document.getElementById("bokeh_script_holder");
-      if (bokehScriptHolder) {
-        var code = bokehScriptHolder.textContent || "";
-        code = code.replace(/<\/?script[^>]*>/g, "");
-        console.log("Evaluating Bokeh script (first 100 chars):", code.slice(0, 100));
-        try {
-          eval(code);
-        } catch (err) {
-          console.error("Error evaluating Bokeh script:", err);
-        }
-      } else {
-        // Fallback: try to execute any inline scripts within the output container.
-        var scripts = document.getElementById("output-container").querySelectorAll("script");
-        scripts.forEach(function(oldScript) {
-          var code = oldScript.textContent || "";
-          code = code.replace(/<\/?script[^>]*>/g, "");
-          console.log("Evaluating inline script (first 100 chars):", code.slice(0, 100));
-          try {
-            eval(code);
-          } catch (err) {
-            console.error("Error evaluating inline script:", err);
-          }
-        });
-      }
-      // Query for the plots container inside the updated output (for logging)
-      const plotsContainer = document.querySelector("#output-container #plots-container");
-      if (plotsContainer) {
-        console.log("Found plots container with screening flag:", plotsContainer.dataset.screening);
-      } else {
-        console.log("No plots container found in the updated output.");
-      }
+      console.log("Form submission returned HTML (first 200 chars):", html.substring(0, 200));
+      var container = document.getElementById("output-container");
+      container.innerHTML = html;
+      console.log("Executing inline scripts from AJAX response...");
+      executeScripts(container);
     })
     .catch(error => {
       console.error("Error during form submission:", error);
     });
   });
 
-  // If the page was loaded with screening mode already set, trigger screening
   if (typeof screening_mode !== "undefined" && screening_mode === true) {
     runScreening();
   }
