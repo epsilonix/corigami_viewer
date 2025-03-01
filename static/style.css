@@ -4,6 +4,16 @@
 input#peaks_file_upload {
   display: none;
 }
+.screening_title, .atac_title, .ctcf_title {
+  margin-left:25px;
+  font-size: 12px;
+}
+
+.screening_title_container, .atac_title_container, .ctcf_title_container {
+  position: sticky;
+  top: 0;
+  left:0;
+}
 #screening-fields-2 .row {
   margin-bottom: 0px !important;
   margin-top: 10px !important;
@@ -43,7 +53,7 @@ body {
 .output-container {
   flex: 1 1 65%;
   max-width: 65%;
-  padding: 20px;
+  
 }
 .row {
   display: flex;

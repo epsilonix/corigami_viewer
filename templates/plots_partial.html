@@ -1,10 +1,23 @@
 <div id="plots-container" data-screening="{{ 'true' if screening_mode else 'false' }}" style="width: 100%; overflow-x: auto;">
   <div id="hi_c_chart"></div>
-  <div id="atac_chart"></div>
+
+  <div class="atac_title_container">
+    <div class="atac_title">ATAC signal</div>
+  </div>  
+    <div id="atac_chart"></div>
+
+  <div class="ctcf_title_container">
+    <div class="ctcf_title">CTCF signal</div>
+  </div>
   <div id="ctcf_chart"></div>
-  
+
   {% if screening_mode and screening_config %}
-  <div id="screening_chart"></div>
+
+    <div class="screening_title_container">
+      <div class="screening_title">Impact score</div>
+    </div>
+    <div id="screening_chart"></div>
+
   {% endif %}
 </div>
 <!-- Remove Highcharts scripts and load D3.js with our custom plotting script -->

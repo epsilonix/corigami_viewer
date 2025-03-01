@@ -119,29 +119,14 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
     ctcf_data = [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)]
     atac_data = [[x, y] for x, y in zip(atac_positions_mb, atac_values)]
 
-    if norm_ctcf is None or norm_ctcf == "none":
-        ctcf_title = "raw"
-    elif "predicted with maxATAC" in norm_ctcf:
-        ctcf_title = norm_ctcf
-    else:
-        ctcf_title = norm_ctcf + " normalized"
-
     ctcf_chart_config = {
         "chart": {"height": 100},
-        "title": {
-            "text": f"CTCF signal ({ctcf_title})",
-            "style": {"fontSize": "9px"}  # Adjust the font size here
-        },
         "xAxis": {"min": x_start_mb, "max": x_end_mb},
         "yAxis": {"title": "CTCF Signal"},
         "series": [{"name": "CTCF Signal", "data": ctcf_data, "color": "blue"}]
     }
     atac_chart_config = {
         "chart": {"height": 100},
-        "title": {
-            "text": f"ATAC signal ({'raw' if (norm_atac is None or norm_atac == 'none') else norm_atac + ' normalized'})",
-            "style": {"fontSize": "9px"}  # Adjust the font size here
-        },
         "xAxis": {"min": x_start_mb, "max": x_end_mb},
         "yAxis": {"title": "ATAC Signal"},
         "series": [{"name": "ATAC Signal", "data": atac_data, "color": "green"}]
@@ -439,7 +424,7 @@ def run_screening_endpoint():
     try:
         region_chr = request.args.get('region_chr', 'chr2')
         screen_start = int(request.args.get('region_start', '500000'))
-        screen_end = screen_start + WINDOW_WIDTH
+        screen_end = int(request.args.get('region_end', screen_start + WINDOW_WIDTH))
         perturb_width = int(request.args.get('perturb_width', '1000'))
         step_size = int(request.args.get('step_size', '1000'))
         
@@ -571,10 +556,6 @@ def run_screening_endpoint():
         # Build line chart config
         screening_chart_config = {
            "chart": {"type": "line", "height": 100},
-           "title": {
-                "text": "Impact score",
-                "style": {"fontSize": "12px"}  # Adjust the font size here
-            },
            "xAxis": {
                "min": min_val,
                "max": max_val

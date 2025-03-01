@@ -42,93 +42,131 @@ function createHiResCanvas(containerSelector, width, height) {
  * In deletion mode (if config.deletion exists), the hi-c matrix is stretched horizontally
  * using config.scaleFactor and the x-axis ticks are drawn.
  */
+/**
+ * Draws the Hi-C heatmap on a canvas, ensuring the x-axis aligns with the other plots.
+ * The matrix's column indices are converted to genomic coordinates so that
+ * tick marks (and their labels) match the x-axis of the line charts.
+ */
+/**
+ * Draws the Hi-C heatmap on a canvas, ensuring the x-axis aligns with the other plots.
+ * The matrix's column indices are converted to genomic coordinates so that
+ * tick marks (and their labels) match the x-axis of the line charts.
+ */
 function drawHiCChart(containerSelector, config) {
   // Margins and dimensions.
   const margin = { top: 0, right: 20, bottom: 50, left: 50 };
-  const fullWidth = (config.xAxis.max - config.xAxis.min) * PX_PER_MB;
-  
-  // Compute number of rows from data.
+
+  // The total genomic span in megabases.
+  const genomicSpan = config.xAxis.max - config.xAxis.min;
+  // The width in pixels (shared with other plots).
+  const fullWidth = genomicSpan * PX_PER_MB;
+
+  // Number of rows from the data (max row index + 1).
   const maxRow = d3.max(config.series[0].data, d => d[1]);
   const n_rows = maxRow + 1;
+  // Number of columns is stored in config.n_cols (from prepare_plot_configs).
+  const n_cols = config.n_cols;
+
+  // Canvas height for the heatmap area.
   const height = config.chart.height || 250;
-  const cellHeight = height / n_rows; // each row gets an equal share of the drawing area
-  
-  // Total canvas dimensions.
   const canvasWidth = fullWidth + margin.left + margin.right;
   const canvasHeight = height + margin.top + margin.bottom;
-  
-  // Create a high-resolution canvas.
+
+  // Create a high-resolution canvas and translate by margins.
   const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
-  
-  // Translate the context by the margins.
   ctx.translate(margin.left, margin.top);
-  
-  // Define scales.
-  const colScale = d3.scaleLinear()
-    .domain([0, config.n_cols])
-    .range([0, fullWidth]);
-  const rowScale = d3.scaleLinear()
-    .domain([0, n_rows])
-    .range([0, height]);
-  
-  // Use scaleFactor if deletion mode is active.
-  const sf = config.deletion ? config.scaleFactor : 1;
-  
-  // Color scale.
-  const colorScale = d3.scaleLinear()
-    .domain([config.colorAxis.min, config.colorAxis.max])
-    .range([config.colorAxis.minColor, config.colorAxis.maxColor]);
-  
-  // Draw each cell.
-  config.series[0].data.forEach(d => {
-    const x = colScale(d[0]) * sf;
-    const y = rowScale(d[1]);
-    const w = (colScale(1) - colScale(0)) * sf;
-    const h = rowScale(1) - rowScale(0);
-    ctx.fillStyle = colorScale(d[2]);
-    ctx.fillRect(x, y, w, h);
-  });
-  
-  // --- Draw the x-axis ---
-  // Create an x-scale for axis ticks.
+
+  // This scale converts matrix column indices (0..n_cols) to genomic coords in Mb.
+  // Example: 0 -> config.xAxis.min, n_cols -> config.xAxis.max
+  const colIndexToMb = d3.scaleLinear()
+    .domain([0, n_cols])
+    .range([config.xAxis.min, config.xAxis.max]);
+
+  // This scale is used to map genomic coordinates (in Mb) to final x positions (pixels).
+  // It's exactly the same as the line chart's x-scale for consistency.
   const xScale = d3.scaleLinear()
     .domain([config.xAxis.min, config.xAxis.max])
     .range([0, fullWidth]);
-  
-  // Save context and move to the bottom of the drawing area.
+
+  // For rows, we keep a straightforward index-based scale:
+  // domain = [0..n_rows], range = [0..height].
+  const rowScale = d3.scaleLinear()
+    .domain([0, n_rows])
+    .range([0, height]);
+
+  // If deletion mode is active, use the provided scale factor for x-stretching.
+  // (Alternatively, you can remove or comment this out if you don't need horizontal stretching.)
+  const sf = config.deletion ? config.scaleFactor : 1;
+
+  // Define the color scale for cell values.
+  const colorScale = d3.scaleLinear()
+    .domain([config.colorAxis.min, config.colorAxis.max])
+    .range([config.colorAxis.minColor, config.colorAxis.maxColor]);
+
+  // Draw each cell in the heatmap.
+  // d = [colIndex, rowIndex, heatmapValue]
+  config.series[0].data.forEach(d => {
+    const colIdx = d[0];
+    const rowIdx = d[1];
+    const value = d[2];
+
+    // Convert column index to genomic MB, then to final pixel x.
+    const mbLeft = colIndexToMb(colIdx);
+    const mbRight = colIndexToMb(colIdx + 1); // next column over
+    const xLeft = xScale(mbLeft) * sf;
+    const xRight = xScale(mbRight) * sf;
+    const w = xRight - xLeft; // cell width in px
+
+    // Convert row index to y coordinate.
+    const yTop = rowScale(rowIdx);
+    const h = rowScale(rowIdx + 1) - yTop; // cell height
+
+    ctx.fillStyle = colorScale(value);
+    ctx.fillRect(xLeft, yTop, w, h);
+  });
+
+  // --- Draw the x-axis (same approach as in drawLineChart) ---
   ctx.save();
-  ctx.translate(0, height);
-  
-  // Draw axis line.
+  ctx.translate(0, height); // move down to the bottom of the heatmap
+
+  // Draw the baseline axis line.
   ctx.beginPath();
   ctx.moveTo(0, 0);
-  ctx.lineTo(fullWidth, 0);
+  ctx.lineTo(fullWidth * sf, 0);
   ctx.strokeStyle = "black";
   ctx.stroke();
-  
-  // Generate ticks and draw them.
-  const ticks = xScale.ticks(10);
+
+  // Generate ticks from the same domain as the line chart.
+  // If you want them to compress/expand under deletion, you can apply * sf here.
+  const xTicks = xScale.ticks(10);
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.font = "10px sans-serif";
-  ticks.forEach(tick => {
-    const xPos = xScale(tick);
-    // Draw tick mark.
+  xTicks.forEach(tick => {
+    // xScale(tick) is the pixel position for the coordinate "tick" in Mb
+    const xPos = xScale(tick) * sf;
+
+    // Draw the tick mark.
     ctx.beginPath();
     ctx.moveTo(xPos, 0);
     ctx.lineTo(xPos, 6);
     ctx.stroke();
-    // Draw tick label.
+
+    // Tick label: e.g. "5.00"
     ctx.fillText(d3.format(".2f")(tick), xPos, 6);
   });
   ctx.restore();
-  
-  // Draw x-axis title.
+
+  // Optionally, draw an x-axis title if provided in config.
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   ctx.font = "12px sans-serif";
-  ctx.fillText(config.xAxis.title, fullWidth / 2, height + margin.bottom - 5);
+  if (config.xAxis.title) {
+    ctx.fillText(config.xAxis.title, (fullWidth * sf) / 2, height + margin.bottom - 5);
+  }
 }
+
+
 
 /**
  * Draws a line chart for signal plots (CTCF or ATAC) on a canvas.
@@ -221,7 +259,9 @@ function drawLineChart(containerSelector, config) {
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   ctx.font = "12px sans-serif";
-  ctx.fillText(config.xAxis.title, fullWidth / 2, height + margin.bottom - 5);
+  if (config.xAxis.title) {
+    ctx.fillText(config.xAxis.title, fullWidth / 2, height + margin.bottom - 5);
+  }
   
   // Chart title if provided.
   if (config.title && config.title.text) {
@@ -337,7 +377,9 @@ function drawColumnChart(containerSelector, config) {
   ctx.textAlign = "center";
   ctx.textBaseline = "bottom";
   ctx.font = "12px sans-serif";
-  ctx.fillText(config.xAxis.title.text, fullWidth / 2, height + margin.bottom - 10);
+  if (config.xAxis.title) {
+    ctx.fillText(config.xAxis.title, fullWidth / 2, height + margin.bottom - 5);
+  }
   
   // y-axis title.
   ctx.save();
