@@ -1,3 +1,10 @@
+p.loading-screening-text {
+  font-size: 12px;
+  margin-left: 25px;
+  color: green;
+  text-decoration: underline;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
 }
@@ -278,7 +285,7 @@ input[type="number"] {
   color: black;
 }
 .instructions-link {
-  margin-bottom: 10px;
+  margin-bottom: 20px;
   font-size: 0.9em;
 }
 .instructions-link a {

@@ -14,7 +14,9 @@ function storeFormFields() {
   localStorage.setItem("perturb_width", document.getElementById("perturb_width").value);
   localStorage.setItem("step_size", document.getElementById("step_size").value);
   localStorage.setItem("model_select", document.getElementById("model_select").value);
-  localStorage.setItem("allow_wider_windows", document.getElementById("allow_wider_windows").checked);
+  localStorage.setItem("atac_bw_path", document.getElementById("atac_bw_path").value);
+  localStorage.setItem("ctcf_bw_path", document.getElementById("ctcf_bw_path").value);
+  localStorage.setItem("peaks_file_path", document.getElementById("peaks_file_path").value);
 
   var dsRadios = document.getElementsByName("ds_option");
   for (var i = 0; i < dsRadios.length; i++) {
@@ -23,9 +25,6 @@ function storeFormFields() {
       break;
     }
   }
-  localStorage.setItem("atac_bw_path", document.getElementById("atac_bw_path").value);
-  localStorage.setItem("ctcf_bw_path", document.getElementById("ctcf_bw_path").value);
-  localStorage.setItem("peaks_file_path", document.getElementById("peaks_file_path").value);
 }
 
 function restoreFormFields() {
@@ -54,11 +53,6 @@ function restoreFormFields() {
   if (storedCtcf) document.getElementById("ctcf_bw_path").value = storedCtcf;
   var storedPeaks = localStorage.getItem("peaks_file_path");
   if (storedPeaks) document.getElementById("peaks_file_path").value = storedPeaks;
-  var allowWider = localStorage.getItem("allow_wider_windows");
-  if (allowWider !== null) {
-    document.getElementById("allow_wider_windows").checked = (allowWider === "true");
-    toggleWiderWindow();
-  }
 }
 
 /*************************************************************
@@ -69,7 +63,10 @@ function updateEndPosition() {
   var endField = document.getElementById("region_end");
   var startVal = parseInt(startField.value);
   if (!isNaN(startVal)) {
-    endField.value = startVal + WINDOW_WIDTH;
+    // Only set the default if end position is blank or invalid.
+    if (!endField.value || isNaN(parseInt(endField.value))) {
+      endField.value = startVal + WINDOW_WIDTH;
+    }
   } else {
     endField.value = "";
   }
@@ -257,7 +254,7 @@ function runScreening() {
   // Use the screening_chart element as the container.
   const screeningContainerElem = document.getElementById("screening_chart");
   if (screeningContainerElem) {
-    screeningContainerElem.innerHTML = "<p>Loading screening plot...</p>";
+    screeningContainerElem.innerHTML = "<p class='loading-screening-text'>Loading screening plot</p>";
   }
 
   var paramsObj = {
@@ -309,8 +306,6 @@ function runScreening() {
   console.log("Sending screening request to /run_screening?" + queryParams);
   xhr.send();
 }
-
-
 
 function updateCtcfNormalization() {
   var ctcfSelect = document.getElementById('ctcf_bw_path');
@@ -386,10 +381,6 @@ window.onload = function() {
     validateDeletionArea();
   });
 
-  document.getElementById("allow_wider_windows").addEventListener("change", function() {
-    storeFormFields();
-    toggleWiderWindow();
-  });
   document.getElementById("perturb_width").addEventListener("input", storeFormFields);
   document.getElementById("step_size").addEventListener("input", storeFormFields);
   document.getElementById("region_chr").addEventListener("change", storeFormFields);
@@ -492,17 +483,3 @@ window.onload = function() {
     runScreening();
   }
 };
-
-function toggleWiderWindow() {
-  var allowCheckbox = document.getElementById("allow_wider_windows");
-  var endField = document.getElementById("region_end");
-  if (allowCheckbox.checked) {
-    endField.readOnly = false;
-    endField.style.backgroundColor = "#fff"; // make editable
-  } else {
-    endField.readOnly = true;
-    endField.style.backgroundColor = "#e0e0e0";
-    updateEndPosition();  // reset the field to start + default window
-  }
-}
-

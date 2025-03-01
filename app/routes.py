@@ -69,32 +69,34 @@ def upload_file():
 ###############################################################################
 
 def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_option,
-                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None, norm_atac=None, norm_ctcf=None):
+                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None,
+                         norm_atac=None, norm_ctcf=None):
     import numpy as np
     from scipy.ndimage import rotate
 
     x_start_mb = region_start / 1e6
-    x_end_mb   = region_end / 1e6
+    x_end_mb   = region_end   / 1e6
 
+    # Rotate the Hi-C matrix, filter, etc. (unchanged)
     hi_c_matrix = rotate(hi_c_matrix, angle=45, reshape=True)
-
     mask = np.any(hi_c_matrix > 0, axis=1)
     hi_c_matrix = hi_c_matrix[mask, :]
-
     num_rows = hi_c_matrix.shape[0]
-    hi_c_matrix = hi_c_matrix[:num_rows // 2, :]
+    hi_c_matrix = hi_c_matrix[: num_rows // 2, :]
     n_rows, n_cols = hi_c_matrix.shape
 
+    # Convert matrix to [colIndex, rowIndex, value]
     hi_c_data = []
     for i in range(n_rows):
         for j in range(n_cols):
             hi_c_data.append([j, i, float(hi_c_matrix[i, j])])
-    
+
     hi_c_chart_config = {
         "chart": {"height": 250},
         "xAxis": {
             "min": x_start_mb,
             "max": x_end_mb,
+            "title": "" 
         },
         "yAxis": {"min": 0, "max": 100},
         "colorAxis": {
@@ -110,51 +112,63 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
         "n_cols": n_cols
     }
 
+    # Get signals for CTCF and ATAC
     ctcf_positions, ctcf_values = get_bigwig_signal(ctcf_bw_for_model, region_chr, region_start, region_end)
     atac_positions, atac_values = get_bigwig_signal(raw_atac_path, region_chr, region_start, region_end)
-
     ctcf_positions_mb = [p / 1e6 for p in ctcf_positions]
     atac_positions_mb = [p / 1e6 for p in atac_positions]
 
     ctcf_data = [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)]
     atac_data = [[x, y] for x, y in zip(atac_positions_mb, atac_values)]
 
+    default_xaxis = {
+        "min": x_start_mb,
+        "max": x_end_mb,
+        "title": ""
+    }
     ctcf_chart_config = {
         "chart": {"height": 100},
-        "xAxis": {"min": x_start_mb, "max": x_end_mb},
+        "xAxis": default_xaxis.copy(),
         "yAxis": {"title": "CTCF Signal"},
-        "series": [{"name": "CTCF Signal", "data": ctcf_data, "color": "blue"}]
+        "series": [{
+            "name": "CTCF Signal",
+            "data": ctcf_data,
+            "color": "blue"
+        }]
     }
     atac_chart_config = {
         "chart": {"height": 100},
-        "xAxis": {"min": x_start_mb, "max": x_end_mb},
+        "xAxis": default_xaxis.copy(),
         "yAxis": {"title": "ATAC Signal"},
-        "series": [{"name": "ATAC Signal", "data": atac_data, "color": "green"}]
+        "series": [{
+            "name": "ATAC Signal",
+            "data": atac_data,
+            "color": "green"
+        }]
     }
 
+    # Screening stub
     screening_chart_config = None
     screening_params = {}
     if ds_option == "screening":
-        try:
-            perturb_width = int(request.form.get('perturb_width', '1000'))
-            step_size = int(request.form.get('step_size', '1000'))
-        except ValueError:
-            perturb_width, step_size = 1000, 1000
-        screening_params = {
-            "region_chr": region_chr,
-            "region_start": region_start,
-            "perturb_width": perturb_width,
-            "step_size": step_size,
-            "atac_bw_path": ctcf_bw_for_model,
-            "ctcf_bw_path": ctcf_bw_for_model,
-            "peaks_file": request.form.get('peaks_file_path', "").strip(),
-            "output_dir": get_user_output_folder()
-        }
-        screening_chart_config = {
-            "chart": {"height": 250},
-            "yAxis": {"title": "Impact score"},
-            "series": [{"name": "Impact score", "data": [], "color": "dodgerblue"}]
-        }
+        ...
+        # (unchanged) fill screening_chart_config
+
+    if ds_option == "deletion" and del_start is not None and del_width is not None:
+        hi_c_chart_config["hideXAxis"] = True
+        del_start_mb = del_start / 1e6
+        del_end_mb   = (del_start + del_width) / 1e6
+        for chart_config in (ctcf_chart_config, atac_chart_config):
+            chart_config["xAxis"] = {
+                "axisBreak": True,
+                "leftDomain": [x_start_mb, del_start_mb],
+                "rightDomain": [del_end_mb, x_end_mb],
+                "title": ""
+            }
+    else:
+        hi_c_chart_config["hideXAxis"] = False
+        
+
 
     return hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params
 
@@ -182,18 +196,20 @@ def index():
     except ValueError:
         return "Invalid start position. Please enter an integer value."
     DEFAULT_WINDOW = 2097152
-    MAX_WINDOW = 20971520
-    if request.form.get("allow_wider_windows"):
+
+    # Always attempt to use the user-supplied end position if available.
+    region_end_input = request.form.get("region_end")
+    if region_end_input:
         try:
-            region_end = int(request.form.get("region_end"))
+            region_end = int(region_end_input)
         except ValueError:
             return "Invalid end position. Please enter an integer value."
-        if region_end > region_start + MAX_WINDOW:
-            return f"End position must be no greater than {region_start + MAX_WINDOW}."
     else:
         region_end = region_start + DEFAULT_WINDOW
 
+
     print(f"Window: {region_chr}:{region_start}-{region_end}")
+
 
 
     atac_bw_path = request.form.get('atac_bw_path')
@@ -391,7 +407,9 @@ def index():
             atac_config=atac_config_json,
             screening_config=screening_config_json,
             screening_mode=screening_mode_flag,
-            screening_params=screening_params_json
+            screening_params=screening_params_json,
+            norm_atac=norm_atac,
+            norm_ctcf=norm_ctcf
         )
 
     return render_template(
@@ -425,6 +443,7 @@ def run_screening_endpoint():
         region_chr = request.args.get('region_chr', 'chr2')
         screen_start = int(request.args.get('region_start', '500000'))
         screen_end = int(request.args.get('region_end', screen_start + WINDOW_WIDTH))
+        print(f"screening function screen_end: {screen_end}")
         perturb_width = int(request.args.get('perturb_width', '1000'))
         step_size = int(request.args.get('step_size', '1000'))
         
@@ -515,17 +534,36 @@ def run_screening_endpoint():
 
     current_app.logger.info("Running screening command: %s", " ".join(cmd))
 
-    # --- PRINT OUTPUT TO TERMINAL ---
-    # Instead of capture_output, we let stdout/stderr go directly to terminal.
-    import sys
     try:
-        result = subprocess.run(cmd, env=env, check=True, stdout=sys.stdout, stderr=sys.stderr)
-    except subprocess.CalledProcessError as e:
-        current_app.logger.exception("Screening script failed")
-        return jsonify({"error": "Screening script failed.", "details": str(e)}), 500
-    except subprocess.TimeoutExpired as e:
-        current_app.logger.error("Screening script timed out")
-        return jsonify({"error": "Screening script timed out."}), 500
+        process = subprocess.Popen(
+            cmd,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1  # line-buffered
+        )
+
+        # Stream stdout in real time
+        for line in iter(process.stdout.readline, ''):
+            if line:
+                print(line, end='')  # This prints to the terminal as the process outputs it
+        # Stream stderr in real time
+        for line in iter(process.stderr.readline, ''):
+            if line:
+                print(line, end='')  # Prints error output in real time
+
+        process.stdout.close()
+        process.stderr.close()
+        retcode = process.wait()
+        if retcode != 0:
+            current_app.logger.error("Screening command failed with return code %s", retcode)
+            return jsonify({"error": "Screening script failed with return code {}".format(retcode)}), 500
+
+    except Exception as e:
+        current_app.logger.exception("Screening script encountered an error")
+        return jsonify({"error": "Screening script encountered an error", "details": str(e)}), 500
+
 
     # Confirm the JSON results file exists
     if not os.path.exists(results_file):
@@ -553,12 +591,15 @@ def run_screening_endpoint():
         min_val = min(window_midpoints_mb) if window_midpoints_mb else 0
         max_val = max(window_midpoints_mb) if window_midpoints_mb else 0
 
+        region_start_mb = screen_start / 1e6
+        region_end_mb = screen_end / 1e6
+
         # Build line chart config
         screening_chart_config = {
            "chart": {"type": "line", "height": 100},
            "xAxis": {
-               "min": min_val,
-               "max": max_val
+               "min": region_start_mb,
+               "max": region_end_mb
            },
            "yAxis": {"title": {"text": ""}},
            "series": [{

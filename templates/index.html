@@ -45,6 +45,23 @@
       <form id="corigami-form" method="post" action="/" enctype="multipart/form-data">
         <input type="hidden" id="output_dir" value="{{ user_output_folder }}">
         <!-- Model and Chromosome Row -->
+         <!-- Deletion/Screening Toggle -->
+        <div class="row">
+          <div class="col-full">
+            <div class="switch ds-toggle">
+              <input id="ds_none" name="ds_option" type="radio" value="none" class="switch-input" required
+                     {% if request.form.ds_option == 'none' or not request.form.ds_option %}checked{% endif %}>
+              <label for="ds_none" class="switch-label">Prediction</label>
+              <input id="ds_deletion" name="ds_option" type="radio" value="deletion" class="switch-input" required
+                     {% if request.form.ds_option == 'deletion' %}checked{% endif %}>
+              <label for="ds_deletion" class="switch-label">Deletion</label>
+              <input id="ds_screening" name="ds_option" type="radio" value="screening" class="switch-input" required
+                     {% if request.form.ds_option == 'screening' %}checked{% endif %}>
+              <label for="ds_screening" class="switch-label">Screening</label>
+              <span class="switch-selector"></span>
+            </div>
+          </div>
+        </div>
         <div class="row">
           <div class="col-half">
             <label for="model_select" class="small-label">Model*:</label>
@@ -73,15 +90,11 @@
           </div>
           <div class="col-half">
             <label for="region_end" class="small-label">End Position (bp):</label>
-            <input type="number" id="region_end" name="region_end" style="background-color: #e0e0e0;" readonly>
+            <input type="number" id="region_end" name="region_end">
           </div>
         </div>
-        <div class="row">
-          <div class="col-full">
-            <input type="checkbox" id="allow_wider_windows" name="allow_wider_windows">
-            <label for="allow_wider_windows">Allow wider windows</label>
-          </div>
-        </div>
+        <!-- (Removed Allow Wider Windows checkbox and its related logic) -->
+
         <!-- ATAC‑seq BigWig File -->
         <div class="row file-input-container atac-input-container">
           <div class="col-full">
@@ -151,24 +164,7 @@
           </div>
         </div>
         <hr class="separator">
-        <!-- Deletion/Screening Toggle -->
-        <div class="row">
-          <div class="col-full">
-            <label class="small-label">Deletion/screening?*:</label>
-            <div class="switch ds-toggle">
-              <input id="ds_none" name="ds_option" type="radio" value="none" class="switch-input" required
-                     {% if request.form.ds_option == 'none' or not request.form.ds_option %}checked{% endif %}>
-              <label for="ds_none" class="switch-label">None</label>
-              <input id="ds_deletion" name="ds_option" type="radio" value="deletion" class="switch-input" required
-                     {% if request.form.ds_option == 'deletion' %}checked{% endif %}>
-              <label for="ds_deletion" class="switch-label">Deletion</label>
-              <input id="ds_screening" name="ds_option" type="radio" value="screening" class="switch-input" required
-                     {% if request.form.ds_option == 'screening' %}checked{% endif %}>
-              <label for="ds_screening" class="switch-label">Screening</label>
-              <span class="switch-selector"></span>
-            </div>
-          </div>
-        </div>
+        
         <!-- Deletion Parameters -->
         <div id="deletion-fields" class="optional-row" style="display: none;">
           <div class="row">
@@ -244,3 +240,4 @@
   </script>
 </body>
 </html>
+ 

@@ -125,7 +125,7 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
         peaks_df = peaks_df[(peaks_df['mid'] >= screen_start) & (peaks_df['mid'] <= screen_end)]
         
         # Determine number of peaks to select.
-        num_peaks = int((screen_end - screen_start) // 200000)
+        num_peaks = int((screen_end - screen_start) // 400000)
         print("Selecting top {} peaks by score from {} available peaks".format(num_peaks, len(peaks_df)))
         
         # Sort peaks by score (column index 4) in descending order and take the top num_peaks.
