@@ -453,6 +453,11 @@ window.onload = function() {
     if (!checkFormRequirements()) {
       return false;
     }
+
+    var container = document.getElementById("output-container");
+    // Insert loader while the plots are being modified.
+    container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';
+
     var formData = new FormData(formElem);
     fetch("/", {
       method: "POST",
@@ -483,3 +488,4 @@ window.onload = function() {
     runScreening();
   }
 };
+

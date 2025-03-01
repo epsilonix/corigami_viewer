@@ -4,6 +4,20 @@ p.loading-screening-text {
   color: green;
   text-decoration: underline;
 }
+#output-container {
+  display: flex;
+  align-items: center;
+  justify-content: center; /* or any height you want to ensure vertical centering */
+}
+.loader {
+  width: 50px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 8px solid lightblue;
+  border-right-color: orange;
+  animation: l2 1s infinite linear;
+}
+@keyframes l2 {to{transform: rotate(1turn)}}
 
 *, *::before, *::after {
   box-sizing: border-box;
