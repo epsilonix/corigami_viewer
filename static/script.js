@@ -254,7 +254,7 @@ function runScreening() {
   // Use the screening_chart element as the container.
   const screeningContainerElem = document.getElementById("screening_chart");
   if (screeningContainerElem) {
-    screeningContainerElem.innerHTML = "<p class='loading-screening-text'>Loading screening plot</p>";
+    screeningContainerElem.innerHTML = "<div class='loader' style='display: block; margin: 0 auto;'></div>";
   }
 
   var paramsObj = {

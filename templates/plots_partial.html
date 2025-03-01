@@ -2,12 +2,12 @@
   <div id="hi_c_chart"></div>
 
   <div class="atac_title_container">
-    <div class="atac_title">ATAC signal ({{ norm_atac }})</div>
-  </div>  
-    <div id="atac_chart"></div>
-
+    <div class="atac_title">ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})</div>
+  </div>
+  <div id="atac_chart"></div>
+  
   <div class="ctcf_title_container">
-    <div class="ctcf_title">CTCF signal ({{ norm_ctcf }})</div>
+    <div class="ctcf_title">CTCF signal ({{ "raw" if norm_ctcf == "none" else norm_ctcf ~ " normalization" }})</div>
   </div>
   <div id="ctcf_chart"></div>
 
