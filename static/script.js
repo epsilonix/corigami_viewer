@@ -1,108 +1,78 @@
-//script.js
 /*************************************************************
- * Constants, Global Vars
+ * Constants and Global Variables
  *************************************************************/
-const WINDOW_WIDTH = 2097152;
+const WINDOW_WIDTH = 2097152; // 2 Mb window
 
 /*************************************************************
  * Local Storage Helpers
  *************************************************************/
 function storeFormFields() {
-  localStorage.setItem("region_chr", document.getElementById("region_chr").value);
-  localStorage.setItem("region_start", document.getElementById("region_start").value);
-  localStorage.setItem("del_start", document.getElementById("del_start").value);
-  localStorage.setItem("del_width", document.getElementById("del_width").value);
-  localStorage.setItem("perturb_width", document.getElementById("perturb_width").value);
-  localStorage.setItem("step_size", document.getElementById("step_size").value);
-  localStorage.setItem("model_select", document.getElementById("model_select").value);
-  localStorage.setItem("atac_bw_path", document.getElementById("atac_bw_path").value);
-  localStorage.setItem("ctcf_bw_path", document.getElementById("ctcf_bw_path").value);
-  localStorage.setItem("peaks_file_path", document.getElementById("peaks_file_path").value);
+  const fields = ["region_chr", "region_start", "del_start", "del_width", "perturb_width", "step_size", "model_select", "atac_bw_path", "ctcf_bw_path", "peaks_file_path"];
+  fields.forEach(field => {
+    const elem = document.getElementById(field);
+    if (elem) localStorage.setItem(field, elem.value);
+  });
 
-   // Save normalization settings, assuming these elements always exist.
-   var normAtacRadio = document.querySelector('input[name="norm_atac"]:checked');
-   if (normAtacRadio) {
-     localStorage.setItem("norm_atac", normAtacRadio.value);
-   }
-   var normCtcfRadio = document.querySelector('input[name="norm_ctcf"]:checked');
-   if (normCtcfRadio) {
-     localStorage.setItem("norm_ctcf", normCtcfRadio.value);
-   }
+  const normAtacRadio = document.querySelector('input[name="norm_atac"]:checked');
+  if (normAtacRadio) localStorage.setItem("norm_atac", normAtacRadio.value);
 
-  var dsRadios = document.getElementsByName("ds_option");
-  for (var i = 0; i < dsRadios.length; i++) {
-    if (dsRadios[i].checked) {
-      localStorage.setItem("ds_option", dsRadios[i].value);
+  const normCtcfRadio = document.querySelector('input[name="norm_ctcf"]:checked');
+  if (normCtcfRadio) localStorage.setItem("norm_ctcf", normCtcfRadio.value);
+
+  const dsRadios = document.getElementsByName("ds_option");
+  for (let radio of dsRadios) {
+    if (radio.checked) {
+      localStorage.setItem("ds_option", radio.value);
       break;
     }
   }
 }
 
 function restoreFormFields() {
-  var regionChr = localStorage.getItem("region_chr");
-  if (regionChr) document.getElementById("region_chr").value = regionChr;
-  var regionStart = localStorage.getItem("region_start");
-  if (regionStart) document.getElementById("region_start").value = regionStart;
-  var delStart = localStorage.getItem("del_start");
-  if (delStart) document.getElementById("del_start").value = delStart;
-  var delWidth = localStorage.getItem("del_width");
-  if (delWidth) document.getElementById("del_width").value = delWidth;
-  var perturbWidth = localStorage.getItem("perturb_width");
-  if (perturbWidth) document.getElementById("perturb_width").value = perturbWidth;
-  var stepSize = localStorage.getItem("step_size");
-  if (stepSize) document.getElementById("step_size").value = stepSize;
-  var modelSelect = localStorage.getItem("model_select");
-  if (modelSelect) document.getElementById("model_select").value = modelSelect;
+  const fields = ["region_chr", "region_start", "del_start", "del_width", "perturb_width", "step_size", "model_select", "atac_bw_path", "ctcf_bw_path", "peaks_file_path", "genome_select"];
+  fields.forEach(field => {
+    const storedVal = localStorage.getItem(field);
+    const elem = document.getElementById(field);
+    if (storedVal && elem) elem.value = storedVal;
+  });
 
-  // Restore normalization settings
-  var normAtac = localStorage.getItem("norm_atac");
+  const normAtac = localStorage.getItem("norm_atac");
   if (normAtac) {
-    var normAtacRadio = document.querySelector(`input[name="norm_atac"][value="${normAtac}"]`);
-    if (normAtacRadio) normAtacRadio.checked = true;
+    const radio = document.querySelector(`input[name="norm_atac"][value="${normAtac}"]`);
+    if (radio) radio.checked = true;
   }
-  var normCtcf = localStorage.getItem("norm_ctcf");
+  const normCtcf = localStorage.getItem("norm_ctcf");
   if (normCtcf) {
-    var normCtcfRadio = document.querySelector(`input[name="norm_ctcf"][value="${normCtcf}"]`);
-    if (normCtcfRadio) normCtcfRadio.checked = true;
+    const radio = document.querySelector(`input[name="norm_ctcf"][value="${normCtcf}"]`);
+    if (radio) radio.checked = true;
   }
-  
 
-
-  var dsOption = localStorage.getItem("ds_option");
+  const dsOption = localStorage.getItem("ds_option");
   if (dsOption) {
-    var radioElem = document.getElementById("ds_" + dsOption);
+    const radioElem = document.getElementById("ds_" + dsOption);
     if (radioElem) radioElem.checked = true;
   }
-  var storedAtac = localStorage.getItem("atac_bw_path");
-  if (storedAtac) document.getElementById("atac_bw_path").value = storedAtac;
-  var storedCtcf = localStorage.getItem("ctcf_bw_path");
-  if (storedCtcf) document.getElementById("ctcf_bw_path").value = storedCtcf;
-  var storedPeaks = localStorage.getItem("peaks_file_path");
-  if (storedPeaks) document.getElementById("peaks_file_path").value = storedPeaks;
 }
 
 /*************************************************************
  * Form Behavior Helpers
  *************************************************************/
 function updateEndPosition() {
-  var startField = document.getElementById("region_start");
-  var endField = document.getElementById("region_end");
-  var startVal = parseInt(startField.value);
-  if (!isNaN(startVal)) {
-    // Only set the default if end position is blank or invalid.
-    if (!endField.value || isNaN(parseInt(endField.value))) {
-      endField.value = startVal + WINDOW_WIDTH;
-    }
+  const startField = document.getElementById("region_start");
+  const endField = document.getElementById("region_end");
+  const startVal = parseInt(startField.value);
+  if (!isNaN(startVal) && (!endField.value || isNaN(parseInt(endField.value)))) {
+    endField.value = startVal + WINDOW_WIDTH;
   } else {
     endField.value = "";
   }
 }
 
 function toggleOptionalFields() {
-  var dsOption = document.querySelector('input[name="ds_option"]:checked');
-  var delFields = document.getElementById("deletion-fields");
-  var scrFields = document.getElementById("screening-fields-2");
-  var peaksContainer = document.getElementById("peaks_file_container");
+  const dsOption = document.querySelector('input[name="ds_option"]:checked');
+  const delFields = document.getElementById("deletion-fields");
+  const scrFields = document.getElementById("screening-fields-2");
+  const peaksContainer = document.getElementById("peaks_file_container");
   if (dsOption) {
     if (dsOption.value === "deletion") {
       if (delFields) delFields.style.display = "block";
@@ -120,35 +90,16 @@ function toggleOptionalFields() {
   }
 }
 
-function validateDeletionArea() {
-  var regionStart = parseInt(document.getElementById("region_start").value);
-  var regionEnd = regionStart + WINDOW_WIDTH;
-  var deletionStart = parseInt(document.getElementById("del_start").value);
-  var deletionWidth = parseInt(document.getElementById("del_width").value);
-  var deletionEnd = deletionStart + deletionWidth;
-  var errorElem = document.getElementById("deletion-error");
-  if (deletionStart < regionStart || deletionEnd > regionEnd) {
-    errorElem.style.display = "block";
-  } else {
-    errorElem.style.display = "none";
-  }
-}
-
 function checkFormRequirements() {
-  var dsOption = document.querySelector('input[name="ds_option"]:checked');
+  const dsOption = document.querySelector('input[name="ds_option"]:checked');
   if (!dsOption) return true;
-  var dsVal = dsOption.value;
-  if (dsVal === "deletion") {
-    var delStartVal = document.getElementById("del_start").value.trim();
-    var delWidthVal = document.getElementById("del_width").value.trim();
-    if (!delStartVal || !delWidthVal) {
+  if (dsOption.value === "deletion") {
+    if (!document.getElementById("del_start").value.trim() || !document.getElementById("del_width").value.trim()) {
       alert("Please provide both Deletion Start and Deletion Width for Deletion mode.");
       return false;
     }
-  } else if (dsVal === "screening") {
-    var perturbVal = document.getElementById("perturb_width").value.trim();
-    var stepVal = document.getElementById("step_size").value.trim();
-    if (!perturbVal || !stepVal) {
+  } else if (dsOption.value === "screening") {
+    if (!document.getElementById("perturb_width").value.trim() || !document.getElementById("step_size").value.trim()) {
       alert("Please provide both Perturb Width and Step Size for Screening mode.");
       return false;
     }
@@ -160,37 +111,31 @@ function checkFormRequirements() {
  * File Dropdown Handling
  *************************************************************/
 function populateDropdownFromServer(selectId, fileType) {
-  var selectElem = document.getElementById(selectId);
-  var xhr = new XMLHttpRequest();
+  const selectElem = document.getElementById(selectId);
+  const xhr = new XMLHttpRequest();
   xhr.open("GET", "/list_uploads?file_type=" + encodeURIComponent(fileType));
   xhr.onload = function() {
     if (xhr.status === 200) {
-      var serverFiles = JSON.parse(xhr.responseText);
-      for (var i = selectElem.options.length - 1; i >= 0; i--) {
-        var option = selectElem.options[i];
+      const serverFiles = JSON.parse(xhr.responseText);
+      for (let i = selectElem.options.length - 1; i >= 0; i--) {
+        const option = selectElem.options[i];
         if (option.value !== "none" && !option.value.startsWith("./corigami_data")) {
           selectElem.remove(i);
         }
       }
-      serverFiles.forEach(function(file) {
-        var exists = false;
-        for (var j = 0; j < selectElem.options.length; j++) {
-          if (selectElem.options[j].value === file.value) {
-            exists = true;
-            break;
-          }
-        }
+      serverFiles.forEach(file => {
+        const exists = Array.from(selectElem.options).some(opt => opt.value === file.value);
         if (!exists) {
-          var newOption = document.createElement("option");
+          const newOption = document.createElement("option");
           newOption.value = file.value;
           newOption.text = file.name;
           selectElem.appendChild(newOption);
         }
       });
-      var storedVal = localStorage.getItem(selectId);
+      const storedVal = localStorage.getItem(selectId);
       if (storedVal) {
-        for (var k = 0; k < selectElem.options.length; k++) {
-          if (selectElem.options[k].value === storedVal) {
+        for (let option of selectElem.options) {
+          if (option.value === storedVal) {
             selectElem.value = storedVal;
             break;
           }
@@ -206,22 +151,21 @@ function populateDropdownFromServer(selectId, fileType) {
  * AJAX File Upload Helper
  *************************************************************/
 function ajaxUploadFile(fileInputId, fileType, dropdownId) {
-  var fileInput = document.getElementById(fileInputId);
+  const fileInput = document.getElementById(fileInputId);
   if (!fileInput.files || fileInput.files.length === 0) {
     console.log("No file selected for", fileType);
     return;
   }
-  var file = fileInput.files[0];
+  const file = fileInput.files[0];
   console.log("Selected file for " + fileType + ":", file.name);
   
-  // Get the associated upload button (the label for the file input)
-  var uploadButton = document.querySelector("label[for='" + fileInputId + "']");
+  const uploadButton = document.querySelector("label[for='" + fileInputId + "']");
   if (uploadButton) {
     uploadButton.textContent = 'Uploading...';
     uploadButton.classList.add('loading');
   }
   
-  var formData = new FormData();
+  const formData = new FormData();
   if (fileType === "peaks") {
     formData.append("peaks_file", file);
   } else {
@@ -238,8 +182,8 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
       console.error("Upload error for " + fileType + ":", data.error);
     } else {
       console.log("Upload successful for " + fileType + ":", data);
-      var dropdown = document.getElementById(dropdownId);
-      var newOption = document.createElement("option");
+      const dropdown = document.getElementById(dropdownId);
+      const newOption = document.createElement("option");
       newOption.value = data.saved_path;
       newOption.text = data.display_name;
       dropdown.appendChild(newOption);
@@ -249,7 +193,6 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
   })
   .catch(error => console.error("Error uploading file for " + fileType + ":", error))
   .finally(() => {
-    // Reset the button once the upload is complete or fails
     if (uploadButton) {
       uploadButton.textContent = 'Upload';
       uploadButton.classList.remove('loading');
@@ -264,40 +207,33 @@ function executeScripts(container) {
   console.log("Executing scripts from container:", container);
   const scripts = container.querySelectorAll("script");
   scripts.forEach(script => {
-    console.log("Found script:", script);
     const newScript = document.createElement("script");
     if (script.src) {
       newScript.src = script.src;
-      newScript.onload = function() {
-        console.log("Loaded external script:", script.src);
-      };
+      newScript.onload = () => console.log("Loaded external script:", script.src);
     } else {
       newScript.text = script.textContent;
-      console.log("Executing inline script (first 100 chars):", script.textContent.substring(0, 100));
+      console.log("Executing inline script:", script.textContent.substring(0, 100));
     }
     document.head.appendChild(newScript);
   });
 }
 
 /*************************************************************
- * Screening, CTCF Normalization & Training Norm Field
+ * Screening and Normalization Helpers
  *************************************************************/
 function runScreening() {
   console.log("runScreening() is called");
-
   const regionStartElem = document.getElementById("region_start");
   if (parseInt(regionStartElem.value) < 1048576) {
     alert("Cannot run screening on start position below 1,048,576!");
     return;
   }
-
-  // Use the screening_chart element as the container.
   const screeningContainerElem = document.getElementById("screening_chart");
   if (screeningContainerElem) {
     screeningContainerElem.innerHTML = "<div class='loader' style='display: block; margin: 0 auto;'></div>";
   }
-
-  var paramsObj = {
+  const paramsObj = {
     region_chr: document.getElementById("region_chr").value,
     model_select: document.getElementById("model_select").value,
     region_start: document.getElementById("region_start").value,
@@ -309,30 +245,22 @@ function runScreening() {
     output_dir: document.getElementById("output_dir").value,
     peaks_file: document.getElementById("peaks_file_path").value
   };
-
-  console.log("Sending screening request with parameters:", paramsObj);
   const queryParams = new URLSearchParams(paramsObj).toString();
-  console.log("Query string for screening request:", queryParams);
-
+  console.log("Sending screening request with parameters:", paramsObj);
   const xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function() {
-    console.log("XHR readyState:", xhr.readyState, "status:", xhr.status);
     if (xhr.readyState === 4) {
       if (xhr.status === 200) {
         console.log("Screening request successful. Response:", xhr.responseText);
         const response = JSON.parse(xhr.responseText);
         if (response.screening_config) {
-          // Parse the screening config JSON
           const screeningConfig = JSON.parse(response.screening_config);
-          // Clear the container and render the plot with your D3 drawing function.
           if (screeningContainerElem) {
             screeningContainerElem.innerHTML = "";
             drawColumnChart('#screening_chart', screeningConfig);
           }
-        } else {
-          if (screeningContainerElem) {
-            screeningContainerElem.innerHTML = "<p>No screening config returned.</p>";
-          }
+        } else if (screeningContainerElem) {
+          screeningContainerElem.innerHTML = "<p>No screening config returned.</p>";
         }
       } else {
         console.error("Error generating screening plot. Status:", xhr.status);
@@ -348,11 +276,11 @@ function runScreening() {
 }
 
 function updateCtcfNormalization() {
-  var ctcfSelect = document.getElementById('ctcf_bw_path');
-  var ctcfSwitch = document.getElementById('ctcf-switch');
-  var ctcfNoNorm = document.getElementById('ctcf-no-norm');
-  var ctcfLog = document.getElementById('ctcf-log');
-  var ctcfMinmax = document.getElementById('ctcf-minmax');
+  const ctcfSelect = document.getElementById('ctcf_bw_path');
+  const ctcfSwitch = document.getElementById('ctcf-switch');
+  const ctcfNoNorm = document.getElementById('ctcf-no-norm');
+  const ctcfLog = document.getElementById('ctcf-log');
+  const ctcfMinmax = document.getElementById('ctcf-minmax');
   if (ctcfSelect.value === 'none') {
     ctcfNoNorm.disabled = true;
     ctcfLog.disabled = true;
@@ -367,10 +295,10 @@ function updateCtcfNormalization() {
 }
 
 function updateTrainingNormField() {
-  var ctcfFile = document.getElementById("ctcf_bw_path").value;
-  var atacState = document.querySelector('input[name="norm_atac"]:checked').value;
-  var ctcfState = document.querySelector('input[name="norm_ctcf"]:checked').value;
-  var trainingContainer = document.getElementById("training-norm-container");
+  const ctcfFile = document.getElementById("ctcf_bw_path").value;
+  const atacState = document.querySelector('input[name="norm_atac"]:checked').value;
+  const ctcfState = document.querySelector('input[name="norm_ctcf"]:checked').value;
+  const trainingContainer = document.getElementById("training-norm-container");
   if (ctcfFile === "none") {
     document.getElementById("training-minmax").checked = true;
     document.getElementById("training-log").disabled = true;
@@ -400,137 +328,10 @@ function updateTrainingNormField() {
   }
 }
 
-window.onload = function() {
-  console.log("Window loaded. Restoring form fields...");
-  restoreFormFields();
-  updateEndPosition();
-  toggleOptionalFields();
-  updateCtcfNormalization();
-  updateTrainingNormField();
-
-  document.getElementById("region_start").addEventListener("input", function() {
-    storeFormFields();
-    updateEndPosition();
-  });
-  document.getElementById("del_start").addEventListener("input", function() {
-    storeFormFields();
-    validateDeletionArea();
-  });
-  document.getElementById("del_width").addEventListener("input", function() {
-    storeFormFields();
-    validateDeletionArea();
-  });
-
-  document.getElementById("perturb_width").addEventListener("input", storeFormFields);
-  document.getElementById("step_size").addEventListener("input", storeFormFields);
-  document.getElementById("region_chr").addEventListener("change", storeFormFields);
-  document.getElementById("model_select").addEventListener("change", storeFormFields);
-  
-  var dsRadios = document.getElementsByName("ds_option");
-  for (var i = 0; i < dsRadios.length; i++) {
-    dsRadios[i].addEventListener("change", function() {
-      storeFormFields();
-      toggleOptionalFields();
-    });
-  }
-  
-  var ctcfSelectElem = document.getElementById("ctcf_bw_path");
-  ctcfSelectElem.addEventListener("change", function() {
-    storeFormFields();
-    updateCtcfNormalization();
-    updateTrainingNormField();
-  });
-  
-  var normRadios = document.getElementsByName("norm_atac");
-  for (var i = 0; i < normRadios.length; i++) {
-    normRadios[i].addEventListener("change", updateTrainingNormField);
-  }
-  
-  var ctcfNormRadios = document.getElementsByName("norm_ctcf");
-  for (var i = 0; i < ctcfNormRadios.length; i++) {
-    ctcfNormRadios[i].addEventListener("change", updateTrainingNormField);
-  }
-
-  // Initial population of dropdowns
-  populateDropdownFromServer("atac_bw_path", "atac");
-  populateDropdownFromServer("ctcf_bw_path", "ctcf");
-  populateDropdownFromServer("peaks_file_path", "peaks");
-
-  // Attach change event listeners for immediate AJAX upload of files:
-  document.getElementById("atac_bw_file").addEventListener("change", function() {
-    ajaxUploadFile("atac_bw_file", "atac", "atac_bw_path");
-  });
-  document.getElementById("ctcf_bw_file").addEventListener("change", function() {
-    ajaxUploadFile("ctcf_bw_file", "ctcf", "ctcf_bw_path");
-  });
-  document.getElementById("peaks_file_upload").addEventListener("change", function() {
-    ajaxUploadFile("peaks_file_upload", "peaks", "peaks_file_path");
-  });
-
-  var modal = document.getElementById("instructions-modal");
-  var btn = document.getElementById("openModal");
-  var span = document.getElementsByClassName("close")[0];
-  if (btn) {
-    btn.onclick = function(e) {
-      e.preventDefault();
-      modal.style.display = "block";
-    };
-  }
-  if (span) {
-    span.onclick = function() {
-      modal.style.display = "none";
-    };
-  }
-  window.onclick = function(event) {
-    if (event.target == modal) {
-      modal.style.display = "none";
-    }
-  };
-
-  var formElem = document.getElementById("corigami-form");
-  formElem.addEventListener("submit", function(e) {
-    e.preventDefault();
-    if (!checkFormRequirements()) {
-      return false;
-    }
-
-    var container = document.getElementById("output-container");
-    // Insert loader while the plots are being modified.
-    container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';
-
-    var formData = new FormData(formElem);
-    fetch("/", {
-      method: "POST",
-      body: formData,
-      headers: {
-        "X-Requested-With": "XMLHttpRequest"
-      }
-    })
-    .then(response => {
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
-      }
-      return response.text();
-    })
-    .then(html => {
-      console.log("Form submission returned HTML (first 200 chars):", html.substring(0, 200));
-      var container = document.getElementById("output-container");
-      container.innerHTML = html;
-      console.log("Executing inline scripts from AJAX response...");
-      executeScripts(container);
-    })
-    .catch(error => {
-      console.error("Error during form submission:", error);
-    });
-  });
-
-  if (typeof screening_mode !== "undefined" && screening_mode === true) {
-    runScreening();
-  }
-};
-
+/*************************************************************
+ * Validate Deletion Area (Single Definition)
+ *************************************************************/
 function validateDeletionArea() {
-  // Get the form elements.
   const regionStartElem = document.getElementById("region_start");
   const regionEndElem = document.getElementById("region_end");
   const delStartElem = document.getElementById("del_start");
@@ -539,18 +340,14 @@ function validateDeletionArea() {
   
   if (!regionStartElem || !delStartElem || !delWidthElem) return;
   
-  // Parse the numeric values.
   const regionStart = parseInt(regionStartElem.value);
-  // If region_end field is provided and valid, use it; otherwise default to region_start + WINDOW_WIDTH.
   const regionEnd = (regionEndElem && regionEndElem.value && !isNaN(parseInt(regionEndElem.value)))
                       ? parseInt(regionEndElem.value)
                       : regionStart + WINDOW_WIDTH;
-  
   const deletionStart = parseInt(delStartElem.value);
   const deletionWidth = parseInt(delWidthElem.value);
   const deletionEnd = deletionStart + deletionWidth;
   
-  // Check that the deletion falls entirely within the region.
   if (deletionStart < regionStart || deletionEnd > regionEnd) {
     errorElem.style.display = "block";
     errorElem.textContent = "Deletion area is out of bounds";
@@ -558,3 +355,115 @@ function validateDeletionArea() {
     errorElem.style.display = "none";
   }
 }
+
+/*************************************************************
+ * Window onload: Attach Event Listeners and Initialize
+ *************************************************************/
+window.onload = function() {
+  console.log("Window loaded. Restoring form fields...");
+  restoreFormFields();
+  updateEndPosition();
+  toggleOptionalFields();
+  updateCtcfNormalization();
+  updateTrainingNormField();
+
+  document.getElementById("region_start").addEventListener("input", () => {
+    storeFormFields();
+    updateEndPosition();
+  });
+  document.getElementById("del_start").addEventListener("input", () => {
+    storeFormFields();
+    validateDeletionArea();
+  });
+  document.getElementById("del_width").addEventListener("input", () => {
+    storeFormFields();
+    validateDeletionArea();
+  });
+  document.getElementById("perturb_width").addEventListener("input", storeFormFields);
+  document.getElementById("step_size").addEventListener("input", storeFormFields);
+  document.getElementById("region_chr").addEventListener("change", storeFormFields);
+  document.getElementById("model_select").addEventListener("change", storeFormFields);
+
+  const dsRadios = document.getElementsByName("ds_option");
+  dsRadios.forEach(radio => {
+    radio.addEventListener("change", () => {
+      storeFormFields();
+      toggleOptionalFields();
+    });
+  });
+
+  const ctcfSelectElem = document.getElementById("ctcf_bw_path");
+  ctcfSelectElem.addEventListener("change", () => {
+    storeFormFields();
+    updateCtcfNormalization();
+    updateTrainingNormField();
+  });
+
+  document.getElementsByName("norm_atac").forEach(radio => {
+    radio.addEventListener("change", updateTrainingNormField);
+  });
+  document.getElementsByName("norm_ctcf").forEach(radio => {
+    radio.addEventListener("change", updateTrainingNormField);
+  });
+
+  // Populate dropdowns
+  populateDropdownFromServer("atac_bw_path", "atac");
+  populateDropdownFromServer("ctcf_bw_path", "ctcf");
+  populateDropdownFromServer("peaks_file_path", "peaks");
+
+  // Attach immediate AJAX upload for file inputs
+  document.getElementById("atac_bw_file").addEventListener("change", () => {
+    ajaxUploadFile("atac_bw_file", "atac", "atac_bw_path");
+  });
+  document.getElementById("ctcf_bw_file").addEventListener("change", () => {
+    ajaxUploadFile("ctcf_bw_file", "ctcf", "ctcf_bw_path");
+  });
+  document.getElementById("peaks_file_upload").addEventListener("change", () => {
+    ajaxUploadFile("peaks_file_upload", "peaks", "peaks_file_path");
+  });
+
+  // Modal handling for instructions
+  const modal = document.getElementById("instructions-modal");
+  const btn = document.getElementById("openModal");
+  const span = document.getElementsByClassName("close")[0];
+  if (btn) {
+    btn.onclick = (e) => {
+      e.preventDefault();
+      modal.style.display = "block";
+    };
+  }
+  if (span) {
+    span.onclick = () => { modal.style.display = "none"; };
+  }
+  window.onclick = (event) => {
+    if (event.target === modal) modal.style.display = "none";
+  };
+
+  // Form submission via AJAX
+  const formElem = document.getElementById("corigami-form");
+  formElem.addEventListener("submit", function(e) {
+    e.preventDefault();
+    if (!checkFormRequirements()) return false;
+    const container = document.getElementById("output-container");
+    container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';
+    const formData = new FormData(formElem);
+    fetch("/", {
+      method: "POST",
+      body: formData,
+      headers: { "X-Requested-With": "XMLHttpRequest" }
+    })
+    .then(response => {
+      if (!response.ok) throw new Error("Network response was not ok");
+      return response.text();
+    })
+    .then(html => {
+      container.innerHTML = html;
+      executeScripts(container);
+    })
+    .catch(error => console.error("Error during form submission:", error));
+  });
+
+  if (typeof screening_mode !== "undefined" && screening_mode === true) {
+    runScreening();
+  }
+};

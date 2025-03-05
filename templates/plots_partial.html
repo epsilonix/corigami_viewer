@@ -1,25 +1,28 @@
-<!-- plots_partial.html -->
 <div id="plots-container" data-screening="{{ 'true' if screening_mode else 'false' }}" style="width: 100%; overflow-x: auto;">
   <div id="hi_c_chart"></div>
   <div id="gene_track_chart"></div>
   <div class="atac_title_container">
-    <div class="atac_title"><span class="atac-square"></span>ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})</div>
+    <div class="atac_title">
+      <span class="atac-square"></span>ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})
+    </div>
   </div>
   <div id="atac_chart"></div>
-  
   <div class="ctcf_title_container">
-    <div class="ctcf_title"><span class="ctcf-square"></span>CTCF signal ({{ "raw" if norm_ctcf == "none" else norm_ctcf ~ " normalization" }})</div>
+    <div class="ctcf_title">
+      <span class="ctcf-square"></span>CTCF signal ({{ "raw" if norm_ctcf == "none" else norm_ctcf ~ " normalization" }})
+    </div>
   </div>
   <div id="ctcf_chart"></div>
-
-    {% if screening_mode %}
+  {% if screening_mode %}
     <div class="screening_title_container">
-      <div class="screening_title"><span class="screening-square"></span>Impact score</div>
+      <div class="screening_title">
+        <span class="screening-square"></span>Impact score
+      </div>
     </div>
     <div id="screening_chart"></div>
   {% endif %}
 </div>
-<!-- Remove Highcharts scripts and load D3.js with our custom plotting script -->
+<!-- Ensure D3.js and d3_plots.js are loaded -->
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
 <script>
@@ -30,8 +33,8 @@
   drawLineChart('#ctcf_chart', ctcfConfig);
   drawLineChart('#atac_chart', atacConfig);
   {% if screening_mode and screening_config %}
-  var screeningConfig = {{ screening_config|safe }};
-  drawColumnChart('#screening_chart', screeningConfig);
+    var screeningConfig = {{ screening_config|safe }};
+    drawColumnChart('#screening_chart', screeningConfig);
   {% endif %}
 
   var geneTrackConfig = {{ gene_track_config|safe }};
@@ -44,15 +47,11 @@
     window.screening_params = JSON.parse(document.getElementById('screening-params').getAttribute('data-screening'));
   </script>
 {% else %}
-  <script>
-    window.screening_mode = false;
-  </script>
+  <script> window.screening_mode = false; </script>
 {% endif %}
-<!-- In plots_partial.html -->
 {% if screening_mode %}
   <script>
-    // We already set window.screening_mode = true above.
-    // Now actually call runScreening().
+    // Call runScreening() if screening mode is active.
     runScreening();
   </script>
 {% endif %}

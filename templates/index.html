@@ -1,4 +1,3 @@
-<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,16 +5,16 @@
   <title>C.Origami Viewer</title>
   <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
   {% if screening_mode %}
-  <script>
-    var screening_mode = true;
-    var screening_params = {{ screening_params|safe }};
-  </script>
+    <script>
+      var screening_mode = true;
+      var screening_params = {{ screening_params|safe }};
+    </script>
   {% else %}
-  <script>
-    var screening_mode = false;
-  </script>
+    <script>
+      var screening_mode = false;
+    </script>
   {% endif %}
-  <!-- Remove Highcharts and load D3.js with our custom plotting script -->
+  <!-- Load D3.js and our custom plotting script -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
   <style>
@@ -45,8 +44,7 @@
       </div>
       <form id="corigami-form" method="post" action="/" enctype="multipart/form-data">
         <input type="hidden" id="output_dir" value="{{ user_output_folder }}">
-        <!-- Model and Chromosome Row -->
-         <!-- Deletion/Screening Toggle -->
+        <!-- Deletion/Screening Toggle -->
         <div class="row">
           <div class="col-full">
             <div class="switch ds-toggle">
@@ -63,19 +61,24 @@
             </div>
           </div>
         </div>
-        <!-- Row for Model -->
+        <!-- Model Selection -->
         <div class="row">
           <div class="col-full">
             <label for="model_select" class="small-label">Model*:</label>
             <select id="model_select" name="model_select" required>
-              <option value="V1" {% if request.form.model_select == 'V1' %}selected{% endif %}>V1 (Jimin's model, uses log norm)</option>
-              <option value="V2" {% if request.form.model_select == 'V2' %}selected{% endif %}>V2 (Javier's model, uses minmax norm)</option>
-              <option value="V3" {% if request.form.model_select == 'V3' %}selected{% endif %}>V3 (Romane's model, uses log norm)</option>
+              <option value="V1" {% if request.form.model_select == 'V1' %}selected{% endif %}>
+                V1 (Jimin's model, uses log norm)
+              </option>
+              <option value="V2" {% if request.form.model_select == 'V2' %}selected{% endif %}>
+                V2 (Javier's model, uses minmax norm)
+              </option>
+              <option value="V3" {% if request.form.model_select == 'V3' %}selected{% endif %}>
+                V3 (Romane's model, uses log norm)
+              </option>
             </select>
           </div>
         </div>
-
-        <!-- Row for Genome and Chromosome -->
+        <!-- Genome and Chromosome -->
         <div class="row">
           <div class="col-half">
             <label for="genome_select" class="small-label">Genome*:</label>
@@ -96,7 +99,7 @@
             </select>
           </div>
         </div>
-        <!-- Start and End Position Row -->
+        <!-- Start and End Positions -->
         <div class="row">
           <div class="col-half">
             <label for="region_start" class="small-label">Start Position (bp)*:</label>
@@ -107,8 +110,6 @@
             <input type="number" id="region_end" name="region_end">
           </div>
         </div>
-        <!-- (Removed Allow Wider Windows checkbox and its related logic) -->
-
         <!-- ATAC‑seq BigWig File -->
         <div class="row file-input-container atac-input-container">
           <div class="col-full">
@@ -178,7 +179,6 @@
           </div>
         </div>
         <hr class="separator">
-        
         <!-- Deletion Parameters -->
         <div id="deletion-fields" class="optional-row" style="display: none;">
           <div class="row">
@@ -229,19 +229,18 @@
       <div id="screening_message" style="color:red;"></div>
     </div>
     <div id="output-container" class="output-container">
-      
       <!-- D3 chart containers -->
       <div id="hi_c_chart"></div>
       <div id="ctcf_chart"></div>
       <div id="atac_chart"></div>
       {% if screening_mode %}
-      <div id="screening_chart"></div>
+        <div id="screening_chart"></div>
       {% endif %}
     </div>
   </div>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
   <script>
-    // Render D3 plots using the configuration objects passed from the server
+    // Render D3 plots using configuration objects passed from the server
     var hiCConfig = {{ hi_c_config|safe }};
     var ctcfConfig = {{ ctcf_config|safe }};
     var atacConfig = {{ atac_config|safe }};
@@ -249,10 +248,9 @@
     drawLineChart('#ctcf_chart', ctcfConfig);
     drawLineChart('#atac_chart', atacConfig);
     {% if screening_mode and screening_config %}
-    var screeningConfig = {{ screening_config|safe }};
-    drawColumnChart('#screening_chart', screeningConfig);
+      var screeningConfig = {{ screening_config|safe }};
+      drawColumnChart('#screening_chart', screeningConfig);
     {% endif %}
   </script>
 </body>
 </html>
- 

@@ -1,6 +1,3 @@
-#routes.py
-test_mode = False
-
 import os
 import subprocess
 import json
@@ -10,7 +7,6 @@ import numpy as np
 from PIL import Image
 from scipy.ndimage import rotate
 from flask import Blueprint, render_template, request, url_for, jsonify, session, current_app
-
 
 from app.utils import (
     get_upload_folder,
@@ -25,6 +21,7 @@ from app.utils import (
 )
 
 main = Blueprint('main', __name__)
+test_mode = False
 
 @main.before_request
 def before_request():
@@ -63,112 +60,6 @@ def upload_file():
 ###############################################################################
 # Main Page: Handle Form Submission or Render
 ###############################################################################
-
-def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_option,
-                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None,
-                         norm_atac=None, norm_ctcf=None):
-    import numpy as np
-    from scipy.ndimage import rotate
-
-    x_start_mb = region_start / 1e6
-    x_end_mb   = region_end   / 1e6
-
-    # Rotate the Hi-C matrix, filter, etc. (unchanged)
-    hi_c_matrix = rotate(hi_c_matrix, angle=45, reshape=True)
-    mask = np.any(hi_c_matrix > 0, axis=1)
-    hi_c_matrix = hi_c_matrix[mask, :]
-    num_rows = hi_c_matrix.shape[0]
-    hi_c_matrix = hi_c_matrix[: num_rows // 2, :]
-    n_rows, n_cols = hi_c_matrix.shape
-
-    # Convert matrix to [colIndex, rowIndex, value]
-    hi_c_data = []
-    for i in range(n_rows):
-        for j in range(n_cols):
-            hi_c_data.append([j, i, float(hi_c_matrix[i, j])])
-
-    hi_c_chart_config = {
-        "chart": {"height": 250},
-        "xAxis": {
-            "min": x_start_mb,
-            "max": x_end_mb,
-            "title": "" 
-        },
-        "yAxis": {"min": 0, "max": 100},
-        "colorAxis": {
-            "min": 0,
-            "max": float(np.nanmax(hi_c_matrix)),
-            "minColor": "#ffffff",
-            "maxColor": "#7f0000"
-        },
-        "series": [{
-            "name": "Hi-C Signal",
-            "data": hi_c_data
-        }],
-        "n_cols": n_cols
-    }
-
-    # Get signals for CTCF and ATAC
-    ctcf_positions, ctcf_values = get_bigwig_signal(ctcf_bw_for_model, region_chr, region_start, region_end)
-    atac_positions, atac_values = get_bigwig_signal(raw_atac_path, region_chr, region_start, region_end)
-    ctcf_positions_mb = [p / 1e6 for p in ctcf_positions]
-    atac_positions_mb = [p / 1e6 for p in atac_positions]
-
-    ctcf_data = [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)]
-    atac_data = [[x, y] for x, y in zip(atac_positions_mb, atac_values)]
-
-    default_xaxis = {
-        "min": x_start_mb,
-        "max": x_end_mb,
-        "title": ""
-    }
-    ctcf_chart_config = {
-        "chart": {"height": 100},
-        "xAxis": default_xaxis.copy(),
-        "yAxis": {"title": "CTCF Signal"},
-        "series": [{
-            "name": "CTCF Signal",
-            "data": ctcf_data,
-            "color": "blue"
-        }]
-    }
-    atac_chart_config = {
-        "chart": {"height": 100},
-        "xAxis": default_xaxis.copy(),
-        "yAxis": {"title": "ATAC Signal"},
-        "series": [{
-            "name": "ATAC Signal",
-            "data": atac_data,
-            "color": "green"
-        }]
-    }
-
-    # Screening stub
-    screening_chart_config = None
-    screening_params = {}
-    if ds_option == "screening":
-        ...
-        # (unchanged) fill screening_chart_config
-
-    if ds_option == "deletion" and del_start is not None and del_width is not None:
-        hi_c_chart_config["hideXAxis"] = True
-        del_start_mb = del_start / 1e6
-        del_end_mb   = (del_start + del_width) / 1e6
-        for chart_config in (ctcf_chart_config, atac_chart_config):
-            chart_config["xAxis"] = {
-                "axisBreak": True,
-                "leftDomain": [x_start_mb, del_start_mb],
-                "rightDomain": [del_end_mb, x_end_mb],
-                "title": ""
-            }
-    else:
-        hi_c_chart_config["hideXAxis"] = False
-        
-
-
-    return hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params
-
-@main.route('/', methods=['GET', 'POST'])
 @main.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'GET':
@@ -179,7 +70,6 @@ def index():
     atac_upload_folder = get_upload_folder("atac")
     ctcf_upload_folder = get_upload_folder("ctcf")
     peaks_upload_folder = get_upload_folder("peaks")
-
     output_folder = get_user_output_folder()
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     PYTHON_SRC_PATH = os.path.join(BASE_DIR, "..", "C.Origami", "src")
@@ -210,7 +100,7 @@ def index():
     except ValueError:
         return "Invalid start position. Please enter an integer value."
 
-    DEFAULT_WINDOW = 2097152
+    DEFAULT_WINDOW = WINDOW_WIDTH
     region_end_input = request.form.get("region_end")
     if region_end_input:
         try:
@@ -226,7 +116,6 @@ def index():
     print("ATAC file path (from dropdown):", os.path.abspath(atac_bw_path))
     ctcf_bw_path = (request.form.get('ctcf_bw_path') or "").strip()
     peaks_file = request.form.get('peaks_file_path', "").strip()
-
     norm_atac = request.form.get('norm_atac')
     norm_ctcf = request.form.get('norm_ctcf')
     training_norm_selection = request.form.get('training_norm')
@@ -237,22 +126,15 @@ def index():
     raw_atac_path = atac_bw_path
     raw_ctcf_path = ctcf_bw_path if ctcf_bw_path and ctcf_bw_path != "none" else None
 
-    # Handle normalization or auto-CTCF generation
     if raw_ctcf_path:
         if norm_atac != "none" or norm_ctcf != "none":
             if norm_atac != "none" and norm_ctcf != "none" and norm_atac != norm_ctcf:
                 return "Uploaded files must use the same normalization method."
             training_norm = norm_atac if norm_atac != "none" else norm_ctcf
-            if norm_atac == "none":
-                normalized_atac = normalize_file(raw_atac_path, region_chr, region_start, region_end,
-                                                 training_norm, output_folder, "normalized_atac")
-            else:
-                normalized_atac = raw_atac_path
-            if norm_ctcf == "none":
-                normalized_ctcf = normalize_file(raw_ctcf_path, region_chr, region_start, region_end,
-                                                 training_norm, output_folder, "normalized_ctcf")
-            else:
-                normalized_ctcf = raw_ctcf_path
+            normalized_atac = raw_atac_path if norm_atac != "none" else normalize_file(raw_atac_path, region_chr, region_start, region_end,
+                                                                                          training_norm, output_folder, "normalized_atac")
+            normalized_ctcf = raw_ctcf_path if norm_ctcf != "none" else normalize_file(raw_ctcf_path, region_chr, region_start, region_end,
+                                                                                        training_norm, output_folder, "normalized_ctcf")
         else:
             if not training_norm_selection:
                 return "Please select the normalization method used during training."
@@ -262,7 +144,6 @@ def index():
             normalized_ctcf = normalize_file(raw_ctcf_path, region_chr, region_start, region_end,
                                              training_norm, output_folder, "normalized_ctcf")
     else:
-        # If no CTCF file was provided
         training_norm = "minmax"
         if norm_atac != "none":
             return "Non-normalized ATAC signal is required to predict CTCF when no CTCF file is provided."
@@ -271,7 +152,6 @@ def index():
 
     atac_bw_for_model = normalized_atac
 
-    # Possibly generate CTCF from ATAC if user provided none
     if not raw_ctcf_path:
         print("No CTCF file provided; generating CTCF file using raw ATAC signal...")
         roi_file = os.path.join(output_folder, "temp_roi.bed")
@@ -286,8 +166,6 @@ def index():
             "--name", "predicted_ctcf"
         ]
         print("Running maxATAC for CTCF generation:", " ".join(generate_cmd))
-        # temp_env = env.copy()
-        # temp_env["PATH"] = "/Users/everett/anaconda3/bin:" + temp_env["PATH"]
         try:
             subprocess.run(generate_cmd, check=True, env=env, capture_output=True, text=True)
             normalized_predicted_ctcf = normalize_file(ctcf_generated, region_chr, region_start, region_end,
@@ -306,7 +184,6 @@ def index():
     ds_option = request.form.get('ds_option', 'none')
     print("Selected ds_option:", ds_option)
 
-    # Possibly run deletion
     if ds_option == "deletion":
         print("Running deletion process...")
         try:
@@ -359,8 +236,7 @@ def index():
             print("Prediction script completed.")
         except subprocess.CalledProcessError as e:
             return f"Error running prediction script: {e.stderr}"
-        if region_end > region_start + 2097152:
-            # For consensus predictions
+        if region_end > region_start + WINDOW_WIDTH:
             hi_c_matrix_path = os.path.join(
                 output_folder, f"{region_chr}_{region_start}_{region_end}_consensus.npy"
             )
@@ -369,7 +245,6 @@ def index():
                 output_folder, "prediction", "npy", f"{region_chr}_{region_start}.npy"
             )
 
-    # Wait for Hi-C matrix
     print("Waiting for Hi-C matrix file...")
     timeout = 60
     start_time_wait = time.time()
@@ -388,7 +263,7 @@ def index():
     except Exception as e:
         print(f"Warning: could not remove {hi_c_matrix_path} - {e}")
 
-    # Prepare final plot configs
+    from app.routes import prepare_plot_configs, prepare_gene_track_config
     hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params = \
         prepare_plot_configs(
             hi_c_matrix,
@@ -404,7 +279,6 @@ def index():
             norm_ctcf
         )
 
-    # >>> FIX: pass ds_option, del_start, del_width to gene_track_config <<<
     gene_track_config = prepare_gene_track_config(
         genome,
         region_chr,
@@ -415,7 +289,6 @@ def index():
         del_width=del_width
     )
 
-    # Convert to JSON for rendering
     hi_c_config_json = json.dumps(hi_c_chart_config)
     ctcf_config_json = json.dumps(ctcf_chart_config)
     atac_config_json = json.dumps(atac_chart_config)
@@ -423,7 +296,6 @@ def index():
     screening_mode_flag = (ds_option == "screening")
     screening_params_json = json.dumps(screening_params) if screening_mode_flag else "{}"
 
-    # Optionally for debugging
     if test_mode:
         test_mode_data = {
             "hi_c_chart_config": hi_c_chart_config,
@@ -439,7 +311,6 @@ def index():
         except Exception as e:
             print("Error saving test mode output:", e)
 
-    # Return partial or full template
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return render_template(
             "plots_partial.html",
@@ -471,12 +342,6 @@ def index():
 ###############################################################################
 @main.route('/run_screening', methods=['GET'])
 def run_screening_endpoint():
-    """
-    Endpoint that runs the corigami 'screening' workflow on a given region and
-    returns the screening data in JSON form (including a D3 line chart config).
-    Now prints output to terminal (no 'capture_output').
-    Also creates a line-based config with a blank y-axis label.
-    """
     print("RUN_SCREENING_ENDPOINT CALLED", flush=True)
     current_app.logger.info("Entered run_screening_endpoint")
     params = request.args.to_dict()
@@ -486,18 +351,14 @@ def run_screening_endpoint():
         region_chr = request.args.get('region_chr', 'chr2')
         screen_start = int(request.args.get('region_start', '500000'))
         screen_end = int(request.args.get('region_end', screen_start + WINDOW_WIDTH))
-        print(f"screening function screen_end: {screen_end}")
         perturb_width = int(request.args.get('perturb_width', '1000'))
         step_size = int(request.args.get('step_size', '1000'))
         
-        # Paths
         BASE_DIR = os.path.dirname(current_app.root_path)
         default_atac_path = os.path.join(
             BASE_DIR, "corigami_data", "data", "hg38", "imr90", "genomic_features", "atac.bw"
         )
         atac_bw_path = request.args.get('atac_bw_path', default_atac_path)
-
-        # Output folder
         output_dir = request.args.get('output_dir', get_user_output_folder())
         peaks_file = request.args.get('peaks_file', "").strip()
         if not output_dir or not os.path.exists(output_dir):
@@ -508,7 +369,6 @@ def run_screening_endpoint():
         current_app.logger.exception("Invalid screening parameters")
         return jsonify({"error": "Invalid screening parameters", "details": str(e)}), 400
 
-    # Use the model selected by the user via a query parameter (default to V1)
     region_model = request.args.get('model_select', 'V1')
     if region_model == 'V1':
         model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v1_jimin.ckpt")
@@ -519,13 +379,11 @@ def run_screening_endpoint():
     else:
         return jsonify({"error": "Invalid model selection"}), 400
 
-    # CTCF path
     default_ctcf_path = os.path.join(
         BASE_DIR, "corigami_data", "data", "hg38", "imr90", "genomic_features", "ctcf_log2fc.bw"
     )
     ctcf_bw_path = request.args.get('ctcf_bw_path', default_ctcf_path)
 
-    # Check if a predicted CTCF file was generated
     if ctcf_bw_path == "none":
         predicted_ctcf_path = os.path.join(output_dir, "normalized_predicted_ctcf_minmax.bw")
         if os.path.exists(predicted_ctcf_path):
@@ -534,16 +392,13 @@ def run_screening_endpoint():
         else:
             current_app.logger.info("No auto-generated predicted CTCF file found. Using 'none'.")
 
-    # Final results file
     results_file = os.path.join(output_dir, "screening", "screening_results.json")
 
-    # Python environment & script
     PYTHON_SRC_PATH = os.path.join(BASE_DIR, "C.Origami", "src")
     env = os.environ.copy()
     env["PYTHONPATH"] = PYTHON_SRC_PATH
     screening_script = os.path.join(PYTHON_SRC_PATH, "corigami", "inference", "screening.py")
 
-    # Auto-generate peaks if none provided
     auto_peaks_file = None
     temp_bedgraph = None
     if not peaks_file or peaks_file == "none":
@@ -563,10 +418,8 @@ def run_screening_endpoint():
             current_app.logger.exception("Failed to generate peaks from BigWig")
             return jsonify({"error": "Failed to generate peaks from BigWig.", "details": str(e)}), 500
 
-    # DNA sequence directory (chr*.fa.gz)
     seq_dir = os.path.join(BASE_DIR, "corigami_data", "data", "hg38", "dna_sequence")
 
-    # Build command for screening
     cmd = [
         "python", screening_script,
         "--no-server",
@@ -584,9 +437,7 @@ def run_screening_endpoint():
         "--ctcf", ctcf_bw_path,
         "--peaks-file", peaks_file
     ]
-
     current_app.logger.info("Running screening command: %s", " ".join(cmd))
-
     try:
         process = subprocess.Popen(
             cmd,
@@ -594,35 +445,26 @@ def run_screening_endpoint():
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            bufsize=1  # line-buffered
+            bufsize=1
         )
-
-        # Stream stdout in real time
         for line in iter(process.stdout.readline, ''):
-            if line:
-                print(line, end='')  # Print standard output in real time
-        # Stream stderr in real time
+            if line: print(line, end='')
         for line in iter(process.stderr.readline, ''):
-            if line:
-                print(line, end='')  # Print error output in real time
-
+            if line: print(line, end='')
         process.stdout.close()
         process.stderr.close()
         retcode = process.wait()
         if retcode != 0:
             current_app.logger.error("Screening command failed with return code %s", retcode)
             return jsonify({"error": "Screening script failed with return code {}".format(retcode)}), 500
-
     except Exception as e:
         current_app.logger.exception("Screening script encountered an error")
         return jsonify({"error": "Screening script encountered an error", "details": str(e)}), 500
 
-    # Confirm the JSON results file exists
     if not os.path.exists(results_file):
         current_app.logger.error("Screening results JSON file was not generated at: %s", results_file)
         return jsonify({"error": "Screening results JSON file was not generated."}), 500
 
-    # Parse results from JSON
     try:
         with open(results_file, "r") as f:
             results = json.load(f)
@@ -630,30 +472,24 @@ def run_screening_endpoint():
         current_app.logger.exception("Failed to read screening results JSON")
         return jsonify({"error": "Failed to read screening results JSON.", "details": str(e)}), 500
 
-    # Build a line chart config from the screening results
     try:
         window_midpoints_mb = results.get("window_midpoints_mb", [])
         impact_scores = results.get("impact_scores", [])
-
-        # Pair up [x, y], then sort by x to ensure left-to-right order
-        screening_series_data = [[x, y] for x, y in zip(window_midpoints_mb, impact_scores)]
-        screening_series_data.sort(key=lambda d: d[0])
-
+        screening_series_data = sorted([[x, y] for x, y in zip(window_midpoints_mb, impact_scores)], key=lambda d: d[0])
         region_start_mb = screen_start / 1e6
         region_end_mb = screen_end / 1e6
-
         screening_chart_config = {
             "chart": {"type": "line", "height": 100},
             "xAxis": {
                 "min": region_start_mb,
                 "max": region_end_mb,
-                "tickColor": "#000",         # Ensure x-axis ticks use black text
+                "tickColor": "#000",
                 "tickFont": "10px sans-serif"
             },
             "yAxis": {
                 "title": {"text": ""},
-                "ticks": 3,                  # Use fewer ticks for more spacing
-                "tickColor": "#000",         # Ensure y-axis ticks use black text
+                "ticks": 3,
+                "tickColor": "#000",
                 "tickFont": "10px sans-serif"
             },
             "series": [{
@@ -663,26 +499,21 @@ def run_screening_endpoint():
             }]
         }
         screening_config_json = json.dumps(screening_chart_config)
-
     except Exception as e:
         current_app.logger.exception("Failed to generate screening plot from JSON")
         return jsonify({"error": "Failed to generate screening plot from JSON.", "details": str(e)}), 500
 
-    # Clean up temporary files if they exist
     if auto_peaks_file and os.path.exists(auto_peaks_file):
         os.remove(auto_peaks_file)
     if temp_bedgraph and os.path.exists(temp_bedgraph):
         os.remove(temp_bedgraph)
     
-    # Add chart config to results and return to client
     results["screening_config"] = screening_config_json
     current_app.logger.info("Returning screening results")
     return jsonify(results)
 
-
-
-
-# Additional Endpoint: List Files in Upload Folder
+###############################################################################
+# List Files in Upload Folder Endpoint
 ###############################################################################
 @main.route('/list_uploads', methods=['GET'])
 def list_uploads():
@@ -693,7 +524,6 @@ def list_uploads():
         for f in os.listdir(folder):
             full_path = os.path.join(folder, f)
             if os.path.isfile(full_path):
-                # Split on the first underscore; use the second part if available.
                 display_name = f.split("_", 1)[-1] if "_" in f else f
                 files.append({"value": full_path, "name": display_name})
     return jsonify(files)
@@ -702,17 +532,13 @@ def prepare_gene_track_config(genome, region_chr, region_start, region_end, ds_o
     if genome == "hg38":
         annotation_file = "static/genes.gencode.v38.txt"
     elif genome == "mm10":
-        annotation_file = "static/genes.gencode.M21.mm10.txt"  # Replace with actual path
+        annotation_file = "static/genes.gencode.M21.mm10.txt"
     else:
         annotation_file = ""
     
     gene_track_config = {
         "annotationFile": annotation_file,
-        "region": {
-            "chr": region_chr,
-            "start": region_start,
-            "end": region_end
-        },
+        "region": {"chr": region_chr, "start": region_start, "end": region_end},
         "chart": {"height": 50}
     }
     
@@ -735,3 +561,69 @@ def prepare_gene_track_config(genome, region_chr, region_start, region_end, ds_o
         }
     
     return gene_track_config
+
+def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_option,
+                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None,
+                         norm_atac=None, norm_ctcf=None):
+    from scipy.ndimage import rotate
+    x_start_mb = region_start / 1e6
+    x_end_mb   = region_end / 1e6
+
+    hi_c_matrix = rotate(hi_c_matrix, angle=45, reshape=True)
+    mask = np.any(hi_c_matrix > 0, axis=1)
+    hi_c_matrix = hi_c_matrix[mask, :]
+    num_rows = hi_c_matrix.shape[0]
+    hi_c_matrix = hi_c_matrix[: num_rows // 2, :]
+    n_rows, n_cols = hi_c_matrix.shape
+
+    hi_c_data = []
+    for i in range(n_rows):
+        for j in range(n_cols):
+            hi_c_data.append([j, i, float(hi_c_matrix[i, j])])
+
+    hi_c_chart_config = {
+        "chart": {"height": 250},
+        "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
+        "yAxis": {"min": 0, "max": 100},
+        "colorAxis": {
+            "min": 0,
+            "max": float(np.nanmax(hi_c_matrix)),
+            "minColor": "#ffffff",
+            "maxColor": "#7f0000"
+        },
+        "series": [{"name": "Hi-C Signal", "data": hi_c_data}],
+        "n_cols": n_cols,
+        "hideXAxis": False
+    }
+
+    ctcf_positions, ctcf_values = get_bigwig_signal(ctcf_bw_for_model, region_chr, region_start, region_end)
+    atac_positions, atac_values = get_bigwig_signal(raw_atac_path, region_chr, region_start, region_end)
+    ctcf_positions_mb = [p / 1e6 for p in ctcf_positions]
+    atac_positions_mb = [p / 1e6 for p in atac_positions]
+
+    const_xaxis = {"min": x_start_mb, "max": x_end_mb, "title": ""}
+    ctcf_chart_config = {
+        "chart": {"height": 100},
+        "xAxis": const_xaxis.copy(),
+        "yAxis": {"title": "CTCF Signal"},
+        "series": [{"name": "CTCF Signal", "data": [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)], "color": "blue"}]
+    }
+    atac_chart_config = {
+        "chart": {"height": 100},
+        "xAxis": const_xaxis.copy(),
+        "yAxis": {"title": "ATAC Signal"},
+        "series": [{"name": "ATAC Signal", "data": [[x, y] for x, y in zip(atac_positions_mb, atac_values)], "color": "green"}]
+    }
+
+    if ds_option == "deletion" and del_start is not None and del_width is not None:
+        hi_c_chart_config["hideXAxis"] = True
+        del_start_mb = del_start / 1e6
+        del_end_mb   = (del_start + del_width) / 1e6
+        for chart in (ctcf_chart_config, atac_chart_config):
+            chart["xAxis"] = {
+                "axisBreak": True,
+                "leftDomain": [x_start_mb, del_start_mb],
+                "rightDomain": [del_end_mb, x_end_mb],
+                "title": ""
+            }
+    return hi_c_chart_config, ctcf_chart_config, atac_chart_config, None, {}

@@ -1,4 +1,3 @@
-#utils.py
 import os
 import time
 import uuid
@@ -89,12 +88,7 @@ def generate_peaks_from_bigwig_macs2(bw_path, chrom, start, end, outdir):
         f"-end={end}"
     ]
     print("Running:", " ".join(convert_cmd))
-    result_convert = subprocess.run(
-        convert_cmd,
-        check=True,
-        capture_output=True,
-        text=True
-    )
+    result_convert = subprocess.run(convert_cmd, check=True, capture_output=True, text=True)
     print("bigWigToBedGraph stdout:", result_convert.stdout)
     print("bigWigToBedGraph stderr:", result_convert.stderr)
     macs2_cmd = [
@@ -104,12 +98,7 @@ def generate_peaks_from_bigwig_macs2(bw_path, chrom, start, end, outdir):
         "--cutoff", "2.0"
     ]
     print("Running:", " ".join(macs2_cmd))
-    result_macs2 = subprocess.run(
-        macs2_cmd,
-        check=True,
-        capture_output=True,
-        text=True
-    )
+    result_macs2 = subprocess.run(macs2_cmd, check=True, capture_output=True, text=True)
     print("macs2 bdgpeakcall stdout:", result_macs2.stdout)
     print("macs2 bdgpeakcall stderr:", result_macs2.stderr)
     return auto_peaks, temp_bedgraph
@@ -121,17 +110,12 @@ def get_bigwig_signal(bw_path, chrom, start, end, bins=256):
         print(f"Error opening {bw_path}: {e}")
         return [], []
     bin_width = max(1, (end - start) // bins)
-    values = []
-    positions = []
+    values, positions = [], []
     for i in range(bins):
         bin_start = start + i * bin_width
-        bin_end = bin_start + bin_width
-        if bin_end > end:
-            bin_end = end
+        bin_end = min(bin_start + bin_width, end)
         avg = bw.stats(chrom, bin_start, bin_end, type="mean")[0]
-        if avg is None:
-            avg = 0
-        values.append(avg)
+        values.append(avg if avg is not None else 0)
         positions.append((bin_start + bin_end) / 2)
     bw.close()
     return positions, values
@@ -160,10 +144,8 @@ def normalize_file(input_bw, chrom, start, end, method, output_folder, prefix):
     if method == "log":
         norm_arr = np.log(arr + 1)
     elif method == "minmax":
-        arr_min = np.min(arr)
-        arr_max = np.max(arr)
-        range_val = arr_max - arr_min if arr_max != arr_min else 1
-        norm_arr = (arr - arr_min) / range_val
+        arr_min, arr_max = np.min(arr), np.max(arr)
+        norm_arr = (arr - arr_min) / (arr_max - arr_min if arr_max != arr_min else 1)
     else:
         norm_arr = arr
     chr_length = chrom_lengths.get(chrom, end)
@@ -177,4 +159,3 @@ def normalize_file(input_bw, chrom, start, end, method, output_folder, prefix):
         raise Exception(f"Error writing normalized file: {e}")
     print(f"Normalization ({method}) completed for {prefix}. Normalized file: {output_path}")
     return output_path
-
