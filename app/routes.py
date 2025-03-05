@@ -53,15 +53,10 @@ def upload_file():
     if not file_storage:
         return jsonify({"error": "No file provided"}), 400
 
-    if file_type == "atac":
-        saved_path = save_uploaded_file(file_storage, "atac.bw", upload_folder)
-    elif file_type == "ctcf":
-        saved_path = save_uploaded_file(file_storage, "ctcf.bw", upload_folder)
-    elif file_type == "peaks":
-        saved_path = save_uploaded_file(file_storage, "peaks.narrowPeak", upload_folder)
-
+    saved_path = save_uploaded_file(file_storage, file_storage.filename, upload_folder)
     print(f"Uploaded {file_type} file saved to: {saved_path}")
-    display_name = os.path.basename(saved_path).split("_", 1)[-1]
+    raw_name = os.path.basename(saved_path)
+    display_name = raw_name.split("_", 1)[-1] if "_" in raw_name else raw_name
     return jsonify({"saved_path": saved_path, "display_name": display_name})
 
 ###############################################################################
@@ -173,6 +168,7 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
     return hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params
 
 @main.route('/', methods=['GET', 'POST'])
+@main.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'GET':
         user_output_folder = get_user_output_folder()
@@ -190,14 +186,30 @@ def index():
     env["PYTHONPATH"] = PYTHON_SRC_PATH
 
     region_model = request.form.get('model_select')
+    if region_model == 'V1':
+        model_path = "corigami_data/model_weights/v1_jimin.ckpt"
+    elif region_model == 'V2':
+        model_path = "corigami_data/model_weights/v2_javier.ckpt"
+    elif region_model == 'V3':
+        model_path = "corigami_data/model_weights/v3_romane.ckpt"
+    else:
+        return "Invalid model selection."
+    
+    genome = request.form.get('genome_select', 'hg38')
+    if genome == 'hg38':
+        seq_dir = "./corigami_data/data/hg38/dna_sequence"
+    elif genome == 'mm10':
+        seq_dir = "./corigami_data/data/mm10/dna_sequence"
+    else:
+        return "Invalid genome selection."
+
     region_chr = request.form.get('region_chr')
     try:
         region_start = int(request.form.get('region_start'))
     except ValueError:
         return "Invalid start position. Please enter an integer value."
-    DEFAULT_WINDOW = 2097152
 
-    # Always attempt to use the user-supplied end position if available.
+    DEFAULT_WINDOW = 2097152
     region_end_input = request.form.get("region_end")
     if region_end_input:
         try:
@@ -207,10 +219,7 @@ def index():
     else:
         region_end = region_start + DEFAULT_WINDOW
 
-
     print(f"Window: {region_chr}:{region_start}-{region_end}")
-
-
 
     atac_bw_path = request.form.get('atac_bw_path')
     print("ATAC file path (from dropdown):", os.path.abspath(atac_bw_path))
@@ -227,26 +236,32 @@ def index():
     raw_atac_path = atac_bw_path
     raw_ctcf_path = ctcf_bw_path if ctcf_bw_path and ctcf_bw_path != "none" else None
 
+    # Handle normalization or auto-CTCF generation
     if raw_ctcf_path:
         if norm_atac != "none" or norm_ctcf != "none":
             if norm_atac != "none" and norm_ctcf != "none" and norm_atac != norm_ctcf:
                 return "Uploaded files must use the same normalization method."
             training_norm = norm_atac if norm_atac != "none" else norm_ctcf
             if norm_atac == "none":
-                normalized_atac = normalize_file(raw_atac_path, region_chr, region_start, region_end, training_norm, output_folder, "normalized_atac")
+                normalized_atac = normalize_file(raw_atac_path, region_chr, region_start, region_end,
+                                                 training_norm, output_folder, "normalized_atac")
             else:
                 normalized_atac = raw_atac_path
             if norm_ctcf == "none":
-                normalized_ctcf = normalize_file(raw_ctcf_path, region_chr, region_start, region_end, training_norm, output_folder, "normalized_ctcf")
+                normalized_ctcf = normalize_file(raw_ctcf_path, region_chr, region_start, region_end,
+                                                 training_norm, output_folder, "normalized_ctcf")
             else:
                 normalized_ctcf = raw_ctcf_path
         else:
             if not training_norm_selection:
                 return "Please select the normalization method used during training."
             training_norm = training_norm_selection
-            normalized_atac = normalize_file(raw_atac_path, region_chr, region_start, region_end, training_norm, output_folder, "normalized_atac")
-            normalized_ctcf = normalize_file(raw_ctcf_path, region_chr, region_start, region_end, training_norm, output_folder, "normalized_ctcf")
+            normalized_atac = normalize_file(raw_atac_path, region_chr, region_start, region_end,
+                                             training_norm, output_folder, "normalized_atac")
+            normalized_ctcf = normalize_file(raw_ctcf_path, region_chr, region_start, region_end,
+                                             training_norm, output_folder, "normalized_ctcf")
     else:
+        # If no CTCF file was provided
         training_norm = "minmax"
         if norm_atac != "none":
             return "Non-normalized ATAC signal is required to predict CTCF when no CTCF file is provided."
@@ -255,6 +270,7 @@ def index():
 
     atac_bw_for_model = normalized_atac
 
+    # Possibly generate CTCF from ATAC if user provided none
     if not raw_ctcf_path:
         print("No CTCF file provided; generating CTCF file using raw ATAC signal...")
         roi_file = os.path.join(output_folder, "temp_roi.bed")
@@ -269,14 +285,13 @@ def index():
             "--name", "predicted_ctcf"
         ]
         print("Running maxATAC for CTCF generation:", " ".join(generate_cmd))
-        # Create a temporary environment for this subprocess call.
         temp_env = env.copy()
         temp_env["PATH"] = "/Users/everett/anaconda3/bin:" + temp_env["PATH"]
         try:
             subprocess.run(generate_cmd, check=True, env=temp_env, capture_output=True, text=True)
-            normalized_predicted_ctcf = normalize_file(ctcf_generated, region_chr, region_start, region_end, "minmax", output_folder, "normalized_predicted_ctcf")
+            normalized_predicted_ctcf = normalize_file(ctcf_generated, region_chr, region_start, region_end,
+                                                       "minmax", output_folder, "normalized_predicted_ctcf")
             ctcf_bw_for_model = normalized_predicted_ctcf
-            # Set norm_ctcf to a special string indicating it was predicted.
             norm_ctcf = "minmax normalized, predicted with maxATAC"
             print("Predicted CTCF file generated and normalized:", ctcf_bw_for_model)
         except subprocess.CalledProcessError as e:
@@ -287,12 +302,10 @@ def index():
     else:
         ctcf_bw_for_model = normalized_ctcf
 
-
-
-    model_path = "corigami_data/model_weights/atac_ctcf_model.ckpt"
     ds_option = request.form.get('ds_option', 'none')
     print("Selected ds_option:", ds_option)
 
+    # Possibly run deletion
     if ds_option == "deletion":
         print("Running deletion process...")
         try:
@@ -306,7 +319,7 @@ def index():
             "--chr", region_chr,
             "--start", str(region_start),
             "--model", model_path,
-            "--seq", "./corigami_data/data/hg38/dna_sequence",
+            "--seq", seq_dir,
             "--atac", atac_bw_for_model,
             "--del-start", str(del_start),
             "--del-width", str(del_width),
@@ -319,8 +332,12 @@ def index():
             print("Editing script completed.")
         except subprocess.CalledProcessError as e:
             return f"Error running editing script: {e.stderr}"
-        hi_c_matrix_path = os.path.join(output_folder, "deletion", "npy", f"{region_chr}_{region_start}_del_{del_start}_{del_width}_padding_zero.npy")
+        hi_c_matrix_path = os.path.join(
+            output_folder, "deletion", "npy",
+            f"{region_chr}_{region_start}_del_{del_start}_{del_width}_padding_zero.npy"
+        )
     else:
+        del_start, del_width = None, None
         print("Running standard prediction...")
         script_path = os.path.join(BASE_DIR, "..", "C.Origami", "src", "corigami/inference/prediction.py")
         cmd = [
@@ -328,7 +345,7 @@ def index():
             "--chr", region_chr,
             "--start", str(region_start),
             "--model", model_path,
-            "--seq", "./corigami_data/data/hg38/dna_sequence",
+            "--seq", seq_dir,
             "--atac", atac_bw_for_model,
             "--out", output_folder,
             "--ctcf", ctcf_bw_for_model
@@ -342,12 +359,16 @@ def index():
         except subprocess.CalledProcessError as e:
             return f"Error running prediction script: {e.stderr}"
         if region_end > region_start + 2097152:
-            # Consensus prediction was run, adjust the expected file path accordingly.
-            hi_c_matrix_path = os.path.join(output_folder, f"{region_chr}_{region_start}_{region_end}_consensus.npy")
+            # For consensus predictions
+            hi_c_matrix_path = os.path.join(
+                output_folder, f"{region_chr}_{region_start}_{region_end}_consensus.npy"
+            )
         else:
-            hi_c_matrix_path = os.path.join(output_folder, "prediction", "npy", f"{region_chr}_{region_start}.npy")
+            hi_c_matrix_path = os.path.join(
+                output_folder, "prediction", "npy", f"{region_chr}_{region_start}.npy"
+            )
 
-
+    # Wait for Hi-C matrix
     print("Waiting for Hi-C matrix file...")
     timeout = 60
     start_time_wait = time.time()
@@ -366,17 +387,34 @@ def index():
     except Exception as e:
         print(f"Warning: could not remove {hi_c_matrix_path} - {e}")
 
-    if ds_option == "deletion":
-        pass
-    else:
-        del_start, del_width = None, None
-
+    # Prepare final plot configs
     hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params = \
         prepare_plot_configs(
-            hi_c_matrix, region_chr, region_start, region_end, ds_option,
-            ctcf_bw_for_model, raw_atac_path, del_start, del_width, norm_atac, norm_ctcf
+            hi_c_matrix,
+            region_chr,
+            region_start,
+            region_end,
+            ds_option,
+            ctcf_bw_for_model,
+            raw_atac_path,
+            del_start,
+            del_width,
+            norm_atac,
+            norm_ctcf
         )
 
+    # >>> FIX: pass ds_option, del_start, del_width to gene_track_config <<<
+    gene_track_config = prepare_gene_track_config(
+        genome,
+        region_chr,
+        region_start,
+        region_end,
+        ds_option=ds_option,
+        del_start=del_start,
+        del_width=del_width
+    )
+
+    # Convert to JSON for rendering
     hi_c_config_json = json.dumps(hi_c_chart_config)
     ctcf_config_json = json.dumps(ctcf_chart_config)
     atac_config_json = json.dumps(atac_chart_config)
@@ -384,6 +422,7 @@ def index():
     screening_mode_flag = (ds_option == "screening")
     screening_params_json = json.dumps(screening_params) if screening_mode_flag else "{}"
 
+    # Optionally for debugging
     if test_mode:
         test_mode_data = {
             "hi_c_chart_config": hi_c_chart_config,
@@ -399,6 +438,7 @@ def index():
         except Exception as e:
             print("Error saving test mode output:", e)
 
+    # Return partial or full template
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return render_template(
             "plots_partial.html",
@@ -409,7 +449,8 @@ def index():
             screening_mode=screening_mode_flag,
             screening_params=screening_params_json,
             norm_atac=norm_atac,
-            norm_ctcf=norm_ctcf
+            norm_ctcf=norm_ctcf,
+            gene_track_config=json.dumps(gene_track_config)
         )
 
     return render_template(
@@ -420,6 +461,7 @@ def index():
         screening_config=screening_config_json,
         screening_mode=screening_mode_flag,
         screening_params=screening_params_json,
+        gene_track_config=json.dumps(gene_track_config),
         user_output_folder=get_user_output_folder()
     )
 
@@ -465,8 +507,18 @@ def run_screening_endpoint():
         current_app.logger.exception("Invalid screening parameters")
         return jsonify({"error": "Invalid screening parameters", "details": str(e)}), 400
 
-    # Model & CTCF paths
-    model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "atac_ctcf_model.ckpt")
+    # Use the model selected by the user via a query parameter (default to V1)
+    region_model = request.args.get('model_select', 'V1')
+    if region_model == 'V1':
+        model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v1_jimin.ckpt")
+    elif region_model == 'V2':
+        model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v2_javier.ckpt")
+    elif region_model == 'V3':
+        model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v3_romane.ckpt")
+    else:
+        return jsonify({"error": "Invalid model selection"}), 400
+
+    # CTCF path
     default_ctcf_path = os.path.join(
         BASE_DIR, "corigami_data", "data", "hg38", "imr90", "genomic_features", "ctcf_log2fc.bw"
     )
@@ -481,7 +533,7 @@ def run_screening_endpoint():
         else:
             current_app.logger.info("No auto-generated predicted CTCF file found. Using 'none'.")
 
-    # Final results
+    # Final results file
     results_file = os.path.join(output_dir, "screening", "screening_results.json")
 
     # Python environment & script
@@ -513,7 +565,7 @@ def run_screening_endpoint():
     # DNA sequence directory (chr*.fa.gz)
     seq_dir = os.path.join(BASE_DIR, "corigami_data", "data", "hg38", "dna_sequence")
 
-    # Build command
+    # Build command for screening
     cmd = [
         "python", screening_script,
         "--no-server",
@@ -547,11 +599,11 @@ def run_screening_endpoint():
         # Stream stdout in real time
         for line in iter(process.stdout.readline, ''):
             if line:
-                print(line, end='')  # This prints to the terminal as the process outputs it
+                print(line, end='')  # Print standard output in real time
         # Stream stderr in real time
         for line in iter(process.stderr.readline, ''):
             if line:
-                print(line, end='')  # Prints error output in real time
+                print(line, end='')  # Print error output in real time
 
         process.stdout.close()
         process.stderr.close()
@@ -564,13 +616,12 @@ def run_screening_endpoint():
         current_app.logger.exception("Screening script encountered an error")
         return jsonify({"error": "Screening script encountered an error", "details": str(e)}), 500
 
-
     # Confirm the JSON results file exists
     if not os.path.exists(results_file):
         current_app.logger.error("Screening results JSON file was not generated at: %s", results_file)
         return jsonify({"error": "Screening results JSON file was not generated."}), 500
 
-    # Parse results
+    # Parse results from JSON
     try:
         with open(results_file, "r") as f:
             results = json.load(f)
@@ -578,35 +629,30 @@ def run_screening_endpoint():
         current_app.logger.exception("Failed to read screening results JSON")
         return jsonify({"error": "Failed to read screening results JSON.", "details": str(e)}), 500
 
-    # Build a *line* chart config (like your other signals)
+    # Build a line chart config from the screening results
     try:
         window_midpoints_mb = results.get("window_midpoints_mb", [])
         impact_scores = results.get("impact_scores", [])
 
-        # Pair up [x, y], then sort by x to ensure left-to-right
+        # Pair up [x, y], then sort by x to ensure left-to-right order
         screening_series_data = [[x, y] for x, y in zip(window_midpoints_mb, impact_scores)]
         screening_series_data.sort(key=lambda d: d[0])
-
-        # Compute min & max from the midpoints
-        min_val = min(window_midpoints_mb) if window_midpoints_mb else 0
-        max_val = max(window_midpoints_mb) if window_midpoints_mb else 0
 
         region_start_mb = screen_start / 1e6
         region_end_mb = screen_end / 1e6
 
-        # Build line chart config
         screening_chart_config = {
-           "chart": {"type": "line", "height": 100},
-           "xAxis": {
-               "min": region_start_mb,
-               "max": region_end_mb
-           },
-           "yAxis": {"title": {"text": ""}},
-           "series": [{
-             "name": "Screening Score",
-             "data": screening_series_data,
-             "color": "dodgerblue"
-           }]
+            "chart": {"type": "line", "height": 100},
+            "xAxis": {
+                "min": region_start_mb,
+                "max": region_end_mb
+            },
+            "yAxis": {"title": {"text": ""}},
+            "series": [{
+                "name": "Screening Score",
+                "data": screening_series_data,
+                "color": "dodgerblue"
+            }]
         }
         screening_config_json = json.dumps(screening_chart_config)
 
@@ -614,17 +660,20 @@ def run_screening_endpoint():
         current_app.logger.exception("Failed to generate screening plot from JSON")
         return jsonify({"error": "Failed to generate screening plot from JSON.", "details": str(e)}), 500
 
-    # Clean up temp files if needed
+    # Clean up temporary files if they exist
     if auto_peaks_file and os.path.exists(auto_peaks_file):
         os.remove(auto_peaks_file)
     if temp_bedgraph and os.path.exists(temp_bedgraph):
         os.remove(temp_bedgraph)
     
-    # Add chart config to results, return to client
+    # Add chart config to results and return to client
     results["screening_config"] = screening_config_json
     current_app.logger.info("Returning screening results")
     return jsonify(results)
-###############################################################################
+
+
+
+
 # Additional Endpoint: List Files in Upload Folder
 ###############################################################################
 @main.route('/list_uploads', methods=['GET'])
@@ -636,6 +685,45 @@ def list_uploads():
         for f in os.listdir(folder):
             full_path = os.path.join(folder, f)
             if os.path.isfile(full_path):
+                # Split on the first underscore; use the second part if available.
                 display_name = f.split("_", 1)[-1] if "_" in f else f
                 files.append({"value": full_path, "name": display_name})
     return jsonify(files)
+
+def prepare_gene_track_config(genome, region_chr, region_start, region_end, ds_option=None, del_start=None, del_width=None):
+    if genome == "hg38":
+        annotation_file = "static/genes.gencode.v38.txt"
+    elif genome == "mm10":
+        annotation_file = "PLACEHOLDER_MM10_GENES_BED"  # Replace with actual path
+    else:
+        annotation_file = ""
+    
+    gene_track_config = {
+        "annotationFile": annotation_file,
+        "region": {
+            "chr": region_chr,
+            "start": region_start,
+            "end": region_end
+        },
+        "chart": {"height": 50}
+    }
+    
+    if ds_option == "deletion" and del_start is not None and del_width is not None:
+        gene_track_config["deletionStart"] = del_start
+        gene_track_config["deletionEnd"] = del_start + del_width
+        gene_track_config["xAxis"] = {
+            "axisBreak": True,
+            "min": region_start / 1e6,
+            "max": region_end / 1e6,
+            "leftDomain": [region_start / 1e6, del_start / 1e6],
+            "rightDomain": [(del_start + del_width) / 1e6, region_end / 1e6],
+            "title": ""
+        }
+    else:
+        gene_track_config["xAxis"] = {
+            "min": region_start / 1e6,
+            "max": region_end / 1e6,
+            "title": ""
+        }
+    
+    return gene_track_config

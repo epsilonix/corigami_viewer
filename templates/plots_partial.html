@@ -1,19 +1,19 @@
 <div id="plots-container" data-screening="{{ 'true' if screening_mode else 'false' }}" style="width: 100%; overflow-x: auto;">
   <div id="hi_c_chart"></div>
-
+  <div id="gene_track_chart"></div>
   <div class="atac_title_container">
-    <div class="atac_title">ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})</div>
+    <div class="atac_title"><span class="atac-square"></span>ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})</div>
   </div>
   <div id="atac_chart"></div>
   
   <div class="ctcf_title_container">
-    <div class="ctcf_title">CTCF signal ({{ "raw" if norm_ctcf == "none" else norm_ctcf ~ " normalization" }})</div>
+    <div class="ctcf_title"><span class="ctcf-square"></span>CTCF signal ({{ "raw" if norm_ctcf == "none" else norm_ctcf ~ " normalization" }})</div>
   </div>
   <div id="ctcf_chart"></div>
 
     {% if screening_mode %}
     <div class="screening_title_container">
-      <div class="screening_title">Impact score</div>
+      <div class="screening_title"><span class="screening-square"></span>Impact score</div>
     </div>
     <div id="screening_chart"></div>
   {% endif %}
@@ -32,6 +32,9 @@
   var screeningConfig = {{ screening_config|safe }};
   drawColumnChart('#screening_chart', screeningConfig);
   {% endif %}
+
+  var geneTrackConfig = {{ gene_track_config|safe }};
+  drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
 </script>
 {% if screening_mode %}
   <div id="screening-params" data-screening='{{ screening_params|safe }}' style="display:none;"></div>

@@ -176,3 +176,4 @@ def normalize_file(input_bw, chrom, start, end, method, output_folder, prefix):
         raise Exception(f"Error writing normalized file: {e}")
     print(f"Normalization ({method}) completed for {prefix}. Normalized file: {output_path}")
     return output_path
+

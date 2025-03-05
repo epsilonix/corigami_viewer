@@ -18,6 +18,16 @@ function storeFormFields() {
   localStorage.setItem("ctcf_bw_path", document.getElementById("ctcf_bw_path").value);
   localStorage.setItem("peaks_file_path", document.getElementById("peaks_file_path").value);
 
+   // Save normalization settings, assuming these elements always exist.
+   var normAtacRadio = document.querySelector('input[name="norm_atac"]:checked');
+   if (normAtacRadio) {
+     localStorage.setItem("norm_atac", normAtacRadio.value);
+   }
+   var normCtcfRadio = document.querySelector('input[name="norm_ctcf"]:checked');
+   if (normCtcfRadio) {
+     localStorage.setItem("norm_ctcf", normCtcfRadio.value);
+   }
+
   var dsRadios = document.getElementsByName("ds_option");
   for (var i = 0; i < dsRadios.length; i++) {
     if (dsRadios[i].checked) {
@@ -42,6 +52,21 @@ function restoreFormFields() {
   if (stepSize) document.getElementById("step_size").value = stepSize;
   var modelSelect = localStorage.getItem("model_select");
   if (modelSelect) document.getElementById("model_select").value = modelSelect;
+
+  // Restore normalization settings
+  var normAtac = localStorage.getItem("norm_atac");
+  if (normAtac) {
+    var normAtacRadio = document.querySelector(`input[name="norm_atac"][value="${normAtac}"]`);
+    if (normAtacRadio) normAtacRadio.checked = true;
+  }
+  var normCtcf = localStorage.getItem("norm_ctcf");
+  if (normCtcf) {
+    var normCtcfRadio = document.querySelector(`input[name="norm_ctcf"][value="${normCtcf}"]`);
+    if (normCtcfRadio) normCtcfRadio.checked = true;
+  }
+  
+
+
   var dsOption = localStorage.getItem("ds_option");
   if (dsOption) {
     var radioElem = document.getElementById("ds_" + dsOption);
@@ -186,7 +211,14 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
     return;
   }
   var file = fileInput.files[0];
-  console.log("Selected file for", fileType + ":", file.name);
+  console.log("Selected file for " + fileType + ":", file.name);
+  
+  // Get the associated upload button (the label for the file input)
+  var uploadButton = document.querySelector("label[for='" + fileInputId + "']");
+  if (uploadButton) {
+    uploadButton.textContent = 'Uploading...';
+    uploadButton.classList.add('loading');
+  }
   
   var formData = new FormData();
   if (fileType === "peaks") {
@@ -214,7 +246,14 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
       localStorage.setItem(dropdownId, data.saved_path);
     }
   })
-  .catch(error => console.error("Error uploading file for " + fileType + ":", error));
+  .catch(error => console.error("Error uploading file for " + fileType + ":", error))
+  .finally(() => {
+    // Reset the button once the upload is complete or fails
+    if (uploadButton) {
+      uploadButton.textContent = 'Upload';
+      uploadButton.classList.remove('loading');
+    }
+  });
 }
 
 /*************************************************************
@@ -489,3 +528,32 @@ window.onload = function() {
   }
 };
 
+function validateDeletionArea() {
+  // Get the form elements.
+  const regionStartElem = document.getElementById("region_start");
+  const regionEndElem = document.getElementById("region_end");
+  const delStartElem = document.getElementById("del_start");
+  const delWidthElem = document.getElementById("del_width");
+  const errorElem = document.getElementById("deletion-error");
+  
+  if (!regionStartElem || !delStartElem || !delWidthElem) return;
+  
+  // Parse the numeric values.
+  const regionStart = parseInt(regionStartElem.value);
+  // If region_end field is provided and valid, use it; otherwise default to region_start + WINDOW_WIDTH.
+  const regionEnd = (regionEndElem && regionEndElem.value && !isNaN(parseInt(regionEndElem.value)))
+                      ? parseInt(regionEndElem.value)
+                      : regionStart + WINDOW_WIDTH;
+  
+  const deletionStart = parseInt(delStartElem.value);
+  const deletionWidth = parseInt(delWidthElem.value);
+  const deletionEnd = deletionStart + deletionWidth;
+  
+  // Check that the deletion falls entirely within the region.
+  if (deletionStart < regionStart || deletionEnd > regionEnd) {
+    errorElem.style.display = "block";
+    errorElem.textContent = "Deletion must be within start and end position";
+  } else {
+    errorElem.style.display = "none";
+  }
+}

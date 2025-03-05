@@ -1,9 +1,46 @@
+@keyframes glow {
+  0% {
+    box-shadow: 0 0 5px rgba(0, 150, 255, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(0, 150, 255, 1);
+  }
+  100% {
+    box-shadow: 0 0 5px rgba(0, 150, 255, 0.5);
+  }
+}
+
+.upload-button.loading {
+  animation: glow 1s infinite;
+  pointer-events: none;
+  opacity: 0.8;
+}
+
 p.loading-screening-text {
   font-size: 12px;
   margin-left: 25px;
   color: green;
   text-decoration: underline;
 }
+
+.atac-square, .ctcf-square, .screening-square {
+  margin-top: -3px;
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+.atac-square{
+  background-color: #168316;
+}
+.ctcf-square{
+  background-color: #0001fe;
+}
+.screening-square{
+  background-color: #2090ff;
+}
+
 #output-container {
   display: flex;
   align-items: center;
