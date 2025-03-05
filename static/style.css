@@ -1,3 +1,4 @@
+/* style.css */
 @keyframes glow {
   0% {
     box-shadow: 0 0 5px rgba(0, 150, 255, 0.5);
@@ -93,17 +94,27 @@ body {
 .error-message {
   color: red;
   font-size: 0.8em;
-  margin-top: 5px;
+  margin-left: 10px;
+  margin-bottom: 10px;
+}
+
+#deletion-fields .row {
+  margin-bottom: 5px;
 }
 .container {
   display: flex;
   flex-wrap: wrap;
   min-height: 100vh;
 }
+
+.form-header h1 {
+  margin-bottom: 10px;
+  font-size: 1.7rem;
+}
 .form-container {
   flex: 0 0 35%;
   max-width: 35%;
-  padding: 20px;
+  padding: 10px 20px 20px 20px;
   background-color: #f8f8f8;
   height: 100vh;
   overflow-y: auto;

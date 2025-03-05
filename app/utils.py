@@ -1,3 +1,4 @@
+#utils.py
 import os
 import time
 import uuid
@@ -80,7 +81,7 @@ def generate_peaks_from_bigwig_macs2(bw_path, chrom, start, end, outdir):
     temp_bedgraph = os.path.join(outdir, "temp_region.bedGraph")
     auto_peaks = os.path.join(outdir, "auto_peaks.narrowPeak")
     convert_cmd = [
-        "/Users/everett/anaconda3/bin/bigWigToBedGraph",
+        "bigWigToBedGraph",
         bw_path,
         temp_bedgraph,
         f"-chrom={chrom}",

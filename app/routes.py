@@ -1,3 +1,4 @@
+#routes.py
 test_mode = False
 
 import os
@@ -285,10 +286,10 @@ def index():
             "--name", "predicted_ctcf"
         ]
         print("Running maxATAC for CTCF generation:", " ".join(generate_cmd))
-        temp_env = env.copy()
-        temp_env["PATH"] = "/Users/everett/anaconda3/bin:" + temp_env["PATH"]
+        # temp_env = env.copy()
+        # temp_env["PATH"] = "/Users/everett/anaconda3/bin:" + temp_env["PATH"]
         try:
-            subprocess.run(generate_cmd, check=True, env=temp_env, capture_output=True, text=True)
+            subprocess.run(generate_cmd, check=True, env=env, capture_output=True, text=True)
             normalized_predicted_ctcf = normalize_file(ctcf_generated, region_chr, region_start, region_end,
                                                        "minmax", output_folder, "normalized_predicted_ctcf")
             ctcf_bw_for_model = normalized_predicted_ctcf
@@ -645,9 +646,16 @@ def run_screening_endpoint():
             "chart": {"type": "line", "height": 100},
             "xAxis": {
                 "min": region_start_mb,
-                "max": region_end_mb
+                "max": region_end_mb,
+                "tickColor": "#000",         # Ensure x-axis ticks use black text
+                "tickFont": "10px sans-serif"
             },
-            "yAxis": {"title": {"text": ""}},
+            "yAxis": {
+                "title": {"text": ""},
+                "ticks": 3,                  # Use fewer ticks for more spacing
+                "tickColor": "#000",         # Ensure y-axis ticks use black text
+                "tickFont": "10px sans-serif"
+            },
             "series": [{
                 "name": "Screening Score",
                 "data": screening_series_data,
@@ -694,7 +702,7 @@ def prepare_gene_track_config(genome, region_chr, region_start, region_end, ds_o
     if genome == "hg38":
         annotation_file = "static/genes.gencode.v38.txt"
     elif genome == "mm10":
-        annotation_file = "PLACEHOLDER_MM10_GENES_BED"  # Replace with actual path
+        annotation_file = "static/genes.gencode.M21.mm10.txt"  # Replace with actual path
     else:
         annotation_file = ""
     

@@ -1,3 +1,4 @@
+//script.js
 /*************************************************************
  * Constants, Global Vars
  *************************************************************/
@@ -552,7 +553,7 @@ function validateDeletionArea() {
   // Check that the deletion falls entirely within the region.
   if (deletionStart < regionStart || deletionEnd > regionEnd) {
     errorElem.style.display = "block";
-    errorElem.textContent = "Deletion must be within start and end position";
+    errorElem.textContent = "Deletion area is out of bounds";
   } else {
     errorElem.style.display = "none";
   }

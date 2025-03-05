@@ -1,3 +1,4 @@
+//d3_plots.js
 /*************************************************************
  * Canvas-Based Plotting for C.Origami
  * (Supports Hi-C heatmap, signal plots with/without x-axis break,
@@ -351,7 +352,7 @@ function drawColumnChart(containerSelector, config) {
   }
 }
 
-const BUFFER_BP = 5000; // used for row assignment
+const BUFFER_BP = 500000; // used for row assignment
 
 function drawGeneTrackChart(selector, config) {
   console.log("Drawing gene track with config:", config);
@@ -479,7 +480,8 @@ function drawGeneTrackChart(selector, config) {
       return d.chrom === config.region.chr &&
              d.end >= config.region.start &&
              d.start <= config.region.end &&
-             d.type === "protein_coding";
+             d.type === "protein_coding" &&
+             !/^\d/.test(d.gene);
     });
     console.log("Number of protein coding genes after filtering:", genes.length);
     
