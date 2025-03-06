@@ -350,7 +350,12 @@ def run_screening_endpoint():
     try:
         region_chr = request.args.get('region_chr', 'chr2')
         screen_start = int(request.args.get('region_start', '500000'))
-        screen_end = int(request.args.get('region_end', screen_start + WINDOW_WIDTH))
+        # Handle empty region_end: if empty, default to screen_start + WINDOW_WIDTH
+        region_end_str = request.args.get('region_end', '')
+        if region_end_str.strip() == '':
+            screen_end = screen_start + WINDOW_WIDTH
+        else:
+            screen_end = int(region_end_str)
         perturb_width = int(request.args.get('perturb_width', '1000'))
         step_size = int(request.args.get('step_size', '1000'))
         
@@ -511,6 +516,7 @@ def run_screening_endpoint():
     results["screening_config"] = screening_config_json
     current_app.logger.info("Returning screening results")
     return jsonify(results)
+
 
 ###############################################################################
 # List Files in Upload Folder Endpoint

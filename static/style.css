@@ -97,6 +97,11 @@ body {
   margin-left: 10px;
   margin-bottom: 10px;
 }
+.region-bound-error {
+  color: red;
+  font-size: 0.8em;
+  margin-left: 10px;
+}
 
 #deletion-fields .row {
   margin-bottom: 5px;
@@ -113,10 +118,9 @@ body {
 }
 .form-container {
   flex: 0 0 35%;
-  max-width: 35%;
+  max-width: 400px;
   padding: 10px 20px 20px 20px;
   background-color: #f8f8f8;
-  height: 100vh;
   overflow-y: auto;
 }
 .output-container {

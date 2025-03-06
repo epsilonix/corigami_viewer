@@ -550,7 +550,7 @@ function drawGeneTrackChart(selector, config) {
      })
      .attr("y", d => d.row * rowHeight + rowHeight / 2 - 4)
      .attr("text-anchor", "middle")
-     .attr("font-size", Math.min(rowHeight * 0.7, 24))
+     .attr("font-size", Math.min(rowHeight * 0.8, 16))
      .text(d => d.gene);
     
     // Optionally, add an x-axis if desired.

@@ -2,7 +2,7 @@
  * Constants and Global Variables
  *************************************************************/
 const WINDOW_WIDTH = 2097152; // 2 Mb window
-
+window.chromosomeLengths = {};
 /*************************************************************
  * Local Storage Helpers
  *************************************************************/
@@ -57,16 +57,112 @@ function restoreFormFields() {
 /*************************************************************
  * Form Behavior Helpers
  *************************************************************/
+function populateChromosomeDropdown() {
+  const chrSelect = document.getElementById("region_chr");
+  const genomeSelect = document.getElementById("genome_select");
+  // Default to hg38 if no genome is selected
+  let genome = genomeSelect ? genomeSelect.value : "hg38";
+  let url = "";
+
+  if (genome === "mm10") {
+    url = "static/mm10_chr_lengths.json";
+  } else if (genome === "hg38") {
+    url = "static/hg38_chr_lengths.json";
+  } else {
+    // Fallback to hg38
+    url = "static/hg38_chr_lengths.json";
+  }
+
+  fetch(url)
+    .then(response => response.json())
+    .then(data => {
+       window.chromosomeLengths = data; // store for later validation
+       // Clear the dropdown before populating
+       chrSelect.innerHTML = "";
+       // Create an option for each chromosome.
+       for (const chr in data) {
+         let option = document.createElement("option");
+         // Optional: display both the name and its length
+         option.value = chr;
+         option.text = `${chr} (${data[chr]})`;
+         chrSelect.appendChild(option);
+       }
+       // Validate region bounds in case start/end values are already set
+       validateRegionBounds();
+    })
+    .catch(error => {
+       console.error("Error fetching chromosome lengths:", error);
+    });
+}
+
+function validateRegionBounds() {
+  const chrSelect = document.getElementById("region_chr");
+  const regionStartElem = document.getElementById("region_start");
+  const regionEndElem = document.getElementById("region_end");
+  const errorElem = document.getElementById("region-bound-error");
+  
+  // Parse start value.
+  const start = parseInt(regionStartElem.value);
+  // Determine end value: if no value provided, use start + WINDOW_WIDTH.
+  let end;
+  if (!regionEndElem.value || isNaN(parseInt(regionEndElem.value))) {
+    end = start + WINDOW_WIDTH;
+  } else {
+    end = parseInt(regionEndElem.value);
+  }
+  
+  // Wait for chromosome lengths to be loaded.
+  if (!chrSelect || !window.chromosomeLengths) {
+    errorElem.style.display = "none";
+    return;
+  }
+  
+  const selectedChr = chrSelect.value;
+  const maxLength = window.chromosomeLengths[selectedChr];
+  if (typeof maxLength === "undefined") {
+    errorElem.textContent = "Invalid chromosome selected.";
+    errorElem.style.display = "block";
+    return;
+  }
+  
+  // Check bounds.
+  if (start < 0 || start > maxLength) {
+    errorElem.textContent = `Start position must be between 0 and ${maxLength}.`;
+    errorElem.style.display = "block";
+    return;
+  }
+  
+  if (end < 0 || end > maxLength) {
+    errorElem.textContent = `End position must be between 0 and ${maxLength}.`;
+    errorElem.style.display = "block";
+    return;
+  }
+  
+  // All is well; hide error.
+  errorElem.style.display = "none";
+}
+
+
+
 function updateEndPosition() {
   const startField = document.getElementById("region_start");
   const endField = document.getElementById("region_end");
   const startVal = parseInt(startField.value);
-  if (!isNaN(startVal) && (!endField.value || isNaN(parseInt(endField.value)))) {
-    endField.value = startVal + WINDOW_WIDTH;
+  
+  if (!isNaN(startVal)) {
+    const computedEnd = startVal + WINDOW_WIDTH;
+    // If the user hasn't provided an end value, set it as a placeholder.
+    if (!endField.value || isNaN(parseInt(endField.value))) {
+      endField.placeholder = computedEnd;
+    } else {
+      endField.placeholder = "";
+    }
   } else {
-    endField.value = "";
+    endField.placeholder = "";
   }
 }
+
+
 
 function toggleOptionalFields() {
   const dsOption = document.querySelector('input[name="ds_option"]:checked');
@@ -332,6 +428,15 @@ function updateTrainingNormField() {
  * Validate Deletion Area (Single Definition)
  *************************************************************/
 function validateDeletionArea() {
+  // Check if we're in deletion mode
+  const dsOption = document.querySelector('input[name="ds_option"]:checked');
+  if (!dsOption || dsOption.value !== "deletion") {
+    // Optionally hide the error message if not in deletion mode
+    const errorElem = document.getElementById("deletion-error");
+    if (errorElem) errorElem.style.display = "none";
+    return;
+  }
+
   const regionStartElem = document.getElementById("region_start");
   const regionEndElem = document.getElementById("region_end");
   const delStartElem = document.getElementById("del_start");
@@ -356,20 +461,34 @@ function validateDeletionArea() {
   }
 }
 
+
 /*************************************************************
  * Window onload: Attach Event Listeners and Initialize
  *************************************************************/
 window.onload = function() {
   console.log("Window loaded. Restoring form fields...");
+  populateChromosomeDropdown();
   restoreFormFields();
   updateEndPosition();
   toggleOptionalFields();
   updateCtcfNormalization();
   updateTrainingNormField();
+  validateDeletionArea();
+  validateRegionBounds();
 
   document.getElementById("region_start").addEventListener("input", () => {
     storeFormFields();
     updateEndPosition();
+    validateDeletionArea();
+    validateRegionBounds();
+  });
+  document.getElementById("region_end").addEventListener("input", () => {
+    validateDeletionArea();
+    validateRegionBounds();
+  });
+  document.getElementById("region_chr").addEventListener("change", () => {
+    storeFormFields();
+    validateRegionBounds();
   });
   document.getElementById("del_start").addEventListener("input", () => {
     storeFormFields();
@@ -389,6 +508,7 @@ window.onload = function() {
     radio.addEventListener("change", () => {
       storeFormFields();
       toggleOptionalFields();
+      validateDeletionArea();
     });
   });
 
