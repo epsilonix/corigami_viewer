@@ -41,7 +41,7 @@ function drawHiCChart(containerSelector, config) {
   // In deletion mode, we simply hide the x-axis ticks.
   const hideTicks = config.hideXAxis === true;
   
-  const margin = { top: 0, right: 20, bottom: 50, left: 50 };
+  const margin = { top: 5, right: 20, bottom: 30, left: 50 };
   const genomicSpan = config.xAxis.max - config.xAxis.min; // in Mb
   const fullWidth = genomicSpan * PX_PER_MB;               // in pixels
   const height = config.chart.height || 250;
@@ -356,114 +356,63 @@ const BUFFER_BP = 500000; // used for row assignment
 
 function drawGeneTrackChart(selector, config) {
   console.log("Drawing gene track with config:", config);
-  
+
   // Compute region span in Mb (using region.start/end in base pairs)
   const regionStart = config.region.start;
   const regionEnd = config.region.end;
   const regionSpanMb = (regionEnd - regionStart) / 1e6;
-  
+
   // Determine if we are in deletion mode by checking for deletionStart/End.
   const inDeletionMode = config.deletionStart != null && config.deletionEnd != null;
-  
+
   let fullWidth;
   let xScale;
-  
+
   if (config.xAxis && config.xAxis.axisBreak && inDeletionMode) {
     console.log("gene track: in deletion mode");
-    // Deletion mode: use discontinuous x-scale.
-    // Define left and right segments in base pairs.
     const leftDomainBp = [regionStart, config.deletionStart];
     const rightDomainBp = [config.deletionEnd, regionEnd];
-    
-    console.log("leftDomainBp:", leftDomainBp);
-    console.log("rightDomainBp:", rightDomainBp);
-    
     const leftSpanMb = (config.deletionStart - regionStart) / 1e6;
     const rightSpanMb = (regionEnd - config.deletionEnd) / 1e6;
     const totalSpanMb = leftSpanMb + rightSpanMb;
-    
-    // Full width in pixels is computed from the total displayed span.
     fullWidth = totalSpanMb * PX_PER_MB;
-    
-    // For gene track we want the two segments to be right next to each other.
     const gapPx = 0;
-    
-    // Compute pixel widths for left and right segments.
     const leftWidthPx = (leftSpanMb / totalSpanMb) * fullWidth;
     const rightWidthPx = (rightSpanMb / totalSpanMb) * fullWidth;
-    
-    // Create discontinuous scales.
-    const scaleLeft = d3.scaleLinear()
-                        .domain(leftDomainBp)
-                        .range([0, leftWidthPx]);
-    const scaleRight = d3.scaleLinear()
-                         .domain(rightDomainBp)
-                         .range([0, rightWidthPx]);
-    
+    const scaleLeft = d3.scaleLinear().domain(leftDomainBp).range([0, leftWidthPx]);
+    const scaleRight = d3.scaleLinear().domain(rightDomainBp).range([0, rightWidthPx]);
     xScale = function(xVal) {
       if (xVal <= config.deletionStart) {
         return scaleLeft(xVal);
       } else if (xVal >= config.deletionEnd) {
         return leftWidthPx + gapPx + scaleRight(xVal);
       }
-      // If within deletion, return NaN.
-      return NaN;
+      return NaN; // within deletion region
     };
   } else {
-    // Non-deletion mode: use a continuous scale.
     fullWidth = regionSpanMb * PX_PER_MB;
-    xScale = d3.scaleLinear()
-               .domain([regionStart, regionEnd])
-               .range([0, fullWidth]);
+    xScale = d3.scaleLinear().domain([regionStart, regionEnd]).range([0, fullWidth]);
   }
-  
-  // Define margins and overall SVG dimensions.
-  const margin = { top: 5, right: 5, bottom: 20, left: 50 };
-  const height = config.chart.height || 50;
-  const canvasWidth = fullWidth + margin.left + margin.right;
-  const canvasHeight = height + margin.top + margin.bottom;
-  
-  // Create the SVG container.
-  const svg = d3.select(selector)
-                .append("svg")
-                .attr("width", canvasWidth)
-                .attr("height", canvasHeight);
-  
+
+  // Use margin config: default is 0 for top/right/left and 5px for bottom.
+  const margin = config.margin || { top: 0, right: 0, bottom: 0, left: 50 };
+  const desiredHeight = config.chart.height || 50;
+
+  // Select the container. Ensure its CSS includes position: relative.
+  const container = d3.select(selector);
+  // Remove any existing SVG (if re-drawing).
+  container.select("svg").remove();
+  const svg = container.append("svg")
+                       .attr("width", fullWidth + margin.left + margin.right);
   const g = svg.append("g")
                .attr("transform", `translate(${margin.left},${margin.top})`);
-  
-  // Define arrow markers.
-  const defs = g.append("defs");
-  defs.append("marker")
-      .attr("id", "arrowhead-right")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 4)
-      .attr("refY", 0)
-      .attr("markerWidth", 4)
-      .attr("markerHeight", 4)
-      .attr("orient", "auto")
-    .append("path")
-      .attr("d", "M0,-5L10,0L0,5")
-      .attr("fill", "black");
-  
-  defs.append("marker")
-      .attr("id", "arrowhead-left")
-      .attr("viewBox", "0 -5 10 10")
-      .attr("refX", 6)
-      .attr("refY", 0)
-      .attr("markerWidth", 4)
-      .attr("markerHeight", 4)
-      .attr("orient", "auto")
-    .append("path")
-      .attr("d", "M10,-5L0,0L10,5")
-      .attr("fill", "black");
-  
+
   // Load and parse the gene annotation file.
   d3.text(config.annotationFile).then(function(text) {
-    var lines = text.split("\n").filter(line => line.trim().length > 0);
-    var genes = lines.map(function(line) {
-      var parts = line.split("\t");
-      var coordParts = parts[2].split(/[:\-]/); // e.g., ["chr19", "58345178", "58353492"]
+    let lines = text.split("\n").filter(line => line.trim().length > 0);
+    let genes = lines.map(function(line) {
+      let parts = line.split("\t");
+      let coordParts = parts[2].split(/[:\-]/); // e.g., ["chr19", "58345178", "58353492"]
       return {
         gene: parts[0],
         ensembl: parts[1],
@@ -485,10 +434,9 @@ function drawGeneTrackChart(selector, config) {
     });
     console.log("Number of protein coding genes after filtering:", genes.length);
     
-    // *** If deletion mode, filter out genes that lie entirely within the deletion region ***
+    // In deletion mode, filter out genes entirely within deletion region.
     if (inDeletionMode) {
       genes = genes.filter(function(d) {
-        // Remove gene if its entire span is inside the deletion.
         return (d.end < config.deletionStart || d.start > config.deletionEnd);
       });
     }
@@ -496,7 +444,7 @@ function drawGeneTrackChart(selector, config) {
     // Sort genes by start coordinate.
     genes.sort((a, b) => a.start - b.start);
     
-    // Row assignment: assign genes to rows if they are close.
+    // Row assignment: assign genes to rows (using a buffer, assumed defined as BUFFER_BP).
     let geneRows = [];
     genes.forEach(function(gene) {
       let placed = false;
@@ -514,9 +462,17 @@ function drawGeneTrackChart(selector, config) {
       }
     });
     const numRows = geneRows.length;
-    const rowHeight = numRows > 0 ? height / numRows : height;
     
-    // Draw gene lines.
+    // Enforce a minimum row height.
+    const MIN_ROW_HEIGHT = 15; // pixels
+    const adjustedHeight = Math.max(desiredHeight, numRows * MIN_ROW_HEIGHT);
+    const rowHeight = adjustedHeight / numRows;
+    
+    // Update SVG height.
+    const canvasHeight = adjustedHeight + margin.top + margin.bottom;
+    svg.attr("height", canvasHeight);
+    
+    // Draw gene lines, setting the stroke based on strand.
     g.selectAll("line.gene")
      .data(genes)
      .enter()
@@ -526,39 +482,92 @@ function drawGeneTrackChart(selector, config) {
      .attr("x2", d => xScale(Math.min(d.end, config.region.end)))
      .attr("y1", d => d.row * rowHeight + rowHeight / 2)
      .attr("y2", d => d.row * rowHeight + rowHeight / 2)
-     .attr("stroke", "black")
+     .attr("stroke", d => d.strand === "+" ? "#87CEEB" : "#FFA500")
      .attr("stroke-width", Math.min(rowHeight * 0.2, 1.5))
-     .attr("stroke-linecap", "round")
-     .attr("marker-end", d => d.strand === "+" ? "url(#arrowhead-right)" : null)
-     .attr("marker-start", d => d.strand === "-" ? "url(#arrowhead-left)" : null);
+     .attr("stroke-linecap", "round");
     
-    // Draw gene labels.
+    // Draw custom arrow triangles behind the text.
+    g.selectAll("path.gene-arrow")
+     .data(genes.filter(d => d.strand === "+" || d.strand === "-"))
+     .enter()
+     .append("path")
+     .attr("class", "gene-arrow")
+     .attr("d", function(d) {
+       // Use arrow dimensions relative to rowHeight.
+       const arrowWidth = rowHeight * 0.5;
+       const arrowHeight = rowHeight * 0.4;
+       const centerY = d.row * rowHeight + rowHeight / 2;
+       if (d.strand === "+") {
+         const tipX = xScale(Math.min(d.end, config.region.end));
+         return `M${tipX},${centerY} L${tipX - arrowWidth},${centerY - arrowHeight/2} L${tipX - arrowWidth},${centerY + arrowHeight/2} Z`;
+       } else {
+         const tipX = xScale(Math.max(d.start, config.region.start));
+         return `M${tipX},${centerY} L${tipX + arrowWidth},${centerY - arrowHeight/2} L${tipX + arrowWidth},${centerY + arrowHeight/2} Z`;
+       }
+     })
+     .attr("fill", d => d.strand === "+" ? "#87CEEB" : "#FFA500")
+     .attr("stroke", d => d.strand === "+" ? "#87CEEB" : "#FFA500")
+     .attr("stroke-width", 1);
+    
+    // Draw gene labels on top. Move text up 1 pixel relative to arrow (from +4 to +3).
     g.selectAll("text.gene-label")
      .data(genes)
      .enter()
      .append("text")
      .attr("class", "gene-label")
      .attr("x", function(d) {
-       // Compute center using discontinuous xScale.
        const x1 = xScale(Math.max(d.start, config.region.start));
        const x2 = xScale(Math.min(d.end, config.region.end));
        let center = (x1 + x2) / 2;
-       // Clamp center to avoid labels too close to the edges.
        if (center < 5) center = 5;
        if (center > fullWidth - 5) center = fullWidth - 5;
        return center;
      })
-     .attr("y", d => d.row * rowHeight + rowHeight / 2 - 4)
+     .attr("y", d => d.row * rowHeight + rowHeight / 2 + 3)
+     // Increase computed font size by 2 pixels.
+     .attr("font-size", () => (Math.max(Math.min(rowHeight * 0.8, 16), 12) / 2) + 2)
      .attr("text-anchor", "middle")
-     .attr("font-size", Math.min(rowHeight * 0.8, 16))
      .text(d => d.gene);
     
-    // Optionally, add an x-axis if desired.
+    // Collapse view if there are more than 5 rows.
+    const maxVisibleRows = 5;
+    if (numRows > maxVisibleRows) {
+      // Set container height to show only 5 full rows (no partial 6th row).
+      container.style("height", (maxVisibleRows * rowHeight + margin.top + margin.bottom) + "px")
+               .style("overflow", "hidden");
+      // Append a clickable toggle if not already present.
+      if (container.select("#gene-track-toggle").empty()) {
+        container.append("div")
+          .attr("id", "gene-track-toggle")
+          .style("position", "absolute")
+          .style("bottom", "5px")
+          .style("left", "50%")
+          .style("transform", "translateX(-50%)")
+          .style("cursor", "pointer")
+          .style("width", "16px")
+          .style("height", "16px")
+          .style("transition", "transform 0.3s ease")
+          .html(`<img src="static/caret-down-solid.svg" style="width: 16px; height: 16px; filter: invert(0.2);" />`)
+          .on("click", function() {
+            const currentHeight = parseFloat(container.style("height"));
+            if (currentHeight < canvasHeight) {
+              container.style("height", canvasHeight + "px");
+              d3.select(this)
+                .style("transform", "translateX(-50%) rotate(180deg)");
+            } else {
+              container.style("height", (maxVisibleRows * rowHeight + margin.top + margin.bottom) + "px");
+              d3.select(this)
+                .style("transform", "translateX(-50%) rotate(0deg)");
+            }
+          });
+      }
+    }
     
   }).catch(function(error) {
     console.error("Error loading gene annotation data:", error);
   });
 }
+
 
 
 /** Deletion-mode signal plot with discontinuous (broken) x-axis. */
