@@ -1,6 +1,7 @@
 <div id="plots-container" data-screening="{{ 'true' if screening_mode else 'false' }}" style="width: 100%; overflow-x: auto;">
-  <div id="hi_c_chart"></div>
   <div id="gene_track_chart"></div>
+  <div id="hi_c_chart"></div>
+  
   <div class="atac_title_container">
     <div class="atac_title">
       <span class="atac-square"></span>ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})

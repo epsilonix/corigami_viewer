@@ -357,17 +357,17 @@ const BUFFER_BP = 500000; // used for row assignment
 function drawGeneTrackChart(selector, config) {
   console.log("Drawing gene track with config:", config);
 
-  // Compute region span in Mb (using region.start/end in base pairs)
-  const regionStart = config.region.start;
-  const regionEnd = config.region.end;
+  // Explicitly parse region.start and region.end as numbers.
+  const regionStart = parseInt(config.region.start, 10);
+  const regionEnd = parseInt(config.region.end, 10);
+  console.log(`gene track region: ${regionStart} - ${regionEnd}`);
   const regionSpanMb = (regionEnd - regionStart) / 1e6;
 
-  // Determine if we are in deletion mode by checking for deletionStart/End.
+  // Determine deletion mode.
   const inDeletionMode = config.deletionStart != null && config.deletionEnd != null;
 
   let fullWidth;
   let xScale;
-
   if (config.xAxis && config.xAxis.axisBreak && inDeletionMode) {
     console.log("gene track: in deletion mode");
     const leftDomainBp = [regionStart, config.deletionStart];
@@ -390,17 +390,19 @@ function drawGeneTrackChart(selector, config) {
       return NaN; // within deletion region
     };
   } else {
+    // Here fullWidth reflects the full region width (even if >2Mb)
     fullWidth = regionSpanMb * PX_PER_MB;
-    xScale = d3.scaleLinear().domain([regionStart, regionEnd]).range([0, fullWidth]);
+    xScale = d3.scaleLinear()
+               .domain([regionStart, regionEnd])
+               .range([0, fullWidth]);
   }
 
   // Use margin config: default is 0 for top/right/left and 5px for bottom.
-  const margin = config.margin || { top: 0, right: 0, bottom: 0, left: 50 };
+  const margin = config.margin || { top: 0, right: 0, bottom: 5, left: 50 };
   const desiredHeight = config.chart.height || 50;
 
-  // Select the container. Ensure its CSS includes position: relative.
+  // Select container (make sure it has CSS position: relative).
   const container = d3.select(selector);
-  // Remove any existing SVG (if re-drawing).
   container.select("svg").remove();
   const svg = container.append("svg")
                        .attr("width", fullWidth + margin.left + margin.right);
@@ -427,8 +429,8 @@ function drawGeneTrackChart(selector, config) {
     // Filter genes: same chromosome, overlapping region, protein_coding only.
     genes = genes.filter(function(d) {
       return d.chrom === config.region.chr &&
-             d.end >= config.region.start &&
-             d.start <= config.region.end &&
+             d.end >= regionStart &&
+             d.start <= regionEnd &&
              d.type === "protein_coding" &&
              !/^\d/.test(d.gene);
     });
@@ -444,7 +446,7 @@ function drawGeneTrackChart(selector, config) {
     // Sort genes by start coordinate.
     genes.sort((a, b) => a.start - b.start);
     
-    // Row assignment: assign genes to rows (using a buffer, assumed defined as BUFFER_BP).
+    // Row assignment: assign genes to rows using BUFFER_BP.
     let geneRows = [];
     genes.forEach(function(gene) {
       let placed = false;
@@ -472,14 +474,14 @@ function drawGeneTrackChart(selector, config) {
     const canvasHeight = adjustedHeight + margin.top + margin.bottom;
     svg.attr("height", canvasHeight);
     
-    // Draw gene lines, setting the stroke based on strand.
+    // Draw gene lines with solid colors.
     g.selectAll("line.gene")
      .data(genes)
      .enter()
      .append("line")
      .attr("class", "gene")
-     .attr("x1", d => xScale(Math.max(d.start, config.region.start)))
-     .attr("x2", d => xScale(Math.min(d.end, config.region.end)))
+     .attr("x1", d => xScale(Math.max(d.start, regionStart)))
+     .attr("x2", d => xScale(Math.min(d.end, regionEnd)))
      .attr("y1", d => d.row * rowHeight + rowHeight / 2)
      .attr("y2", d => d.row * rowHeight + rowHeight / 2)
      .attr("stroke", d => d.strand === "+" ? "#87CEEB" : "#FFA500")
@@ -493,15 +495,14 @@ function drawGeneTrackChart(selector, config) {
      .append("path")
      .attr("class", "gene-arrow")
      .attr("d", function(d) {
-       // Use arrow dimensions relative to rowHeight.
        const arrowWidth = rowHeight * 0.5;
        const arrowHeight = rowHeight * 0.4;
        const centerY = d.row * rowHeight + rowHeight / 2;
        if (d.strand === "+") {
-         const tipX = xScale(Math.min(d.end, config.region.end));
+         const tipX = xScale(Math.min(d.end, regionEnd));
          return `M${tipX},${centerY} L${tipX - arrowWidth},${centerY - arrowHeight/2} L${tipX - arrowWidth},${centerY + arrowHeight/2} Z`;
        } else {
-         const tipX = xScale(Math.max(d.start, config.region.start));
+         const tipX = xScale(Math.max(d.start, regionStart));
          return `M${tipX},${centerY} L${tipX + arrowWidth},${centerY - arrowHeight/2} L${tipX + arrowWidth},${centerY + arrowHeight/2} Z`;
        }
      })
@@ -509,15 +510,15 @@ function drawGeneTrackChart(selector, config) {
      .attr("stroke", d => d.strand === "+" ? "#87CEEB" : "#FFA500")
      .attr("stroke-width", 1);
     
-    // Draw gene labels on top. Move text up 1 pixel relative to arrow (from +4 to +3).
+    // Draw gene labels on top. Move text 1 pixel up relative to arrow.
     g.selectAll("text.gene-label")
      .data(genes)
      .enter()
      .append("text")
      .attr("class", "gene-label")
      .attr("x", function(d) {
-       const x1 = xScale(Math.max(d.start, config.region.start));
-       const x2 = xScale(Math.min(d.end, config.region.end));
+       const x1 = xScale(Math.max(d.start, regionStart));
+       const x2 = xScale(Math.min(d.end, regionEnd));
        let center = (x1 + x2) / 2;
        if (center < 5) center = 5;
        if (center > fullWidth - 5) center = fullWidth - 5;
@@ -532,32 +533,30 @@ function drawGeneTrackChart(selector, config) {
     // Collapse view if there are more than 5 rows.
     const maxVisibleRows = 5;
     if (numRows > maxVisibleRows) {
-      // Set container height to show only 5 full rows (no partial 6th row).
-      container.style("height", (maxVisibleRows * rowHeight + margin.top + margin.bottom) + "px")
-               .style("overflow", "hidden");
-      // Append a clickable toggle if not already present.
+      // Set container height to show only 5 full rows.
+      const visibleHeight = maxVisibleRows * rowHeight + margin.top + margin.bottom - 5;
+      container.style("height", visibleHeight + "px")
+               .style("overflow-y", "hidden");
+      // Append a clickable toggle in the upper left corner.
       if (container.select("#gene-track-toggle").empty()) {
         container.append("div")
           .attr("id", "gene-track-toggle")
           .style("position", "absolute")
-          .style("bottom", "5px")
-          .style("left", "50%")
-          .style("transform", "translateX(-50%)")
+          .style("top", "0px")
+          .style("left", "15px")
           .style("cursor", "pointer")
           .style("width", "16px")
           .style("height", "16px")
           .style("transition", "transform 0.3s ease")
-          .html(`<img src="static/caret-down-solid.svg" style="width: 16px; height: 16px; filter: invert(0.2);" />`)
+          .html(`<img src="static/caret-down-solid.svg" style="width:16px;height:16px;fill:#333;" />`)
           .on("click", function() {
             const currentHeight = parseFloat(container.style("height"));
             if (currentHeight < canvasHeight) {
               container.style("height", canvasHeight + "px");
-              d3.select(this)
-                .style("transform", "translateX(-50%) rotate(180deg)");
+              d3.select(this).style("transform", "rotate(180deg)");
             } else {
-              container.style("height", (maxVisibleRows * rowHeight + margin.top + margin.bottom) + "px");
-              d3.select(this)
-                .style("transform", "translateX(-50%) rotate(0deg)");
+              container.style("height", visibleHeight + "px");
+              d3.select(this).style("transform", "rotate(0deg)");
             }
           });
       }
@@ -567,6 +566,7 @@ function drawGeneTrackChart(selector, config) {
     console.error("Error loading gene annotation data:", error);
   });
 }
+
 
 
 

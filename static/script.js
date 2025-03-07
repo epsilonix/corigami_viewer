@@ -7,8 +7,21 @@ window.chromosomeLengths = {};
  * Local Storage Helpers
  *************************************************************/
 function storeFormFields() {
-  const fields = ["region_chr", "region_start", "del_start", "del_width", "perturb_width", "step_size", "model_select", "atac_bw_path", "ctcf_bw_path", "peaks_file_path"];
+  // Save first region and other fields
+  const fields = [
+    "region_chr", "region_start", "region_end",
+    "del_start", "del_width", "perturb_width",
+    "step_size", "model_select", "atac_bw_path",
+    "ctcf_bw_path", "peaks_file_path"
+  ];
   fields.forEach(field => {
+    const elem = document.getElementById(field);
+    if (elem) localStorage.setItem(field, elem.value);
+  });
+
+  // Save second region fields as well
+  const secondFields = ["region_chr2", "region_start2", "region_end2"];
+  secondFields.forEach(field => {
     const elem = document.getElementById(field);
     if (elem) localStorage.setItem(field, elem.value);
   });
@@ -28,9 +41,24 @@ function storeFormFields() {
   }
 }
 
+
 function restoreFormFields() {
-  const fields = ["region_chr", "region_start", "del_start", "del_width", "perturb_width", "step_size", "model_select", "atac_bw_path", "ctcf_bw_path", "peaks_file_path", "genome_select"];
+  // Fields for first region and other parameters
+  const fields = [
+    "region_chr", "region_start", "region_end",
+    "del_start", "del_width", "perturb_width",
+    "step_size", "model_select", "atac_bw_path",
+    "ctcf_bw_path", "peaks_file_path", "genome_select"
+  ];
   fields.forEach(field => {
+    const storedVal = localStorage.getItem(field);
+    const elem = document.getElementById(field);
+    if (storedVal && elem) elem.value = storedVal;
+  });
+
+  // Fields for second region
+  const secondFields = ["region_chr2", "region_start2", "region_end2"];
+  secondFields.forEach(field => {
     const storedVal = localStorage.getItem(field);
     const elem = document.getElementById(field);
     if (storedVal && elem) elem.value = storedVal;
@@ -54,114 +82,159 @@ function restoreFormFields() {
   }
 }
 
+
 /*************************************************************
  * Form Behavior Helpers
  *************************************************************/
 function populateChromosomeDropdown() {
-  const chrSelect = document.getElementById("region_chr");
   const genomeSelect = document.getElementById("genome_select");
-  // Default to hg38 if no genome is selected
   let genome = genomeSelect ? genomeSelect.value : "hg38";
-  let url = "";
+  let url = (genome === "mm10") ? "static/mm10_chr_lengths.json" : "static/hg38_chr_lengths.json";
 
-  if (genome === "mm10") {
-    url = "static/mm10_chr_lengths.json";
-  } else if (genome === "hg38") {
-    url = "static/hg38_chr_lengths.json";
-  } else {
-    // Fallback to hg38
-    url = "static/hg38_chr_lengths.json";
-  }
+  // Get both dropdown elements
+  const chrSelect1 = document.getElementById("region_chr");
+  const chrSelect2 = document.getElementById("region_chr2");
+  const chrSelects = [chrSelect1, chrSelect2];
 
   fetch(url)
     .then(response => response.json())
     .then(data => {
-       window.chromosomeLengths = data; // store for later validation
-       // Clear the dropdown before populating
-       chrSelect.innerHTML = "";
-       // Create an option for each chromosome.
-       for (const chr in data) {
-         let option = document.createElement("option");
-         // Optional: display both the name and its length
-         option.value = chr;
-         option.text = `${chr} (${data[chr]})`;
-         chrSelect.appendChild(option);
-       }
-       // Validate region bounds in case start/end values are already set
-       validateRegionBounds();
+      window.chromosomeLengths = data; // store for later validation
+      chrSelects.forEach(select => {
+        if (!select) return;
+        select.innerHTML = ""; // Clear previous options
+
+        // Iterate over each chromosome key in data
+        for (const chr in data) {
+          // Remove any leading "chr" (case-insensitive) for display only.
+          let cleanChr = chr.replace(/^chr/i, "");
+          let option = document.createElement("option");
+          option.value = chr; // Preserve the original value (e.g., "chr1")
+          option.text = `${cleanChr} (${data[chr]})`;
+          select.appendChild(option);
+        }
+      });
+      // Validate region bounds in case start/end values are already set
+      validateRegionBounds();
     })
     .catch(error => {
-       console.error("Error fetching chromosome lengths:", error);
+      console.error("Error fetching chromosome lengths:", error);
     });
 }
 
+
 function validateRegionBounds() {
+  const errorElem = document.getElementById("region-bound-error");
+  let errors = [];
+
+  // Validate first region
   const chrSelect = document.getElementById("region_chr");
   const regionStartElem = document.getElementById("region_start");
   const regionEndElem = document.getElementById("region_end");
-  const errorElem = document.getElementById("region-bound-error");
   
-  // Parse start value.
   const start = parseInt(regionStartElem.value);
-  // Determine end value: if no value provided, use start + WINDOW_WIDTH.
-  let end;
-  if (!regionEndElem.value || isNaN(parseInt(regionEndElem.value))) {
-    end = start + WINDOW_WIDTH;
+  let end = (!regionEndElem.value || isNaN(parseInt(regionEndElem.value)))
+            ? start + WINDOW_WIDTH
+            : parseInt(regionEndElem.value);
+  
+  if (chrSelect && window.chromosomeLengths) {
+    const selectedChr = chrSelect.value;
+    const maxLength = window.chromosomeLengths[selectedChr];
+    if (typeof maxLength === "undefined") {
+      errors.push("Invalid chromosome selected for first region.");
+    } else {
+      if (start < 0 || start > maxLength) {
+        errors.push(`First region start must be between 0 and ${maxLength}.`);
+      }
+      if (end < 0 || end > maxLength) {
+        errors.push(`First region end must be between 0 and ${maxLength}.`);
+      }
+      if (end - start > WINDOW_WIDTH * 10) {
+        errors.push("First region must be less than 20mb.");
+      }
+    }
+  }
+
+  // Check if second region section is toggled open
+  const secondChrDiv = document.getElementById("second_chr_fields");
+  if (secondChrDiv && secondChrDiv.style.display !== "none") {
+    const chrSelect2 = document.getElementById("region_chr2");
+    const regionStartElem2 = document.getElementById("region_start2");
+    const regionEndElem2 = document.getElementById("region_end2");
+    
+    const start2 = parseInt(regionStartElem2.value);
+    let end2 = (!regionEndElem2.value || isNaN(parseInt(regionEndElem2.value)))
+               ? start2 + WINDOW_WIDTH
+               : parseInt(regionEndElem2.value);
+    
+    if (chrSelect2 && window.chromosomeLengths) {
+      const selectedChr2 = chrSelect2.value;
+      const maxLength2 = window.chromosomeLengths[selectedChr2];
+      if (typeof maxLength2 === "undefined") {
+        errors.push("Invalid chromosome selected for second region.");
+      } else {
+        if (start2 < 0 || start2 > maxLength2) {
+          errors.push(`Second region start must be between 0 and ${maxLength2}.`);
+        }
+        if (end2 < 0 || end2 > maxLength2) {
+          errors.push(`Second region end must be between 0 and ${maxLength2}.`);
+        }
+        if (end2 - start2 > WINDOW_WIDTH * 10) {
+          errors.push("Second region must be less than 20mb.");
+        }
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    errorElem.textContent = errors.join(" ");
+    errorElem.style.display = "block";
   } else {
-    end = parseInt(regionEndElem.value);
-  }
-  
-  // Wait for chromosome lengths to be loaded.
-  if (!chrSelect || !window.chromosomeLengths) {
     errorElem.style.display = "none";
-    return;
   }
-  
-  const selectedChr = chrSelect.value;
-  const maxLength = window.chromosomeLengths[selectedChr];
-  if (typeof maxLength === "undefined") {
-    errorElem.textContent = "Invalid chromosome selected.";
-    errorElem.style.display = "block";
-    return;
-  }
-  
-  // Check bounds.
-  if (start < 0 || start > maxLength) {
-    errorElem.textContent = `Start position must be between 0 and ${maxLength}.`;
-    errorElem.style.display = "block";
-    return;
-  }
-  
-  if (end < 0 || end > maxLength) {
-    errorElem.textContent = `End position must be between 0 and ${maxLength}.`;
-    errorElem.style.display = "block";
-    return;
-  }
-  
-  // All is well; hide error.
-  errorElem.style.display = "none";
 }
+
 
 
 
 function updateEndPosition() {
-  const startField = document.getElementById("region_start");
-  const endField = document.getElementById("region_end");
-  const startVal = parseInt(startField.value);
+  // First region
+  const startField1 = document.getElementById("region_start");
+  const endField1 = document.getElementById("region_end");
+  const startVal1 = parseInt(startField1.value);
   
-  if (!isNaN(startVal)) {
-    const computedEnd = startVal + WINDOW_WIDTH;
-    // If the user hasn't provided an end value, set it as a placeholder.
-    if (!endField.value || isNaN(parseInt(endField.value))) {
-      endField.placeholder = computedEnd;
+  if (!isNaN(startVal1)) {
+    const computedEnd1 = startVal1 + WINDOW_WIDTH;
+    if (!endField1.value || isNaN(parseInt(endField1.value))) {
+      endField1.placeholder = computedEnd1;
     } else {
-      endField.placeholder = "";
+      endField1.placeholder = "";
     }
   } else {
-    endField.placeholder = "";
+    endField1.placeholder = "";
+  }
+  
+  // Second region (only if toggled on)
+  const secondRegionDiv = document.getElementById("second_chr_fields");
+  if (secondRegionDiv && secondRegionDiv.style.display !== "none") {
+    const startField2 = document.getElementById("region_start2");
+    const endField2 = document.getElementById("region_end2");
+    if (startField2 && endField2) {
+      let startVal2 = parseInt(startField2.value);
+      // If no value is entered, assign a default value (adjust as needed)
+      if (isNaN(startVal2)) {
+        startVal2 = 1500000;  // default for second region
+        startField2.value = startVal2; // optionally set the field's value
+      }
+      const computedEnd2 = startVal2 + WINDOW_WIDTH;
+      if (!endField2.value || isNaN(parseInt(endField2.value))) {
+        endField2.placeholder = computedEnd2;
+      } else {
+        endField2.placeholder = "";
+      }
+    }
   }
 }
-
 
 
 function toggleOptionalFields() {
@@ -169,22 +242,31 @@ function toggleOptionalFields() {
   const delFields = document.getElementById("deletion-fields");
   const scrFields = document.getElementById("screening-fields-2");
   const peaksContainer = document.getElementById("peaks_file_container");
+  // Get the plus toggle element for adding a second chromosome
+  const togglePlusElem = document.getElementById("toggle-second-chr");
+
   if (dsOption) {
     if (dsOption.value === "deletion") {
       if (delFields) delFields.style.display = "block";
       if (scrFields) scrFields.style.display = "none";
       if (peaksContainer) peaksContainer.style.display = "none";
+      // Hide the plus toggle when in deletion mode
+      if (togglePlusElem) togglePlusElem.style.display = "none";
     } else if (dsOption.value === "screening") {
       if (scrFields) scrFields.style.display = "block";
       if (delFields) delFields.style.display = "none";
       if (peaksContainer) peaksContainer.style.display = "block";
+      // Show the plus toggle if needed
+      if (togglePlusElem) togglePlusElem.style.display = "block";
     } else {
       if (delFields) delFields.style.display = "none";
       if (scrFields) scrFields.style.display = "none";
       if (peaksContainer) peaksContainer.style.display = "none";
+      if (togglePlusElem) togglePlusElem.style.display = "block";
     }
   }
 }
+
 
 function checkFormRequirements() {
   const dsOption = document.querySelector('input[name="ds_option"]:checked');
@@ -465,8 +547,33 @@ function validateDeletionArea() {
 /*************************************************************
  * Window onload: Attach Event Listeners and Initialize
  *************************************************************/
-window.onload = function() {
-  console.log("Window loaded. Restoring form fields...");
+function toggleSecondChr() {
+  console.log("toggleSecondChr called");
+  const secondChrDiv = document.getElementById('second_chr_fields');
+  const togglePlus = document.getElementById('toggle-second-chr');
+  if (secondChrDiv.style.display === "none" || secondChrDiv.style.display === "") {
+    // Show the second chromosome section
+    secondChrDiv.style.display = "block";
+    togglePlus.classList.add("active");
+
+    // If the second region start is empty, set a default (e.g., 1500000)
+    const regionStart2 = document.getElementById("region_start2");
+    if (regionStart2 && !regionStart2.value) {
+      regionStart2.value = "1500000";
+    }
+    // Call updateEndPosition to refresh the placeholder for region_end2
+    updateEndPosition();
+  } else {
+    secondChrDiv.style.display = "none";
+    togglePlus.classList.remove("active");
+  }
+}
+
+
+document.addEventListener('DOMContentLoaded', function() {
+  console.log("DOM fully loaded");
+  
+  // Your initialization code:
   populateChromosomeDropdown();
   restoreFormFields();
   updateEndPosition();
@@ -512,6 +619,23 @@ window.onload = function() {
     });
   });
 
+  // Attach event listener for the toggle-plus element
+  const togglePlusElem = document.getElementById("toggle-second-chr");
+  if (togglePlusElem) {
+    togglePlusElem.addEventListener("click", toggleSecondChr);
+    console.log("toggle-plus event listener attached");
+  } else {
+    console.error("Element with id 'toggle-second-chr' not found");
+  }
+
+  const startField2 = document.getElementById("region_start2");
+  if (startField2) {
+    startField2.addEventListener("input", () => {
+      storeFormFields();
+      updateEndPosition();
+      validateRegionBounds();
+    });
+  }
   const ctcfSelectElem = document.getElementById("ctcf_bw_path");
   ctcfSelectElem.addEventListener("change", () => {
     storeFormFields();
@@ -562,6 +686,13 @@ window.onload = function() {
   // Form submission via AJAX
   const formElem = document.getElementById("corigami-form");
   formElem.addEventListener("submit", function(e) {
+    const togglePlusElem = document.getElementById("toggle-second-chr");
+    if (!togglePlusElem.classList.contains("active")) {
+      // Clear second region fields if the plus toggle is off.
+      document.getElementById("region_chr2").value = "";
+      document.getElementById("region_start2").value = "";
+      document.getElementById("region_end2").value = "";
+    }
     e.preventDefault();
     if (!checkFormRequirements()) return false;
     const container = document.getElementById("output-container");
@@ -586,4 +717,4 @@ window.onload = function() {
   if (typeof screening_mode !== "undefined" && screening_mode === true) {
     runScreening();
   }
-};
+});

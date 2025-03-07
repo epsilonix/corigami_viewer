@@ -58,6 +58,27 @@ def upload_file():
     return jsonify({"saved_path": saved_path, "display_name": display_name})
 
 ###############################################################################
+# Local Storage & Form Behavior Helpers
+###############################################################################
+def storeFormFields():
+    # Save first region and other fields
+    const_fields = ["region_chr", "region_start", "region_end", "del_start", "del_width",
+                    "perturb_width", "step_size", "model_select", "atac_bw_path", "ctcf_bw_path", "peaks_file_path"]
+    for field in const_fields:
+        elem = request.form.get(field)
+        if elem is not None:
+            # Note: Here we're storing the values server-side via session/localStorage might be handled in JS.
+            # This function is provided for completeness.
+            pass
+
+    # In JS, we store region_chr2, region_start2, and region_end2 in local storage as well.
+    # (This is implemented on the client side in script.js.)
+
+def restoreFormFields():
+    # (Restoration is handled in the client-side JS. This function is a placeholder.)
+    pass
+
+###############################################################################
 # Main Page: Handle Form Submission or Render
 ###############################################################################
 @main.route('/', methods=['GET', 'POST'])
@@ -67,25 +88,24 @@ def index():
         return render_template("index.html", screening_mode=False, user_output_folder=user_output_folder)
 
     print("=== Starting new submission ===")
-    atac_upload_folder = get_upload_folder("atac")
-    ctcf_upload_folder = get_upload_folder("ctcf")
-    peaks_upload_folder = get_upload_folder("peaks")
     output_folder = get_user_output_folder()
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     PYTHON_SRC_PATH = os.path.join(BASE_DIR, "..", "C.Origami", "src")
     env = os.environ.copy()
     env["PYTHONPATH"] = PYTHON_SRC_PATH
 
+    # --- Model selection ---
     region_model = request.form.get('model_select')
-    if region_model == 'V1':
-        model_path = "corigami_data/model_weights/v1_jimin.ckpt"
-    elif region_model == 'V2':
-        model_path = "corigami_data/model_weights/v2_javier.ckpt"
-    elif region_model == 'V3':
-        model_path = "corigami_data/model_weights/v3_romane.ckpt"
-    else:
+    model_map = {
+        'V1': "corigami_data/model_weights/v1_jimin.ckpt",
+        'V2': "corigami_data/model_weights/v2_javier.ckpt",
+        'V3': "corigami_data/model_weights/v3_romane.ckpt"
+    }
+    model_path = model_map.get(region_model)
+    if not model_path:
         return "Invalid model selection."
-    
+
+    # --- Genome selection ---
     genome = request.form.get('genome_select', 'hg38')
     if genome == 'hg38':
         seq_dir = "./corigami_data/data/hg38/dna_sequence"
@@ -94,31 +114,29 @@ def index():
     else:
         return "Invalid genome selection."
 
+    # --- Region 1 ---
     region_chr = request.form.get('region_chr')
     try:
         region_start = int(request.form.get('region_start'))
-    except ValueError:
+    except (ValueError, TypeError):
         return "Invalid start position. Please enter an integer value."
 
-    DEFAULT_WINDOW = WINDOW_WIDTH
-    region_end_input = request.form.get("region_end")
+    region_end_input = request.form.get("region_end", "").strip()
     if region_end_input:
         try:
             region_end = int(region_end_input)
         except ValueError:
             return "Invalid end position. Please enter an integer value."
     else:
-        region_end = region_start + DEFAULT_WINDOW
+        region_end = region_start + WINDOW_WIDTH
 
-    print(f"Window: {region_chr}:{region_start}-{region_end}")
-
+    # --- Normalization & file paths ---
     atac_bw_path = request.form.get('atac_bw_path')
-    print("ATAC file path (from dropdown):", os.path.abspath(atac_bw_path))
-    ctcf_bw_path = (request.form.get('ctcf_bw_path') or "").strip()
-    peaks_file = request.form.get('peaks_file_path', "").strip()
+    ctcf_bw_path = request.form.get('ctcf_bw_path', "").strip() or None
     norm_atac = request.form.get('norm_atac')
     norm_ctcf = request.form.get('norm_ctcf')
     training_norm_selection = request.form.get('training_norm')
+
     print(f"ATAC normalization: {norm_atac}")
     print(f"CTCF normalization: {norm_ctcf}")
     print(f"Training normalization selection: {training_norm_selection}")
@@ -182,15 +200,59 @@ def index():
         ctcf_bw_for_model = normalized_ctcf
 
     ds_option = request.form.get('ds_option', 'none')
-    print("Selected ds_option:", ds_option)
+    # Deletion parameters
+    del_start = None
+    del_width = None
 
+    # Optional wide-window (consensus)
+    full_end_str = request.form.get("full_end", "").strip()
+    try:
+        full_end = int(full_end_str) if full_end_str else None
+    except ValueError:
+        full_end = None
+
+    # --- Second region (chr2) ---
+    def parse_second_region():
+        """Parses second region form fields. Returns (chr2, start2_int, end2_int) or None if invalid."""
+        chr2 = (request.form.get("region_chr2") or "").strip()
+        start2_str = (request.form.get("region_start2") or "").strip()
+        end2_str = (request.form.get("region_end2") or "").strip()
+
+        if not chr2 or not start2_str:
+            return None  # We need at least a chromosome & start
+        try:
+            start2_int = int(start2_str)
+        except ValueError:
+            return None
+
+        # If end2 is empty, default to start2 + WINDOW_WIDTH
+        if not end2_str:
+            end2_int = start2_int + WINDOW_WIDTH
+        else:
+            try:
+                end2_int = int(end2_str)
+            except ValueError:
+                return None
+
+        return (chr2, start2_int, end2_int)
+
+    second_region = parse_second_region()
+    first_reverse = (request.form.get("first_reverse") == "on")
+    first_flip = (request.form.get("first_flip") == "on")
+    second_reverse = (request.form.get("second_reverse") == "on")
+    second_flip = (request.form.get("second_flip") == "on")
+
+    # -------------------------------------------------------------------------
+    # Branch 1: Deletion
+    # -------------------------------------------------------------------------
     if ds_option == "deletion":
-        print("Running deletion process...")
+        print("[Index] Deletion mode selected.")
         try:
             del_start = int(request.form.get('del_start', '1500000'))
             del_width = int(request.form.get('del_width', '500000'))
         except ValueError:
             return "Invalid deletion parameters."
+
         script_path = os.path.join(PYTHON_SRC_PATH, "corigami/inference/editing.py")
         cmd = [
             "python", script_path,
@@ -204,20 +266,26 @@ def index():
             "--out", output_folder,
             "--ctcf", ctcf_bw_for_model
         ]
-        print("Command:", " ".join(cmd))
+        print("Command (deletion):", " ".join(cmd))
+
         try:
             subprocess.run(cmd, check=True, env=env, capture_output=True, text=True)
-            print("Editing script completed.")
         except subprocess.CalledProcessError as e:
             return f"Error running editing script: {e.stderr}"
+        
+        # The editing script presumably saves matrix as:
         hi_c_matrix_path = os.path.join(
             output_folder, "deletion", "npy",
             f"{region_chr}_{region_start}_del_{del_start}_{del_width}_padding_zero.npy"
         )
+
+    # -------------------------------------------------------------------------
+    # Branch 2: Not Deletion => standard / two-chrom / consensus
+    # -------------------------------------------------------------------------
     else:
-        del_start, del_width = None, None
-        print("Running standard prediction...")
-        script_path = os.path.join(BASE_DIR, "..", "C.Origami", "src", "corigami/inference/prediction.py")
+        print("[Index] Running standard/consensus/two-chrom prediction.")
+        script_path = os.path.join(PYTHON_SRC_PATH, "corigami/inference/prediction.py")
+
         cmd = [
             "python", script_path,
             "--chr", region_chr,
@@ -225,33 +293,50 @@ def index():
             "--model", model_path,
             "--seq", seq_dir,
             "--atac", atac_bw_for_model,
-            "--out", output_folder,
-            "--ctcf", ctcf_bw_for_model
+            "--ctcf", ctcf_bw_for_model,
+            "--out", output_folder
         ]
-        if region_end > region_start + DEFAULT_WINDOW:
-            cmd.extend(["--full_end", str(region_end)])
-        print("Command:", " ".join(cmd))
+
+        # If second region is valid, set combined:
+        if second_region is not None:
+            chr2, start2_int, end2_int = second_region
+            cmd.extend(["--chr2", chr2, "--start2", str(start2_int), "--end2", str(end2_int)])
+            if first_reverse: cmd.append("--first_reverse")
+            if first_flip: cmd.append("--first_flip")
+            if second_reverse: cmd.append("--second_reverse")
+            if second_flip: cmd.append("--second_flip")
+            pred_fname = f"{region_chr}_{region_start}_{chr2}_{start2_int}_combined.npy"
+        # else if user wants consensus
+        elif full_end and full_end > region_start + WINDOW_WIDTH:
+            cmd.extend([
+                "--full_end", str(full_end),
+                "--step_size", str(request.form.get("step_size", 253952)),
+                "--resolution_target", str(request.form.get("resolution_target", 10000))
+            ])
+            pred_fname = f"{region_chr}_{region_start}_{full_end}_consensus.npy"
+        else:
+            pred_fname = f"{region_chr}_{region_start}.npy"
+
+        print("Command (prediction):", " ".join(cmd))
         try:
             subprocess.run(cmd, check=True, env=env, text=True)
             print("Prediction script completed.")
         except subprocess.CalledProcessError as e:
             return f"Error running prediction script: {e.stderr}"
-        if region_end > region_start + WINDOW_WIDTH:
-            hi_c_matrix_path = os.path.join(
-                output_folder, f"{region_chr}_{region_start}_{region_end}_consensus.npy"
-            )
-        else:
-            hi_c_matrix_path = os.path.join(
-                output_folder, "prediction", "npy", f"{region_chr}_{region_start}.npy"
-            )
 
-    print("Waiting for Hi-C matrix file...")
+        hi_c_matrix_path = os.path.join(output_folder, pred_fname)
+
+    # -------------------------------------------------------------------------
+    # Wait for .npy and load it
+    # -------------------------------------------------------------------------
+    print("Waiting for Hi-C matrix file at:", hi_c_matrix_path)
     timeout = 60
     start_time_wait = time.time()
     while not os.path.exists(hi_c_matrix_path) and (time.time() - start_time_wait) < timeout:
         time.sleep(0.5)
     if not os.path.exists(hi_c_matrix_path):
         return f"Error: Hi-C matrix not found at {hi_c_matrix_path}"
+
     try:
         hi_c_matrix = np.load(hi_c_matrix_path)
         print("Hi-C matrix loaded.")
@@ -259,10 +344,12 @@ def index():
         return f"Error loading Hi-C matrix: {e}"
     try:
         os.remove(hi_c_matrix_path)
-        print("Temporary Hi-C matrix file removed.")
     except Exception as e:
         print(f"Warning: could not remove {hi_c_matrix_path} - {e}")
 
+    # -------------------------------------------------------------------------
+    # Plot config
+    # -------------------------------------------------------------------------
     from app.routes import prepare_plot_configs, prepare_gene_track_config
     hi_c_chart_config, ctcf_chart_config, atac_chart_config, screening_chart_config, screening_params = \
         prepare_plot_configs(
@@ -278,7 +365,6 @@ def index():
             norm_atac,
             norm_ctcf
         )
-
     gene_track_config = prepare_gene_track_config(
         genome,
         region_chr,
@@ -289,6 +375,7 @@ def index():
         del_width=del_width
     )
 
+    import json
     hi_c_config_json = json.dumps(hi_c_chart_config)
     ctcf_config_json = json.dumps(ctcf_chart_config)
     atac_config_json = json.dumps(atac_chart_config)
@@ -296,21 +383,10 @@ def index():
     screening_mode_flag = (ds_option == "screening")
     screening_params_json = json.dumps(screening_params) if screening_mode_flag else "{}"
 
-    if test_mode:
-        test_mode_data = {
-            "hi_c_chart_config": hi_c_chart_config,
-            "ctcf_chart_config": ctcf_chart_config,
-            "atac_chart_config": atac_chart_config,
-            "screening_chart_config": screening_chart_config,
-            "screening_params": screening_params
-        }
-        try:
-            with open("test_mode_output", "w") as f:
-                json.dump(test_mode_data, f, indent=2)
-            print("Test mode output saved to 'test_mode_output'")
-        except Exception as e:
-            print("Error saving test mode output:", e)
+    # Possibly handle test_mode saving here ...
+    # if test_mode: ...
 
+    # Render partial or full template
     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
         return render_template(
             "plots_partial.html",
@@ -334,7 +410,7 @@ def index():
         screening_mode=screening_mode_flag,
         screening_params=screening_params_json,
         gene_track_config=json.dumps(gene_track_config),
-        user_output_folder=get_user_output_folder()
+        user_output_folder=output_folder
     )
 
 ###############################################################################
@@ -517,7 +593,6 @@ def run_screening_endpoint():
     current_app.logger.info("Returning screening results")
     return jsonify(results)
 
-
 ###############################################################################
 # List Files in Upload Folder Endpoint
 ###############################################################################
@@ -633,3 +708,7 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
                 "title": ""
             }
     return hi_c_chart_config, ctcf_chart_config, atac_chart_config, None, {}
+
+###############################################################################
+# End of Routes File
+###############################################################################

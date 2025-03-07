@@ -63,9 +63,9 @@
             </div>
           </div>
         </div>
-        <!-- Model Selection -->
+        <!-- Combined Model & Genome Row -->
         <div class="row">
-          <div class="col-full">
+          <div class="col-half">
             <label for="model_select" class="small-label">Model*:</label>
             <select id="model_select" name="model_select" required>
               <option value="V1" {% if request.form.model_select == 'V1' %}selected{% endif %}>
@@ -79,9 +79,6 @@
               </option>
             </select>
           </div>
-        </div>
-        <!-- Genome and Chromosome -->
-        <div class="row">
           <div class="col-half">
             <label for="genome_select" class="small-label">Genome*:</label>
             <select id="genome_select" name="genome_select" required>
@@ -89,25 +86,85 @@
               <option value="mm10" {% if request.form.genome_select == 'mm10' %}selected{% endif %}>mm10</option>
             </select>
           </div>
-          <div class="col-half">
-            <label for="region_chr" class="small-label">Chromosome*:</label>
+        </div>
+
+        <!-- Region Row with 20/40/40 width distribution -->
+        <div class="row">
+          <div class="col-20">
+            <label for="region_chr" class="small-label">Chr*</label>
             <select id="region_chr" name="region_chr" required>
               <option value="">Loading...</option>
             </select>
           </div>
-        </div>
-        <!-- Start and End Positions -->
-        <div class="row">
-          <div class="col-half">
-            <label for="region_start" class="small-label">Start Position (bp)*:</label>
+          <div class="col-40">
+            <label for="region_start" class="small-label">Start (bp)*</label>
             <input type="number" id="region_start" name="region_start" value="{{ request.form.region_start or '1500000' }}" required>
           </div>
-          <div class="col-half">
-            <label for="region_end" class="small-label">End Position (bp):</label>
+          <div class="col-40">
+            <label for="region_end" class="small-label">End (bp)</label>
             <input type="number" id="region_end" name="region_end">
           </div>
-          <div id="region-bound-error" class="region-bound-error"></div>
         </div>
+        <div id="region-bound-error" class="region-bound-error"></div>
+        <!-- Add Second Chromosome Toggle (Plus/X) -->
+        <div class="row">
+          <div class="col-full add-second-chr-container">
+            <span id="toggle-second-chr" class="toggle-plus">+</span>
+          </div>
+        </div>
+
+        <!-- Optional Second Chromosome Fields -->
+        <div id="second_chr_fields" style="display:none;">
+          <!-- Second Chromosome Inputs -->
+          <div class="row">
+            <div class="col-20">
+              <label for="region_chr2" class="small-label">Chr</label>
+              <select id="region_chr2" name="region_chr2">
+                <option value="">Loading...</option>
+              </select>
+            </div>
+            <div class="col-40">
+              <label for="region_start2" class="small-label">Start (bp)</label>
+              <input type="number" id="region_start2" name="region_start2">
+            </div>
+            <div class="col-40">
+              <label for="region_end2" class="small-label">End (bp)</label>
+              <input type="number" id="region_end2" name="region_end2">
+            </div>
+          </div>
+          <!-- Orientation Toggles for Reverse/Flip -->
+          <div class="row orientation-toggles">
+            <!-- First Chromosome Orientation -->
+            <div class="col-half">
+              <fieldset class="yesNo">
+                <legend>First chr</legend>
+                <span class="radioButton radioButton__false">
+                  <input type="checkbox" id="first_reverse" name="first_orientation" value="reverse" />
+                  <label for="first_reverse">Reverse</label>
+                </span>
+                <span class="radioButton radioButton__true">
+                  <input type="checkbox" id="first_flip" name="first_orientation" value="flip" />
+                  <label for="first_flip">Flip</label>
+                </span>
+              </fieldset>
+            </div>
+            <!-- Second Chromosome Orientation -->
+            <div class="col-half">
+              <fieldset class="yesNo">
+                <legend>Second chr</legend>
+                <span class="radioButton radioButton__false">
+                  <input type="checkbox" id="second_reverse" name="second_orientation" value="reverse" />
+                  <label for="second_reverse">Reverse</label>
+                </span>
+                <span class="radioButton radioButton__true">
+                  <input type="checkbox" id="second_flip" name="second_orientation" value="flip" />
+                  <label for="second_flip">Flip</label>
+                </span>
+              </fieldset>
+            </div>
+          </div>
+        </div>
+
         <!-- ATAC‑seq BigWig File -->
         <div class="row file-input-container atac-input-container">
           <div class="col-full">
