@@ -66,7 +66,7 @@ def single_deletion(output_path, chr_name, start, deletion_start, deletion_width
     npy_dir = os.path.join(output_path, "deletion", "npy")
     if not os.path.exists(npy_dir):
         os.makedirs(npy_dir)
-    npy_filename = f"{chr_name}_{start}_del_{deletion_start}_{deletion_width}_padding_{end_padding_type}.npy"
+    npy_filename = "result.npy"
     npy_filepath = os.path.join(npy_dir, npy_filename)
     np.save(npy_filepath, pred)
     print(f"Saved predicted Hi-C matrix to {npy_filepath}")

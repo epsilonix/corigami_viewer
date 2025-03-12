@@ -124,75 +124,85 @@ function populateChromosomeDropdown() {
 
 
 function validateRegionBounds() {
-  const errorElem = document.getElementById("region-bound-error");
-  let errors = [];
-
-  // Validate first region
+  // Validate region 1
+  const errorElem1 = document.getElementById("region-bound-error");
+  let errorMessage1 = "";
   const chrSelect = document.getElementById("region_chr");
   const regionStartElem = document.getElementById("region_start");
   const regionEndElem = document.getElementById("region_end");
-  
-  const start = parseInt(regionStartElem.value);
-  let end = (!regionEndElem.value || isNaN(parseInt(regionEndElem.value)))
-            ? start + WINDOW_WIDTH
-            : parseInt(regionEndElem.value);
   
   if (chrSelect && window.chromosomeLengths) {
     const selectedChr = chrSelect.value;
     const maxLength = window.chromosomeLengths[selectedChr];
     if (typeof maxLength === "undefined") {
-      errors.push("Invalid chromosome selected for first region.");
+      errorMessage1 = "Region must be within 0 and unknown bounds.";
     } else {
-      if (start < 0 || start > maxLength) {
-        errors.push(`First region start must be between 0 and ${maxLength}.`);
+      const start = parseInt(regionStartElem.value);
+      let end = (!regionEndElem.value || isNaN(parseInt(regionEndElem.value)))
+                  ? start + WINDOW_WIDTH
+                  : parseInt(regionEndElem.value);
+      
+      // Bound check first
+      if (start < 0 || start > maxLength || end < 0 || end > maxLength) {
+        errorMessage1 = `Region must be within 0 and ${maxLength} bounds.`;
       }
-      if (end < 0 || end > maxLength) {
-        errors.push(`First region end must be between 0 and ${maxLength}.`);
-      }
-      if (end - start > WINDOW_WIDTH * 10) {
-        errors.push("First region must be less than 20mb.");
+      // Then length check (only if no bound error)
+      else if (end - start > WINDOW_WIDTH * 10) {
+        errorMessage1 = "Region must be less than 20mb in length.";
       }
     }
   }
-
-  // Check if second region section is toggled open
+  
+  if (errorMessage1) {
+    errorElem1.textContent = errorMessage1;
+    errorElem1.style.display = "block";
+  } else {
+    errorElem1.style.display = "none";
+  }
+  
+  // Validate region 2 (if toggled on)
   const secondChrDiv = document.getElementById("second_chr_fields");
+  const errorElem2 = document.getElementById("region-bound-error-2");
+  let errorMessage2 = "";
+  
   if (secondChrDiv && secondChrDiv.style.display !== "none") {
     const chrSelect2 = document.getElementById("region_chr2");
     const regionStartElem2 = document.getElementById("region_start2");
     const regionEndElem2 = document.getElementById("region_end2");
     
-    const start2 = parseInt(regionStartElem2.value);
-    let end2 = (!regionEndElem2.value || isNaN(parseInt(regionEndElem2.value)))
-               ? start2 + WINDOW_WIDTH
-               : parseInt(regionEndElem2.value);
-    
     if (chrSelect2 && window.chromosomeLengths) {
       const selectedChr2 = chrSelect2.value;
       const maxLength2 = window.chromosomeLengths[selectedChr2];
       if (typeof maxLength2 === "undefined") {
-        errors.push("Invalid chromosome selected for second region.");
+        errorMessage2 = "Region must be within 0 and unknown bounds.";
       } else {
-        if (start2 < 0 || start2 > maxLength2) {
-          errors.push(`Second region start must be between 0 and ${maxLength2}.`);
+        const start2 = parseInt(regionStartElem2.value);
+        let end2 = (!regionEndElem2.value || isNaN(parseInt(regionEndElem2.value)))
+                   ? start2 + WINDOW_WIDTH
+                   : parseInt(regionEndElem2.value);
+        
+        // Bound check first
+        if (start2 < 0 || start2 > maxLength2 || end2 < 0 || end2 > maxLength2) {
+          errorMessage2 = `Region must be within 0 and ${maxLength2} bounds.`;
         }
-        if (end2 < 0 || end2 > maxLength2) {
-          errors.push(`Second region end must be between 0 and ${maxLength2}.`);
-        }
-        if (end2 - start2 > WINDOW_WIDTH * 10) {
-          errors.push("Second region must be less than 20mb.");
+        // Then length check (only if no bound error)
+        else if (end2 - start2 > WINDOW_WIDTH * 10) {
+          errorMessage2 = "Region must be less than 20mb in length.";
         }
       }
     }
   }
-
-  if (errors.length > 0) {
-    errorElem.textContent = errors.join(" ");
-    errorElem.style.display = "block";
-  } else {
-    errorElem.style.display = "none";
+  
+  if (errorElem2) {
+    if (errorMessage2) {
+      errorElem2.textContent = errorMessage2;
+      errorElem2.style.display = "block";
+    } else {
+      errorElem2.style.display = "none";
+    }
   }
 }
+
 
 
 
@@ -256,8 +266,6 @@ function toggleOptionalFields() {
       if (scrFields) scrFields.style.display = "block";
       if (delFields) delFields.style.display = "none";
       if (peaksContainer) peaksContainer.style.display = "block";
-      // Show the plus toggle if needed
-      if (togglePlusElem) togglePlusElem.style.display = "block";
     } else {
       if (delFields) delFields.style.display = "none";
       if (scrFields) scrFields.style.display = "none";
@@ -402,43 +410,77 @@ function executeScripts(container) {
  *************************************************************/
 function runScreening() {
   console.log("runScreening() is called");
-  const regionStartElem = document.getElementById("region_start");
-  if (parseInt(regionStartElem.value) < 1048576) {
-    alert("Cannot run screening on start position below 1,048,576!");
+
+  // 1) Read regionChr from the front-end (or from window.screening_params if you prefer).
+  let regionChr = document.getElementById("region_chr").value;
+
+  // 2) Parse region_start
+  let regionStartVal = parseInt(document.getElementById("region_start").value, 10);
+  if (isNaN(regionStartVal)) {
+    // Fallback: if user left start blank or typed something invalid, 
+    // let's set 1,048,576 or 0 or some default:
+    regionStartVal = 1048576; 
+  }
+
+  // 3) Parse region_end
+  let regionEndVal = parseInt(document.getElementById("region_end").value, 10);
+  if (isNaN(regionEndVal)) {
+    // If the user left end blank or typed non-numeric => fallback
+    regionEndVal = regionStartVal + 2097152; // default to 2 Mb beyond start
+    // Optionally update the form field so the user sees the new value
+    document.getElementById("region_end").value = regionEndVal;
+  }
+
+  // 4) Example check: If standard mode (chr != chrCHIM) & regionStart < 1048576 => warn
+  if (regionChr !== "chrCHIM" && regionStartVal < 1048576) {
+    alert("Cannot run screening if start < 1,048,576 in standard mode!");
     return;
   }
+
+  // (If you want to handle chimeric lengths automatically, e.g. if regionChr === "chrCHIM" 
+  //  you might override regionEndVal with the actual chim_len from window.screening_params
+  //  but that's optional.)
+
+  // 5) Show a loader in the screening chart container
   const screeningContainerElem = document.getElementById("screening_chart");
   if (screeningContainerElem) {
-    screeningContainerElem.innerHTML = "<div class='loader' style='display: block; margin: 0 auto;'></div>";
+    screeningContainerElem.innerHTML = "<div class='loader' style='display:block;margin:0 auto;'></div>";
   }
+
+  // 6) Build params
   const paramsObj = {
-    region_chr: document.getElementById("region_chr").value,
+    region_chr:   regionChr,
     model_select: document.getElementById("model_select").value,
-    region_start: document.getElementById("region_start").value,
-    region_end: document.getElementById("region_end").value,
+    region_start: regionStartVal, 
+    region_end:   regionEndVal, 
     perturb_width: document.getElementById("perturb_width").value,
-    step_size: document.getElementById("step_size").value,
-    ctcf_bw_path: document.getElementById("ctcf_bw_path").value,
-    atac_bw_path: document.getElementById("atac_bw_path").value,
-    output_dir: document.getElementById("output_dir").value,
-    peaks_file: document.getElementById("peaks_file_path").value
+    step_size:     document.getElementById("step_size").value,
+    ctcf_bw_path:  document.getElementById("ctcf_bw_path").value,
+    atac_bw_path:  document.getElementById("atac_bw_path").value,
+    output_dir:    document.getElementById("output_dir").value,
+    peaks_file:    document.getElementById("peaks_file_path").value
   };
   const queryParams = new URLSearchParams(paramsObj).toString();
   console.log("Sending screening request with parameters:", paramsObj);
+
+  // 7) AJAX to /run_screening
   const xhr = new XMLHttpRequest();
   xhr.onreadystatechange = function() {
     if (xhr.readyState === 4) {
       if (xhr.status === 200) {
         console.log("Screening request successful. Response:", xhr.responseText);
         const response = JSON.parse(xhr.responseText);
+        
         if (response.screening_config) {
           const screeningConfig = JSON.parse(response.screening_config);
           if (screeningContainerElem) {
             screeningContainerElem.innerHTML = "";
             drawColumnChart('#screening_chart', screeningConfig);
           }
-        } else if (screeningContainerElem) {
-          screeningContainerElem.innerHTML = "<p>No screening config returned.</p>";
+        } else {
+          if (screeningContainerElem) {
+            screeningContainerElem.innerHTML = "<p>No screening config returned.</p>";
+          }
         }
       } else {
         console.error("Error generating screening plot. Status:", xhr.status);
@@ -452,6 +494,7 @@ function runScreening() {
   console.log("Sending screening request to /run_screening?" + queryParams);
   xhr.send();
 }
+
 
 function updateCtcfNormalization() {
   const ctcfSelect = document.getElementById('ctcf_bw_path');
@@ -548,26 +591,45 @@ function validateDeletionArea() {
  * Window onload: Attach Event Listeners and Initialize
  *************************************************************/
 function toggleSecondChr() {
-  console.log("toggleSecondChr called");
+  const dsOption = document.querySelector('input[name="ds_option"]:checked');
+  console.log("toggleSecondChr called with dsOption:", dsOption);
+  // Hide second chromosome fields if in deletion or screening mode
+  if (dsOption && (dsOption.value === "deletion")) {
+    const secondChrDiv = document.getElementById('second_chr_fields');
+    const togglePlus = document.getElementById('toggle-second-chr');
+    const chimericInput = document.getElementById('chimeric_active');
+    secondChrDiv.style.display = "none";
+    togglePlus.classList.remove("active");
+    chimericInput.value = "false";
+    return;  // exit early
+  }
+  
+  // Otherwise, proceed with the normal toggle behavior
   const secondChrDiv = document.getElementById('second_chr_fields');
   const togglePlus = document.getElementById('toggle-second-chr');
+  const chimericInput = document.getElementById('chimeric_active');
+  
   if (secondChrDiv.style.display === "none" || secondChrDiv.style.display === "") {
-    // Show the second chromosome section
+    // Show second chromosome fields and set chimeric flag to true
     secondChrDiv.style.display = "block";
     togglePlus.classList.add("active");
-
-    // If the second region start is empty, set a default (e.g., 1500000)
+    chimericInput.value = "true";
+    
+    // Optionally set a default value for second region start if empty
     const regionStart2 = document.getElementById("region_start2");
     if (regionStart2 && !regionStart2.value) {
       regionStart2.value = "1500000";
     }
-    // Call updateEndPosition to refresh the placeholder for region_end2
     updateEndPosition();
   } else {
+    // Hide second chromosome fields and set chimeric flag to false
     secondChrDiv.style.display = "none";
     togglePlus.classList.remove("active");
+    chimericInput.value = "false";
   }
 }
+
+
 
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -592,6 +654,11 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById("region_end").addEventListener("input", () => {
     validateDeletionArea();
     validateRegionBounds();
+    updateEndPosition();
+  });
+  document.getElementById("region_end2").addEventListener("input", () => {
+    validateRegionBounds();
+    updateEndPosition();
   });
   document.getElementById("region_chr").addEventListener("change", () => {
     storeFormFields();

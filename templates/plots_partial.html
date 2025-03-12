@@ -1,19 +1,29 @@
-<div id="plots-container" data-screening="{{ 'true' if screening_mode else 'false' }}" style="width: 100%; overflow-x: auto;">
-  <div id="gene_track_chart"></div>
+<div id="plots-container"
+     data-screening="{{ 'true' if screening_mode else 'false' }}"
+     style="width: 100%; overflow-x: auto;">
+  
+  <div id="gene-track-wrapper" style="overflow-y: hidden;"> 
+    <div id="gene_track_chart"></div>
+  </div>
+
   <div id="hi_c_chart"></div>
   
   <div class="atac_title_container">
     <div class="atac_title">
-      <span class="atac-square"></span>ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})
+      <span class="atac-square"></span>
+      ATAC signal ({{ "raw" if norm_atac == "none" else norm_atac ~ " normalization" }})
     </div>
   </div>
   <div id="atac_chart"></div>
+
   <div class="ctcf_title_container">
     <div class="ctcf_title">
-      <span class="ctcf-square"></span>CTCF signal ({{ "raw" if norm_ctcf == "none" else norm_ctcf ~ " normalization" }})
+      <span class="ctcf-square"></span>
+      CTCF signal ({{ "raw" if norm_ctcf == "none" else norm_ctcf ~ " normalization" }})
     </div>
   </div>
   <div id="ctcf_chart"></div>
+
   {% if screening_mode %}
     <div class="screening_title_container">
       <div class="screening_title">
@@ -22,37 +32,77 @@
     </div>
     <div id="screening_chart"></div>
   {% endif %}
+
 </div>
+
 <!-- Ensure D3.js and d3_plots.js are loaded -->
 <script src="https://d3js.org/d3.v7.min.js"></script>
 <script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
+
 <script>
+  // Render the main charts using the configs from the Flask context
   var hiCConfig = {{ hi_c_config|safe }};
   var ctcfConfig = {{ ctcf_config|safe }};
   var atacConfig = {{ atac_config|safe }};
+  var geneTrackConfig = {{ gene_track_config|safe }};
   drawHiCChart('#hi_c_chart', hiCConfig);
   drawLineChart('#ctcf_chart', ctcfConfig);
   drawLineChart('#atac_chart', atacConfig);
+  drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
+
+  // If we have a screening config, draw it
   {% if screening_mode and screening_config %}
     var screeningConfig = {{ screening_config|safe }};
     drawColumnChart('#screening_chart', screeningConfig);
   {% endif %}
 
-  var geneTrackConfig = {{ gene_track_config|safe }};
-  drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
+
 </script>
+
+
 {% if screening_mode %}
-  <div id="screening-params" data-screening='{{ screening_params|safe }}' style="display:none;"></div>
+  <!-- Hidden div carrying the screening parameters from the server -->
+  <div id="screening-params"
+       data-screening='{{ screening_params|safe }}'
+       style="display:none;">
+  </div>
+
   <script>
     window.screening_mode = true;
-    window.screening_params = JSON.parse(document.getElementById('screening-params').getAttribute('data-screening'));
+    window.screening_params = JSON.parse(
+      document.getElementById('screening-params').getAttribute('data-screening')
+    );
   </script>
-{% else %}
-  <script> window.screening_mode = false; </script>
-{% endif %}
-{% if screening_mode %}
+
+  <!-- If you want the front-end to auto-run screening on load: -->
   <script>
-    // Call runScreening() if screening mode is active.
+    // If you want to override region_chr / region_start / region_end with chimeric values:
+    {% if "chrCHIM" in hi_c_config or "chrCHIM" in atacConfig or "chrCHIM" in ctcfConfig %}
+      // In a real scenario, you'd pass `chim_name` and `chim_len` from the server.
+      // For example:
+      var chimName = "chrCHIM"; 
+      var chimLen  = 3145728;  // or from your context
+      // Overwrite the form fields so runScreening() picks them up:
+      let regionChrElem   = document.getElementById("region_chr");
+      let regionStartElem = document.getElementById("region_start");
+      let regionEndElem   = document.getElementById("region_end");
+      if (regionChrElem && regionStartElem && regionEndElem) {
+        regionChrElem.value = chimName;
+        regionStartElem.value = 0;
+        regionEndElem.value   = chimLen;
+      }
+      // Optionally also store in screening_params:
+      window.screening_params.region_chr   = chimName;
+      window.screening_params.region_start = 0;
+      window.screening_params.region_end   = chimLen;
+    {% endif %}
+
+    // Finally, call runScreening() if we want immediate screening
     runScreening();
+  </script>
+
+{% else %}
+  <script>
+    window.screening_mode = false;
   </script>
 {% endif %}

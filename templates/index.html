@@ -46,6 +46,7 @@
       </div>
       <form id="corigami-form" method="post" action="/" enctype="multipart/form-data">
         <input type="hidden" id="output_dir" value="{{ user_output_folder }}">
+        <input type="hidden" id="chimeric_active" name="chimeric_active" value="false">
         <!-- Deletion/Screening Toggle -->
         <div class="row">
           <div class="col-full">
@@ -77,6 +78,9 @@
               <option value="V3" {% if request.form.model_select == 'V3' %}selected{% endif %}>
                 V3 (Romane's model, uses log norm)
               </option>
+              <option value="V4" {% if request.form.model_select == 'V4' %}selected{% endif %}>
+                V4 (Javier's new model)
+              </option>
             </select>
           </div>
           <div class="col-half">
@@ -107,7 +111,7 @@
         </div>
         <div id="region-bound-error" class="region-bound-error"></div>
         <!-- Add Second Chromosome Toggle (Plus/X) -->
-        <div class="row">
+        <div class="row no-bottom-margin">
           <div class="col-full add-second-chr-container">
             <span id="toggle-second-chr" class="toggle-plus">+</span>
           </div>
@@ -118,13 +122,13 @@
           <!-- Second Chromosome Inputs -->
           <div class="row">
             <div class="col-20">
-              <label for="region_chr2" class="small-label">Chr</label>
+              <label for="region_chr2" class="small-label">Chr2*</label>
               <select id="region_chr2" name="region_chr2">
                 <option value="">Loading...</option>
               </select>
             </div>
             <div class="col-40">
-              <label for="region_start2" class="small-label">Start (bp)</label>
+              <label for="region_start2" class="small-label">Start (bp)*</label>
               <input type="number" id="region_start2" name="region_start2">
             </div>
             <div class="col-40">
@@ -132,12 +136,13 @@
               <input type="number" id="region_end2" name="region_end2">
             </div>
           </div>
+          <div id="region-bound-error-2" class="region-bound-error-2"></div>
           <!-- Orientation Toggles for Reverse/Flip -->
           <div class="row orientation-toggles">
             <!-- First Chromosome Orientation -->
             <div class="col-half">
               <fieldset class="yesNo">
-                <legend>First chr</legend>
+                <legend>First chrom</legend>
                 <span class="radioButton radioButton__false">
                   <input type="checkbox" id="first_reverse" name="first_orientation" value="reverse" />
                   <label for="first_reverse">Reverse</label>
@@ -151,7 +156,7 @@
             <!-- Second Chromosome Orientation -->
             <div class="col-half">
               <fieldset class="yesNo">
-                <legend>Second chr</legend>
+                <legend>Second chrom</legend>
                 <span class="radioButton radioButton__false">
                   <input type="checkbox" id="second_reverse" name="second_orientation" value="reverse" />
                   <label for="second_reverse">Reverse</label>

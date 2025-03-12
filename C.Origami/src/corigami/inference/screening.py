@@ -107,8 +107,8 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
               save_bedgraph=True, plot_impact_score=True, plot_frames=False, peaks_file=None):
     # Load data and model.
 
-    print(f'screening: {screen_start}, {screen_end}, {perturb_width}, {step_size}')
-    print(f'screening peaks_file: {peaks_file}')
+    print(f'screening: {screen_start}, {screen_end}, {perturb_width}, {step_size}', flush=True)
+    print(f'screening peaks_file: {peaks_file}', flush=True)
     seq, ctcf, atac = infer.load_data_default(chr_name, seq_path, ctcf_path, atac_path)
     model = model_utils.load_default(model_path)
     

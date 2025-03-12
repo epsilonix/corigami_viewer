@@ -10,13 +10,21 @@
     box-shadow: 0 0 5px rgba(0, 150, 255, 0.5);
   }
 }
+
+div#gene-track-wrapper {
+  overflow-y: hidden;
+  overflow-x: visible;
+  display: inline-block;
+  min-width: max-content;
+}
+
 /* Custom column width classes */
 .col-20 {
-  flex: 0 0 20%;
+  flex: 0 0 26%;
   padding: 0 10px;
 }
 .col-40 {
-  flex: 0 0 40%;
+  flex: 0 0 37%;
   padding: 0 10px;
 }
 
@@ -42,7 +50,8 @@
   text-align: center;
   vertical-align: middle;
   transform-origin: center center;
-  margin:auto;
+  margin: auto;
+  margin-bottom: 20px;
 }
 .toggle-plus.active {
   transform: rotate(45deg);
@@ -55,10 +64,10 @@
   flex-direction: row;
   flex-wrap: wrap;
   align-items: center;
-  gap: 1em;
+  gap: 0.3em;
 }
 .yesNo > legend {
-  font-size: 0.8em;
+  font-size: 0.7em;
 }
 .no-bottom-margin {
   margin-bottom: 0!important;
@@ -73,7 +82,7 @@
   border: 1px solid;
   display: block;
   padding: 0.3em 0.8em;  /* Shorter height */
-  font-size:11px;
+  font-size: 11px;
 }
 .radioButton input {
   appearance: none;
@@ -141,13 +150,13 @@ p.loading-screening-text {
   margin-right: 5px;
   vertical-align: middle;
 }
-.atac-square{
+.atac-square {
   background-color: #168316;
 }
-.ctcf-square{
+.ctcf-square {
   background-color: #0001fe;
 }
-.screening-square{
+.screening-square {
   background-color: #2090ff;
 }
 
@@ -164,7 +173,9 @@ p.loading-screening-text {
   border-right-color: orange;
   animation: l2 1s infinite linear;
 }
-@keyframes l2 {to{transform: rotate(1turn)}}
+@keyframes l2 {
+  to { transform: rotate(1turn); }
+}
 
 *, *::before, *::after {
   box-sizing: border-box;
@@ -173,14 +184,14 @@ input#peaks_file_upload {
   display: none;
 }
 .screening_title, .atac_title, .ctcf_title {
-  margin-left:25px;
+  margin-left: 25px;
   font-size: 12px;
 }
 
 .screening_title_container, .atac_title_container, .ctcf_title_container {
   position: sticky;
   top: 0;
-  left:0;
+  left: 0;
 }
 #screening-fields-2 .row {
   margin-bottom: 0px !important;
@@ -201,7 +212,6 @@ body {
 div#gene_track_chart {
   position: relative;
   margin-top: 10px;
-  overflow-x: auto; /* allow horizontal scrolling */
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE 10+ */
 } 
@@ -247,7 +257,6 @@ div#gene_track_chart::-webkit-scrollbar {
 .output-container {
   flex: 1 1 65%;
   max-width: 65%;
-  
 }
 .row {
   display: flex;
@@ -264,13 +273,13 @@ div#gene_track_chart::-webkit-scrollbar {
   padding: 0 10px;
 }
 label.small-label {
-  font-size: 0.9em;
+  font-size: 0.8em;
   font-weight: normal;
   margin-bottom: 3px;
   display: block;
 }
 .inline-label {
-  font-size: 0.9em;
+  font-size: 0.8em;
   font-weight: normal;
   margin-left: 5px;
 }
@@ -279,7 +288,7 @@ select,
 input[type="number"] {
   width: 100%;
   padding: 8px;
-  font-size: 0.9em;
+  font-size: 0.8em;
   margin-bottom: 5px;
   border: 1px solid #ccc;
   border-radius: 4px;
@@ -311,7 +320,7 @@ input[type="number"] {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 0.9em;
+  font-size: 0.8em;
   transition: background-color 0.3s ease;
   margin-top: -4px;
   line-height: 24px;
@@ -319,6 +328,8 @@ input[type="number"] {
 .upload-button:hover {
   background-color: #357ae8;
 }
+
+/* Toggle Switches */
 .switch {
   position: relative;
   background: #D7D7D7;
@@ -364,29 +375,33 @@ input[type="number"] {
   transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
-/* Training normalization toggle: only two options, each 50% width */
+/* Training Normalization Toggle (two options, each 50% width) */
 #training-norm-container .norm-toggle .switch-label {
   width: 50%;
 }
 #training-norm-container .norm-toggle .switch-selector {
   width: 50%;
 }
-
-/* When the training normalization toggle is disabled, ensure the checked option has a dark background and white text */
-#training-norm-switch.disabled-toggle .switch-selector {
-  background-color: #333 !important;
+/* When enabled, slide the selector to 0% for log, and 100% for minmax */
+#training-log:checked ~ .switch-selector {
+  transform: translateX(0%);
 }
-#training-norm-switch.disabled-toggle .switch-label {
+#training-minmax:checked ~ .switch-selector {
+  transform: translateX(100%);
+}
+/* When disabled, force the checked toggle to use background #333 and white text,
+   while non-checked remain with font color #676a6c */
+#training-norm-container.disabled-toggle .switch-input:checked + .switch-label {
   color: #fff !important;
 }
-
-.disabled-toggle .switch-selector {
-  background-color: #D7D7D7;
-  color: #676a6c;
-}
-.disabled-toggle .switch-label {
+#training-norm-container.disabled-toggle .switch-input:not(:checked) + .switch-label {
   color: #676a6c !important;
 }
+#training-norm-container.disabled-toggle .switch-selector {
+  background-color: #333 !important;
+}
+
+/* ATAC/CTCF Normalization Toggle */
 #atac-no-norm:checked ~ .switch-selector,
 #ctcf-no-norm:checked ~ .switch-selector {
   transform: translateX(0%);
@@ -399,6 +414,8 @@ input[type="number"] {
 #ctcf-minmax:checked ~ .switch-selector {
   transform: translateX(200%);
 }
+
+/* Deletion/Screening Toggle */
 .ds-toggle {
   width: 100%;
   height: 28px;
@@ -423,23 +440,26 @@ input[type="number"] {
 #ds_screening:checked ~ .switch-selector {
   transform: translateX(200%);
 }
+
+/* Submit Button */
 .submit-button {
-  display: inline-block;
+  display: block;
   padding: 8px 16px;
   background-color: #4285f4;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  font-size: 0.9em;
+  font-size: 0.8em;
   transition: background-color 0.3s ease;
-  width: 94%;
-  margin-top: 10px;
-  margin-left: 10px;
+  width:100%;
+  margin:25px auto 10px;
 }
 .submit-button:hover {
   background-color: #357ae8;
 }
+
+/* Modal and Instructions */
 .modal {
   display: none;
   position: fixed;
@@ -473,7 +493,8 @@ input[type="number"] {
 }
 .instructions-link {
   margin-bottom: 20px;
-  font-size: 0.9em;
+  font-size: 0.8em;
+  text-decoration:underline;
 }
 .instructions-link a {
   color: #007BFF;
@@ -482,49 +503,33 @@ input[type="number"] {
 .instructions-link a:hover {
   text-decoration: underline;
 }
-@media (max-width: 768px) {
-  .form-container, .output-container {
-    flex: 1 1 100%;
-    max-width: 100%;
+
+/* Responsive Sidebar: above 1000px, fixed width of 380px;
+   below 1000px, sidebar becomes a horizontal bar above plot output */
+@media (min-width: 801px) {
+  .container {
+    flex-direction: row;
   }
-  .row {
+  .form-container {
+    flex: 0 0 350px;
+    max-width: 350px;
+  }
+  .output-container {
+    flex: 1;
+    max-width: calc(100% - 350px);
+  }
+}
+@media (max-width: 800px) {
+  .container {
     flex-direction: column;
   }
+  .form-container,
+  .output-container {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+  }
+  .col-full {
+    width: 100%;
 }
-.hic_image {
-  margin-left: 28px;
-  width: 95%;
-}
-.separator {
-  margin-bottom: 20px;
-  border: 0;
-  border-top: 1px solid #ccc;
-  width: 95%;
-}
-/* Training Normalization Toggle (two options, each 50% width) */
-#training-norm-container .norm-toggle .switch-label {
-  width: 50%;
-}
-#training-norm-container .norm-toggle .switch-selector {
-  width: 50%;
-}
-
-/* When enabled, slide the selector to 0% for log, and 100% for minmax */
-#training-log:checked ~ .switch-selector {
-  transform: translateX(0%);
-}
-#training-minmax:checked ~ .switch-selector {
-  transform: translateX(100%);
-}
-
-/* When disabled, force the checked toggle to use background #333 and white text,
-   while non-checked remain with font color #676a6c */
-#training-norm-container.disabled-toggle .switch-input:checked + .switch-label {
-  color: #fff !important;
-}
-#training-norm-container.disabled-toggle .switch-input:not(:checked) + .switch-label {
-  color: #676a6c !important;
-}
-#training-norm-container.disabled-toggle .switch-selector {
-  background-color: #333 !important;
 }
