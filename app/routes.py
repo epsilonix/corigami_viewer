@@ -1,3 +1,5 @@
+# routes.py
+
 import os
 import subprocess
 import json
@@ -25,7 +27,7 @@ from app.utils import (
     prepare_gene_track_config,
     WINDOW_WIDTH
 )
-
+from app.tasks import q
 ###############################################################################
 # Blueprint & Globals
 ###############################################################################
@@ -128,6 +130,16 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
 ###############################################################################
 # NEW HELPER: Unified "Prediction + Render" function
 ###############################################################################
+##### RQ CHANGES #####
+# We'll import RQ tasks & queue here
+from app.tasks import q
+from app.tasks import (
+    run_editing_task,
+    run_prediction_task,
+    build_chimeric_task,
+    run_screening_task
+)
+
 def run_prediction_and_render(
     region_chr,
     region_start,
@@ -175,37 +187,49 @@ def run_prediction_and_render(
     # 1) Launch editing.py or prediction.py
     if ds_option == "deletion" and del_start is not None and del_width is not None:
         editing_script = os.path.join(script_path, "editing.py")
-        cmd = [
-            "python", editing_script,
-            "--chr", region_chr,
-            "--start", str(region_start),
-            "--model", model_path,
-            "--seq", seq_dir_for_prediction,
-            "--atac", atac_bw_for_model,
-            "--del-start", str(del_start),
-            "--del-width", str(del_width),
-            "--out", output_folder,
-        ]
-        if ctcf_bw_for_model:
-            cmd += ["--ctcf", ctcf_bw_for_model]
-        subprocess.run(cmd, check=True, env=env, text=True)
+        ##### RQ CHANGES #####
+        job = q.enqueue(
+            run_editing_task,
+            editing_script,
+            region_chr,
+            region_start,
+            model_path,
+            seq_dir_for_prediction,
+            atac_bw_for_model,
+            del_start,
+            del_width,
+            output_folder,
+            ctcf_bw_for_model=ctcf_bw_for_model,
+            env=env
+        )
+        # Block until finished (synchronous wait to preserve your existing flow)
+        while not job.is_finished and not job.is_failed:
+            time.sleep(0.5)
+            job.refresh()
+        if job.is_failed:
+            raise RuntimeError("Error in run_editing_task. Check RQ worker logs.")
 
     else:
         prediction_script = os.path.join(script_path, "prediction.py")
-        cmd = [
-            "python", prediction_script,
-            "--chr", region_chr,
-            "--start", str(region_start),
-            "--model", model_path,
-            "--seq", seq_dir_for_prediction,
-            "--atac", atac_bw_for_model,
-            "--out", output_folder
-        ]
-        if ctcf_bw_for_model:
-            cmd += ["--ctcf", ctcf_bw_for_model]
-        if region_end > region_start + WINDOW_WIDTH:  # 2 Mb
-            cmd += ["--full_end", str(region_end)]
-        subprocess.run(cmd, check=True, env=env, text=True)
+        ##### RQ CHANGES #####
+        job = q.enqueue(
+            run_prediction_task,
+            prediction_script,
+            region_chr,
+            region_start,
+            region_end,
+            model_path,
+            seq_dir_for_prediction,
+            atac_bw_for_model,
+            output_folder,
+            ctcf_bw_for_model=ctcf_bw_for_model,
+            env=env
+        )
+        while not job.is_finished and not job.is_failed:
+            time.sleep(0.5)
+            job.refresh()
+        if job.is_failed:
+            raise RuntimeError("Error in run_prediction_task. Check RQ worker logs.")
 
     # 2) Wait for result.npy
     start_wait = time.time()
@@ -219,7 +243,8 @@ def run_prediction_and_render(
     hi_c_matrix = np.load(hi_c_matrix_path)
 
     # 3) Build chart configs
-    from app.routes import prepare_plot_configs
+    # Notice we reference 'from app.routes import prepare_plot_configs' in your original snippet,
+    # but since it's the same file, we can just call it directly:
     hi_c_config, ctcf_config, atac_config, _, _ = prepare_plot_configs(
         hi_c_matrix,
         region_chr,
@@ -235,7 +260,6 @@ def run_prediction_and_render(
     )
 
     # 4) Build gene track config
-    from app.utils import prepare_gene_track_config
     gene_track_config = prepare_gene_track_config(
         genome,
         region_chr,
@@ -385,47 +409,37 @@ def index():
 
         # Build chimeric
         build_chimeric_script = os.path.join(PYTHON_SRC_PATH, "corigami", "inference", "build_chimeric.py")
-        cmd = [
-            "python", build_chimeric_script,
-            "--chr1", region_chr1,
-            "--start1", str(region_start1),
-            "--end1", str(region_end1),
-            "--chr2", region_chr2,
-            "--start2", str(region_start2),
-            "--end2", str(region_end2),
-            "--model", model_path,
-            "--seq", f"./corigami_data/data/{genome}/dna_sequence",
-            "--ctcf", final_ctcf_bw,
-            "--atac", final_atac_bw,
-            "--out", output_folder,
-            "--run_downstream", "none"
-        ]
-        if first_reverse:  cmd.append("--first_reverse")
-        if first_flip:     cmd.append("--first_flip")
-        if second_reverse: cmd.append("--second_reverse")
-        if second_flip:    cmd.append("--second_flip")
+
+        ##### RQ CHANGES #####
+        job = q.enqueue(
+            build_chimeric_task,
+            build_chimeric_script,
+            region_chr1, region_start1, region_end1,
+            region_chr2, region_start2, region_end2,
+            model_path,
+            f"./corigami_data/data/{genome}/dna_sequence",
+            final_ctcf_bw,
+            final_atac_bw,
+            output_folder,
+            first_reverse,
+            first_flip,
+            second_reverse,
+            second_flip,
+            env=env
+        )
+        # Block while job finishes
+        while not job.is_finished and not job.is_failed:
+            time.sleep(0.5)
+            job.refresh()
+        if job.is_failed:
+            return jsonify({"error": "Chimeric build failed. Check RQ worker logs."}), 500
 
         try:
-            proc = subprocess.run(cmd, check=True, env=env, capture_output=True, text=True)
-            stdout = proc.stdout.strip()
-            match_dir = re.search(r'CHIMERA_OUTPUT_DIR=(.+)', stdout)
-            if not match_dir:
-                raise ValueError("CHIMERA_OUTPUT_DIR not found in build_chimeric output")
-            chimera_dir = match_dir.group(1)
-
-            # Read manifest
-            with open(os.path.join(chimera_dir, "manifest.txt")) as f:
-                chim_info = {}
-                for line in f:
-                    if '=' in line:
-                        k,v = line.strip().split('=',1)
-                        chim_info[k] = v
+            chimera_dir, chim_info = job.result
             chim_name   = chim_info.get("CHIM_NAME", "chrCHIM")
             chim_len    = int(chim_info.get("CHIM_LENGTH","0"))
             chim_ctcf_bw= chim_info.get("CHIM_CTCF","")
             chim_atac_bw= chim_info.get("CHIM_ATAC","")
-            # peaks file is also generated internally for chimeric => so no need for extra call here
-
         except Exception as e:
             return jsonify({"error": f"Error building chimeric: {e}"}), 500
 
@@ -447,7 +461,7 @@ def index():
             norm_atac=norm_atac,
             norm_ctcf=norm_ctcf,
             screening_requested=screening_requested,
-            chimeric_fa_dir=os.path.dirname(chim_info["CHIM_FASTA"])
+            chimeric_fa_dir=os.path.dirname(chim_info["CHIM_FASTA"]) if "CHIM_FASTA" in chim_info else None
         )
 
         # Also build a gene track for chimeric => combine gene coords from region1+2
@@ -651,6 +665,10 @@ def run_screening_endpoint():
     then override region parameters (chrCHIM, etc.) and proceed.
     Returns JSON including "screening_config" for the front-end plot.
     """
+
+    from app.tasks import q, run_screening_task
+    from app.utils import generate_peaks_from_bigwig_macs2, get_user_output_folder
+    
     print("RUN_SCREENING_ENDPOINT CALLED", flush=True)
     current_app.logger.info("Entered run_screening_endpoint")
     params = request.args.to_dict()
@@ -709,7 +727,6 @@ def run_screening_endpoint():
         if chimeric_active:
             current_app.logger.info("SCREENING in chimeric mode => building chrCHIM first...")
 
-            # read second-locus parameters from query (or default)
             region_chr2     = request.args.get('region_chr2', 'chr9')
             region_start2   = int(request.args.get('region_start2', '1500000'))
             region_end2_str = request.args.get('region_end2', '')
@@ -718,59 +735,44 @@ def run_screening_endpoint():
             else:
                 region_end2 = region_start2 + WINDOW_WIDTH
 
-            # guess genome from param or default
             genome_select = request.args.get('genome_select', 'hg38')
             seq_dir = os.path.join(BASE_DIR, "corigami_data", "data", genome_select, "dna_sequence")
 
-            # flips
             first_reverse  = (request.args.get('first_reverse') == 'true')
             first_flip     = (request.args.get('first_flip') == 'true')
             second_reverse = (request.args.get('second_reverse') == 'true')
             second_flip    = (request.args.get('second_flip') == 'true')
 
-            # run build_chimeric.py
             PYTHON_SRC_PATH = os.path.join(BASE_DIR, "C.Origami", "src")
             env             = os.environ.copy()
             env["PYTHONPATH"] = PYTHON_SRC_PATH
             build_chimeric_script = os.path.join(PYTHON_SRC_PATH, "corigami", "inference", "build_chimeric.py")
 
-            cmd_chimeric = [
-                "python", build_chimeric_script,
-                "--chr1", region_chr,
-                "--start1", str(screen_start),
-                "--end1",   str(screen_end),
-                "--chr2", region_chr2,
-                "--start2", str(region_start2),
-                "--end2", str(region_end2),
-                "--model", model_path,
-                "--seq", seq_dir,
-                "--ctcf", ctcf_bw_path,
-                "--atac", atac_bw_path,
-                "--out",  output_dir,
-                "--run_downstream", "none"
-            ]
-            if first_reverse:  cmd_chimeric.append("--first_reverse")
-            if first_flip:     cmd_chimeric.append("--first_flip")
-            if second_reverse: cmd_chimeric.append("--second_reverse")
-            if second_flip:    cmd_chimeric.append("--second_flip")
+            ##### RQ CHANGES #####
+            from app.tasks import q, build_chimeric_task
+            job_chim = q.enqueue(
+                build_chimeric_task,
+                build_chimeric_script,
+                region_chr, screen_start, screen_end,
+                region_chr2, region_start2, region_end2,
+                model_path,
+                seq_dir,
+                ctcf_bw_path,
+                atac_bw_path,
+                output_dir,
+                first_reverse,
+                first_flip,
+                second_reverse,
+                second_flip,
+                env=env
+            )
+            while not job_chim.is_finished and not job_chim.is_failed:
+                time.sleep(0.5)
+                job_chim.refresh()
+            if job_chim.is_failed:
+                raise ValueError("Could not build chimeric in screening. RQ job failed.")
 
-            current_app.logger.info("Running build_chimeric for screening: %s", " ".join(cmd_chimeric))
-            proc = subprocess.run(cmd_chimeric, check=True, capture_output=True, text=True, env=env)
-            stdout = proc.stdout.strip()
-            output_dir_match = re.search(r'CHIMERA_OUTPUT_DIR=(.+)', stdout)
-            if not output_dir_match:
-                raise ValueError("Could not find CHIMERA_OUTPUT_DIR in build_chimeric output.")
-
-            chimera_dir  = output_dir_match.group(1)
-            manifest_path= os.path.join(chimera_dir, "manifest.txt")
-            chim_info = {}
-            with open(manifest_path, "r") as f:
-                for line in f:
-                    if '=' in line:
-                        k,v = line.strip().split('=',1)
-                        chim_info[k] = v
-
-            # override region
+            chimera_dir, chim_info = job_chim.result
             region_chr   = chim_info["CHIM_NAME"]  # "chrCHIM"
             screen_start = 0
             screen_end   = int(chim_info["CHIM_LENGTH"])
@@ -792,11 +794,10 @@ def run_screening_endpoint():
         if os.path.exists(results_file):
             os.remove(results_file)
 
-        # auto-peaks if user did not specify peaks_file
+        # Auto-peaks if user did not specify peaks_file
         auto_peaks_file = None
         temp_bedgraph   = None
         if not peaks_file or peaks_file == "none":
-            # We'll create the peaks automatically
             try:
                 auto_peaks_file, temp_bedgraph = generate_peaks_from_bigwig_macs2(
                     bw_path=atac_bw_path,
@@ -813,7 +814,6 @@ def run_screening_endpoint():
                 current_app.logger.exception("Failed to generate peaks from BigWig")
                 return jsonify({"error": "Failed to generate peaks from BigWig", "details": str(e)}), 500
         else:
-            # user provided a real peaks file => do NOT remove it after
             auto_peaks_file, temp_bedgraph = None, None
 
         # call screening.py
@@ -821,46 +821,33 @@ def run_screening_endpoint():
         env = os.environ.copy()
         env["PYTHONPATH"] = PYTHON_SRC_PATH
         screening_script = os.path.join(PYTHON_SRC_PATH, "corigami", "inference", "screening.py")
-
         seq_dir = os.path.join(BASE_DIR, "corigami_data", "data", "hg38", "dna_sequence")
-        # If you want a different genome for screening, override here
 
-        cmd_screen = [
-            "python", screening_script,
-            "--no-server",
-            "--chr", region_chr,
-            "--screen-start", str(screen_start),
-            "--screen-end",   str(screen_end),
-            "--model", model_path,
-            "--seq",   seq_dir,
-            "--atac",  atac_bw_path,
-            "--out",   output_dir,
-            "--perturb-width", str(perturb_width),
-            "--step-size",     str(step_size),
-            "--plot-impact-score",
-            "--save-pred", "--save-perturbation", "--save-diff", "--save-bedgraph",
-            "--ctcf", ctcf_bw_path,
-            "--peaks-file", peaks_file
-        ]
-        current_app.logger.info("Running screening command: %s", " ".join(cmd_screen))
-        process = subprocess.Popen(cmd_screen, env=env,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   text=True,
-                                   bufsize=1)
-        # Stream output to console/log
-        for line in iter(process.stdout.readline, ''):
-            if line: print(line, end='')
-        for line in iter(process.stderr.readline, ''):
-            if line: print(line, end='')
-        process.stdout.close()
-        process.stderr.close()
-        retcode = process.wait()
-        if retcode != 0:
-            current_app.logger.error("Screening command failed with return code %s", retcode)
-            return jsonify({"error": f"Screening script failed with return code {retcode}"}), 500
+        ##### RQ CHANGES #####
+        job_screen = q.enqueue(
+            run_screening_task,
+            screening_script,
+            region_chr,
+            screen_start,
+            screen_end,
+            model_path,
+            seq_dir,
+            atac_bw_path,
+            ctcf_bw_path,
+            peaks_file,
+            output_dir,
+            perturb_width,
+            step_size,
+            env=env
+        )
+        # block until done
+        while not job_screen.is_finished and not job_screen.is_failed:
+            time.sleep(1)
+            job_screen.refresh()
+        if job_screen.is_failed:
+            current_app.logger.error("Screening command failed with RQ job id: %s", job_screen.id)
+            return jsonify({"error": "Screening script failed with RQ worker"}), 500
 
-        # confirm we have screening_results.json
         if not os.path.exists(results_file):
             current_app.logger.error("screening_results.json not found at %s", results_file)
             return jsonify({"error": "screening_results.json was not generated."}), 500
@@ -901,7 +888,6 @@ def run_screening_endpoint():
         screening_config_json = json.dumps(screening_chart_config)
         results["screening_config"] = screening_config_json
 
-        # remove only auto-generated peaks, never user-supplied
         if auto_peaks_file and os.path.exists(auto_peaks_file):
             os.remove(auto_peaks_file)
         if temp_bedgraph and os.path.exists(temp_bedgraph):
