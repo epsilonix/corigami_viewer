@@ -161,7 +161,7 @@ def run_prediction_and_render(
     """
     1. Runs editing.py (if ds_option='deletion') or prediction.py otherwise.
     2. Waits for result.npy, loads => hi_c_matrix.
-    3. Builds chart configs using prepare_plot_configs (or a variant).
+    3. Builds chart configs.
     4. Optionally sets screening config.
     5. Returns dict with chart configs in JSON form.
     """
@@ -170,10 +170,10 @@ def run_prediction_and_render(
     env             = os.environ.copy()
     env["PYTHONPATH"] = PYTHON_SRC_PATH
 
-    script_path = os.path.join(PYTHON_SRC_PATH, "corigami", "inference")
-    hi_c_matrix_path = os.path.join(output_folder, "result.npy")
+    script_path       = os.path.join(PYTHON_SRC_PATH, "corigami", "inference")
+    hi_c_matrix_path  = os.path.join(output_folder, "result.npy")
 
-    # Decide which seq_dir to use (chimeric vs. standard)
+    # Decide which seq_dir to use
     if region_chr == "chrCHIM" and chimeric_fa_dir:
         seq_dir_for_prediction = chimeric_fa_dir
     else:
@@ -184,10 +184,11 @@ def run_prediction_and_render(
         else:
             raise ValueError(f"Unsupported genome: {genome}")
 
-    # 1) Launch editing.py or prediction.py
+    # 1) Launch editing.py or prediction.py (as an RQ job)
+    from app.tasks import q, run_editing_task, run_prediction_task
+
     if ds_option == "deletion" and del_start is not None and del_width is not None:
         editing_script = os.path.join(script_path, "editing.py")
-        ##### RQ CHANGES #####
         job = q.enqueue(
             run_editing_task,
             editing_script,
@@ -202,16 +203,8 @@ def run_prediction_and_render(
             ctcf_bw_for_model=ctcf_bw_for_model,
             env=env
         )
-        # Block until finished (synchronous wait to preserve your existing flow)
-        while not job.is_finished and not job.is_failed:
-            time.sleep(0.5)
-            job.refresh()
-        if job.is_failed:
-            raise RuntimeError("Error in run_editing_task. Check RQ worker logs.")
-
     else:
         prediction_script = os.path.join(script_path, "prediction.py")
-        ##### RQ CHANGES #####
         job = q.enqueue(
             run_prediction_task,
             prediction_script,
@@ -225,30 +218,39 @@ def run_prediction_and_render(
             ctcf_bw_for_model=ctcf_bw_for_model,
             env=env
         )
-        while not job.is_finished and not job.is_failed:
-            time.sleep(0.5)
-            job.refresh()
-        if job.is_failed:
-            raise RuntimeError("Error in run_prediction_task. Check RQ worker logs.")
 
-    # 2) Wait for result.npy
+    # **Store the job ID in session so we can cancel if needed**
+    session['current_job_id'] = job.id
+
+    # 2) Wait for result (blocking) but also check for "canceled"
     start_wait = time.time()
-    while (time.time() - start_wait) < 60:
+    while not job.is_finished and not job.is_failed:
+        job.refresh()
+        # If user canceled => job.get_status() == 'canceled'
+        if job.get_status() == 'canceled':
+            raise RuntimeError("Job was canceled by the user.")
+
+        if (time.time() - start_wait) >= 60:
+            # If we haven't gotten result.npy after 60s, we can still keep waiting
+            # or handle a timeout. For now, do nothing except break if you want a hard limit
+            pass
         if os.path.exists(hi_c_matrix_path):
             break
         time.sleep(0.5)
+
+    if job.is_failed:
+        raise RuntimeError("Error in RQ job. Check worker logs.")
+
     if not os.path.exists(hi_c_matrix_path):
         raise RuntimeError(f"Hi-C matrix not found at {hi_c_matrix_path}")
 
     hi_c_matrix = np.load(hi_c_matrix_path)
 
     # 3) Build chart configs
-    # Notice we reference 'from app.routes import prepare_plot_configs' in your original snippet,
-    # but since it's the same file, we can just call it directly:
     hi_c_config, ctcf_config, atac_config, _, _ = prepare_plot_configs(
         hi_c_matrix,
         region_chr,
-        0 if region_chr=="chrCHIM" else region_start,  # if chrCHIM, use 0 as start
+        0 if region_chr=="chrCHIM" else region_start,
         region_end,
         ds_option,
         ctcf_bw_for_model,
@@ -270,12 +272,11 @@ def run_prediction_and_render(
         del_width
     )
 
-    # 5) If screening => placeholder
+    # 5) Screening config (placeholder)
     screening_config_json = None
     if screening_requested:
         screening_config_json = json.dumps({"placeholder": "screening would happen"})
 
-    # Return configs as JSON strings
     return {
         "hi_c_config":       json.dumps(hi_c_config),
         "ctcf_config":       json.dumps(ctcf_config),
@@ -945,3 +946,21 @@ def list_uploads():
                 display_name = f.split("_", 1)[-1] if "_" in f else f
                 files.append({"value": full_path, "name": display_name})
     return jsonify(files)
+
+@main.route('/cancel_run', methods=['POST'])
+def cancel_run():
+    """
+    Cancels the current RQ job if one is stored in session['current_job_id'].
+    Returns JSON indicating success or error.
+    """
+    from app.tasks import q
+    job_id = session.get('current_job_id')
+    if not job_id:
+        return jsonify({"error": "No job in progress"}), 400
+
+    job = q.fetch_job(job_id)
+    if not job:
+        return jsonify({"error": f"No job found for ID: {job_id}"}), 404
+
+    job.cancel()  # Mark the job as canceled
+    return jsonify({"message": "Current run has been canceled."})

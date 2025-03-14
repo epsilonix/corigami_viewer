@@ -635,7 +635,6 @@ function toggleSecondChr() {
 document.addEventListener('DOMContentLoaded', function() {
   console.log("DOM fully loaded");
   
-  // Your initialization code:
   populateChromosomeDropdown();
   restoreFormFields();
   updateEndPosition();
@@ -686,7 +685,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Attach event listener for the toggle-plus element
   const togglePlusElem = document.getElementById("toggle-second-chr");
   if (togglePlusElem) {
     togglePlusElem.addEventListener("click", toggleSecondChr);
@@ -717,12 +715,12 @@ document.addEventListener('DOMContentLoaded', function() {
     radio.addEventListener("change", updateTrainingNormField);
   });
 
-  // Populate dropdowns
+  // Populate file dropdowns
   populateDropdownFromServer("atac_bw_path", "atac");
   populateDropdownFromServer("ctcf_bw_path", "ctcf");
   populateDropdownFromServer("peaks_file_path", "peaks");
 
-  // Attach immediate AJAX upload for file inputs
+  // File uploads
   document.getElementById("atac_bw_file").addEventListener("change", () => {
     ajaxUploadFile("atac_bw_file", "atac", "atac_bw_path");
   });
@@ -733,7 +731,7 @@ document.addEventListener('DOMContentLoaded', function() {
     ajaxUploadFile("peaks_file_upload", "peaks", "peaks_file_path");
   });
 
-  // Modal handling for instructions
+  // Modal (help/instructions)
   const modal = document.getElementById("instructions-modal");
   const btn = document.getElementById("openModal");
   const span = document.getElementsByClassName("close")[0];
@@ -750,20 +748,53 @@ document.addEventListener('DOMContentLoaded', function() {
     if (event.target === modal) modal.style.display = "none";
   };
 
-  // Form submission via AJAX
+  // --------------------------------------------------------------------------------
+  // NEW: Track if a run is in progress. We'll toggle the button text between
+  // "Generate plots" and "Cancel current run".
+  // --------------------------------------------------------------------------------
+  let runInProgress = false;
+  const submitBtn = document.querySelector('input[type="submit"].submit-button');
   const formElem = document.getElementById("corigami-form");
+
+  // Handle "Cancel" call: POST to /cancel_run
+  function cancelCurrentRun() {
+    fetch("/cancel_run", { method: "POST" })
+      .then(res => res.json())
+      .then(data => {
+        console.log("Cancel run response:", data);
+        // Revert button text
+        runInProgress = false;
+        if (submitBtn) submitBtn.value = "Generate plots";
+      })
+      .catch(err => console.error("Error canceling run:", err));
+  }
+
   formElem.addEventListener("submit", function(e) {
-    const togglePlusElem = document.getElementById("toggle-second-chr");
+    // If user is already in a run => the click means "Cancel"
+    if (runInProgress) {
+      e.preventDefault();
+      cancelCurrentRun();
+      return false;
+    }
+
+    // Otherwise, normal "Generate plots"
+    e.preventDefault();
+    if (!checkFormRequirements()) return false;
+
+    // Turn on run-in-progress mode
+    runInProgress = true;
+    if (submitBtn) submitBtn.value = "Cancel current run";
+
+    const container = document.getElementById("output-container");
+    container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';
+
+    // If second-chr toggle is off, clear the second region fields
     if (!togglePlusElem.classList.contains("active")) {
-      // Clear second region fields if the plus toggle is off.
       document.getElementById("region_chr2").value = "";
       document.getElementById("region_start2").value = "";
       document.getElementById("region_end2").value = "";
     }
-    e.preventDefault();
-    if (!checkFormRequirements()) return false;
-    const container = document.getElementById("output-container");
-    container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';
+
     const formData = new FormData(formElem);
     fetch("/", {
       method: "POST",
@@ -771,6 +802,10 @@ document.addEventListener('DOMContentLoaded', function() {
       headers: { "X-Requested-With": "XMLHttpRequest" }
     })
     .then(response => {
+      // Once the server route is done, we reset the button text
+      runInProgress = false;
+      if (submitBtn) submitBtn.value = "Generate plots";
+
       if (!response.ok) throw new Error("Network response was not ok");
       return response.text();
     })
@@ -778,10 +813,15 @@ document.addEventListener('DOMContentLoaded', function() {
       container.innerHTML = html;
       executeScripts(container);
     })
-    .catch(error => console.error("Error during form submission:", error));
+    .catch(error => {
+      console.error("Error during form submission:", error);
+      container.innerHTML = "<p style='color:red;'>Error generating plots.</p>";
+    });
   });
 
+  // if screening_mode was declared true by the server:
   if (typeof screening_mode !== "undefined" && screening_mode === true) {
     runScreening();
   }
 });
+
