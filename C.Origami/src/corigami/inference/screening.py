@@ -158,7 +158,7 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
             window_end = screen_end
         processed_windows += 1
         pred_start = int(w_start + perturb_width / 2 - 2097152 / 2)
-        pred, pred_deletion, diff_map = predict_difference(chr_name, pred_start, int(w_start), perturb_width, model, seq, ctcf, atac)
+        pred, pred_deletion, diff_map = predict_difference(chr_name, pred_start, int(w_start), perturb_width, model, seq, ctcf, atac, screen_start, screen_end)
         if plot_frames:
             plot_combination(output_path, celltype, chr_name, pred_start, w_start, perturb_width, pred, pred_deletion, diff_map, 'screening')
         preds = np.append(preds, np.expand_dims(pred, 0), axis=0)
@@ -194,8 +194,23 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
         json.dump(results, f)
     print("Saved screening results to {}".format(results_file))
 
-def predict_difference(chr_name, start, deletion_start, deletion_width, model, seq, ctcf, atac):
-    end = start + 2097152 + deletion_width
+def predict_difference(chr_name, start, deletion_start, deletion_width, model, seq, ctcf, atac, screen_start, screen_end):
+    
+    if chr_name == "chrCHIM":
+        chrom_len = screen_end - screen_start
+
+        # Clip start and end to avoid out-of-bounds on chrCHIM
+        if start < 0:
+            start = 0
+        end = start + 2_097_152 + deletion_width
+        if end > chrom_len:
+            end = chrom_len
+    else:
+        # For any other chromosome, do whatever logic you want
+        end = start + 2_097_152 + deletion_width
+   
+   
+
     seq_region, ctcf_region, atac_region = infer.get_data_at_interval(chr_name, start, end, seq, ctcf, atac)
     inputs = preprocess_prediction(chr_name, start, seq_region, ctcf_region, atac_region)
     pred = model(inputs)[0].detach().cpu().numpy()

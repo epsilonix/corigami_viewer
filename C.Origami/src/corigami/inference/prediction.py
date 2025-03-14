@@ -73,34 +73,34 @@ def consensus_prediction(chr_name, full_start, full_end, model_path, seq_path, c
     return consensus
 
 def main():
-    parser = argparse.ArgumentParser(description='C.Origami Prediction Module with Consensus for Wider Regions')
+    parser = argparse.ArgumentParser(
+        description='C.Origami Prediction Module with Consensus for Wider Regions'
+    )
     parser.add_argument('--out', dest='output_path', default='outputs',
                         help='Output path for storing results (default: %(default)s)')
     parser.add_argument('--celltype', dest='celltype', help='Sample cell type for prediction')
     parser.add_argument('--chr', dest='chr_name', help='Chromosome for prediction', required=True)
     parser.add_argument('--start', dest='start', type=int,
-                        help='Starting coordinate for prediction (used as left boundary for window(s))', required=True)
+                        help='Starting coordinate for prediction (left boundary)', required=True)
+    parser.add_argument('--end', dest='end', type=int, required=True,
+                        help='End coordinate for prediction')
     parser.add_argument('--model', dest='model_path', help='Path to the model checkpoint', required=True)
-    parser.add_argument('--seq', dest='seq_path', help='Path to the folder where the sequence .fa.gz files are stored', required=True)
+    parser.add_argument('--seq', dest='seq_path',
+                        help='Path to the folder where the sequence .fa.gz files are stored', required=True)
     parser.add_argument('--ctcf', dest='ctcf_path', help='Path to the CTCF .bw file/folder', required=True)
     parser.add_argument('--atac', dest='atac_path', help='Path to the ATAC .bw file/folder', required=True)
-    # Optional parameter for consensus prediction over a wider region.
-    parser.add_argument('--full_end', dest='full_end', type=int, default=None,
-                        help='End coordinate for full region prediction. If provided and greater than start+window_size, a consensus is built.')
     
     args = parser.parse_args(args=None if sys.argv[1:] else ['--help'])
-    
-    celltype_for_path = args.celltype.strip() if args.celltype and args.celltype.strip() != "" else ""
-    
- 
     out_path = os.path.join(args.output_path, "result.npy")
     
-    if args.full_end is not None and args.full_end > args.start + DEFAULT_WINDOW_SIZE:
+    # Decide if we run consensus prediction (wider region) or a standard 2 Mb prediction.
+    print(f"PREDICTION.PY: args.end: {args.end}, args.start: {args.start}")
+    if args.end > args.start + DEFAULT_WINDOW_SIZE:
         print("Running consensus (wider window) prediction...")
         consensus_matrix = consensus_prediction(
             chr_name=args.chr_name,
             full_start=args.start,
-            full_end=args.full_end,
+            full_end=args.end,
             model_path=args.model_path,
             seq_path=args.seq_path,
             ctcf_path=args.ctcf_path,
@@ -110,17 +110,18 @@ def main():
         )
         np.save(out_path, consensus_matrix)
         print(f"Consensus prediction saved to: {out_path}")
-        # Plot generation commented out:
-        # plot = plot_utils.MatrixPlot(args.output_path, consensus_matrix, 'consensus_prediction', celltype_for_path, args.chr_name, args.start)
-        # plot.plot()
     else:
         print("Running standard 2 Mb prediction...")
-        pred = single_prediction(args.chr_name, args.start, args.model_path, args.seq_path, args.ctcf_path, args.atac_path)
+        pred = single_prediction(
+            args.chr_name,
+            args.start,
+            args.model_path,
+            args.seq_path,
+            args.ctcf_path,
+            args.atac_path
+        )
         np.save(out_path, pred)
         print(f"Prediction saved to: {out_path}")
-        # Plot generation commented out:
-        # plot = plot_utils.MatrixPlot(args.output_path, pred, 'prediction', celltype_for_path, args.chr_name, args.start)
-        # plot.plot()
 
 if __name__ == '__main__':
     main()

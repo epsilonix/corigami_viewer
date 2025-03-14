@@ -106,110 +106,25 @@ def run_prediction_task(prediction_script, region_chr, region_start, region_end,
                         model_path, seq_dir_for_prediction, atac_bw_for_model,
                         output_folder, ctcf_bw_for_model=None, env=None):
     """
-    Moves the original 'prediction.py' call from routes.py
-    into this function so it can be executed by an RQ worker.
+    Calls prediction.py with explicit start and end parameters.
     """
+    print(f"tasks.py: Sending start={region_start}, end={region_end} to prediction.py")
+
     cmd = [
         "python", prediction_script,
         "--chr", region_chr,
         "--start", str(region_start),
+        "--end", str(region_end),  # Always pass the explicit end coordinate
         "--model", model_path,
         "--seq", seq_dir_for_prediction,
         "--atac", atac_bw_for_model,
-        "--out", output_folder
+        "--out", output_folder,
+        "--ctcf", ctcf_bw_for_model
     ]
-    # If we have a CTCF track, pass it
-    if ctcf_bw_for_model:
-        cmd += ["--ctcf", ctcf_bw_for_model]
-
-    # If region_end is bigger than 2Mb beyond region_start => add --full_end
-    if region_end > region_start + 2097152:  # 2Mb
-        cmd += ["--full_end", str(region_end)]
-
     run_cmd(cmd, env=env)
     return True
 
-###############################################################################
-# TASK 3: build_chimeric
-###############################################################################
-def build_chimeric_task(build_chimeric_script, region_chr1, region_start1, region_end1,
-                        region_chr2, region_start2, region_end2,
-                        model_path, genome_dir, ctcf_bw_path, atac_bw_path,
-                        output_folder, first_reverse, first_flip,
-                        second_reverse, second_flip, env=None):
-    """
-    Moves the original 'build_chimeric.py' call (subprocess) from routes.py
-    into this function so it can be executed by an RQ worker.
-    Returns (chimera_dir, chim_info_dict).
-    """
-    cmd = [
-        "python", build_chimeric_script,
-        "--chr1", region_chr1,
-        "--start1", str(region_start1),
-        "--end1", str(region_end1),
-        "--chr2", region_chr2,
-        "--start2", str(region_start2),
-        "--end2", str(region_end2),
-        "--model", model_path,
-        "--seq", genome_dir,
-        "--ctcf", ctcf_bw_path,
-        "--atac", atac_bw_path,
-        "--out", output_folder,
-        "--run_downstream", "none"
-    ]
-    if first_reverse:
-        cmd.append("--first_reverse")
-    if first_flip:
-        cmd.append("--first_flip")
-    if second_reverse:
-        cmd.append("--second_reverse")
-    if second_flip:
-        cmd.append("--second_flip")
 
-    run_cmd(cmd, env=env)
-
-    # Now parse the stdout/stderr is not enough, we read manifest from output:
-    # We'll guess the CHIMERA_OUTPUT_DIR from the last known line in build_chimeric output
-    # but let's do it more robustly by reading manifest:
-    chimera_dir = None
-    # Attempt to find the subdirectory:
-    # the script prints "CHIMERA_OUTPUT_DIR=..."
-    # We can parse from the output_folder if we want,
-    # or just guess from the standard logic:
-    # but let's do it from the lines ourselves:
-
-    # For safety, let's search for any subfolders named "chimeric_build_" in output_folder
-    # and assume the latest is the correct one (this might need to match your real code logic).
-    # If your code prints exactly "CHIMERA_OUTPUT_DIR=some_path", you'd need a more direct approach.
-    # Let's just do your original approach: read "manifest.txt" in the output folder.
-    # We'll assume your code places "manifest.txt" in `output_folder/manifest.txt` or a subfolder:
-    # Because your original logic in routes did:
-
-    # We might do:
-    possible_manifest = os.path.join(output_folder, "manifest.txt")
-    if os.path.exists(possible_manifest):
-        chimera_dir = output_folder
-    else:
-        # Maybe there's a subdirectory:
-        for root, dirs, files in os.walk(output_folder):
-            if "manifest.txt" in files:
-                chimera_dir = root
-                break
-
-    if not chimera_dir:
-        raise RuntimeError("Could not find manifest.txt after build_chimeric.")
-
-    # Read manifest
-    manifest_path = os.path.join(chimera_dir, "manifest.txt")
-    chim_info = {}
-    with open(manifest_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if '=' in line:
-                k,v = line.split('=',1)
-                chim_info[k] = v
-
-    return (chimera_dir, chim_info)
 
 ###############################################################################
 # TASK 4: run_screening
@@ -219,16 +134,15 @@ def run_screening_task(screening_script, region_chr, screen_start, screen_end,
                        peaks_file, output_dir, perturb_width, step_size,
                        env=None):
     """
-    Moves the 'screening.py' call and bigWigToBedGraph+MACS2 logic from routes.py
-    into this function.  We run the command in a separate process.
-    We *still* do line-by-line prints to console so you see them in worker logs.
+    Runs the screening.py script. Now requires:
+    - A valid CTCF bigWig file (ctcf_bw_path)
+    - A valid peaks file (peaks_file).
     """
-    # All the code that was originally in your route can go here.
-    # But the user wants minimal changes, so we'll keep it straightforward.
-
-    # We'll assume your route or some other function already generated
-    # auto_peaks if needed. If not, you'd run bigWigToBedGraph + macs2 here.
-    # For illustration, we'll just run the screening script:
+    # 1) Validate inputs
+    if not ctcf_bw_path or not os.path.isfile(ctcf_bw_path):
+        raise ValueError(f"CTCF file is required and must exist: {ctcf_bw_path}")
+    if not peaks_file or not os.path.isfile(peaks_file):
+        raise ValueError(f"Peaks file is required and must exist: {peaks_file}")
 
     cmd = [
         "python", screening_script,
@@ -247,17 +161,10 @@ def run_screening_task(screening_script, region_chr, screen_start, screen_end,
         "--save-perturbation",
         "--save-diff",
         "--save-bedgraph",
+        "--ctcf", ctcf_bw_path,
+        "--peaks-file", peaks_file
     ]
-
-    if ctcf_bw_path:
-        cmd += ["--ctcf", ctcf_bw_path]
-    if peaks_file:
-        cmd += ["--peaks-file", peaks_file]
 
     run_cmd(cmd, env=env)
     return True
 
-
-def hello_task(name):
-    print(f"Hello from {name}")
-    return f"Hello from {name}"

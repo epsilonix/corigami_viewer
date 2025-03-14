@@ -1,0 +1,12 @@
+screening: 0, 4194304, 1000, 1000
+screening peaks_file: None
+Reading sequence: /Users/everett/corigami_viewer_conda/user_data/6f8460fc-e3e8-4652-a862-79883bf6e13a/output/chimera_files/chrCHIM.fa.gz
+Feature path: /Users/everett/corigami_viewer_conda/user_data/6f8460fc-e3e8-4652-a862-79883bf6e13a/output/chrCHIM_ctcf.bw 
+ Normalization status: None
+Feature path: /Users/everett/corigami_viewer_conda/user_data/6f8460fc-e3e8-4652-a862-79883bf6e13a/output/normalized_atac_log.bw 
+ Normalization status: None
+Initializing ConvModel
+Initializing ConvTransModel
+Loading weights
+Total windows (uniform): 4194
+Screening...

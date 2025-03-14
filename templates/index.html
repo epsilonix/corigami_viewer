@@ -95,18 +95,18 @@
         <!-- Region Row with 20/40/40 width distribution -->
         <div class="row">
           <div class="col-20">
-            <label for="region_chr" class="small-label">Chr*</label>
-            <select id="region_chr" name="region_chr" required>
+            <label for="region_chr1" class="small-label">Chr*</label>
+            <select id="region_chr1" name="region_chr1" required>
               <option value="">Loading...</option>
             </select>
           </div>
           <div class="col-40">
-            <label for="region_start" class="small-label">Start (bp)*</label>
-            <input type="number" id="region_start" name="region_start" value="{{ request.form.region_start or '1500000' }}" required>
+            <label for="region_start1" class="small-label">Start (bp)*</label>
+            <input type="number" id="region_start1" name="region_start1" value="{{ request.form.region_start or '1500000' }}" required>
           </div>
           <div class="col-40">
-            <label for="region_end" class="small-label">End (bp)</label>
-            <input type="number" id="region_end" name="region_end">
+            <label for="region_end1" class="small-label">End (bp)</label>
+            <input type="number" id="region_end1" name="region_end1">
           </div>
         </div>
         <div id="region-bound-error" class="region-bound-error"></div>

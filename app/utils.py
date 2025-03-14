@@ -1,3 +1,5 @@
+# utils.py
+
 import os
 import time
 import uuid
@@ -367,7 +369,6 @@ def prepare_chimeric_gene_track_config(annotation_file, chr1, start1, end1, chr2
     
     # Merge the two lists and sort by the new start coordinate.
     merged_genes = sorted(genes_region1 + genes_region2, key=lambda x: x["start"])
-    print(f"merged_genes: {merged_genes}")
     # Calculate total length of the synthetic chromosome.
     total_length = (end1 - start1) + (end2 - start2)
     # Convert lengths to megabases for the xAxis domains.
@@ -388,3 +389,249 @@ def prepare_chimeric_gene_track_config(annotation_file, chr1, start1, end1, chr2
     }
     return gene_track_config
 
+# In utils.py
+
+import pyBigWig
+import numpy as np
+
+def extract_bigwig_region_array(
+    bw_path, 
+    chrom, 
+    start, 
+    end, 
+    do_reverse=False,
+    default_val=0.0
+):
+    """
+    Extract raw bigwig values as a 1D numpy array from [start..end).
+    If `do_reverse=True`, reverse the array.
+    (No 'do_flip' for bigWig signals; that concept is removed.)
+    """
+    length = end - start
+    if length <= 0:
+        return np.zeros(0, dtype=np.float32)
+
+    try:
+        bw = pyBigWig.open(bw_path, "r")
+    except Exception as e:
+        print(f"Error opening bigwig {bw_path}: {e}")
+        return np.zeros(length, dtype=np.float32)
+
+    if chrom not in bw.chroms():
+        print(f"[extract_bigwig_region_array] Chrom {chrom} not found in {bw_path}")
+        bw.close()
+        return np.zeros(length, dtype=np.float32)
+
+    chr_len = bw.chroms()[chrom]
+    s = max(0, start)
+    e = min(end, chr_len)
+
+    arr = np.full(length, default_val, dtype=np.float32)
+    if s < e:
+        vals = bw.values(chrom, s, e)
+        vals = np.nan_to_num(vals, nan=default_val)
+        arr[0:(e - s)] = vals
+
+    bw.close()
+
+    if do_reverse:
+        arr = arr[::-1]
+
+    return arr
+
+def write_chimeric_bigwig(
+    atac_array,
+    ctcf_array,
+    outdir,
+    chim_len,
+    chim_name="chrCHIM"
+):
+    """
+    Writes 2 bigWigs (ATAC + CTCF) each of length = chim_len on chrom=chim_name.
+    Returns (atac_bw_path, ctcf_bw_path).
+    """
+    import pyBigWig
+    os.makedirs(outdir, exist_ok=True)
+
+    atac_bw_path = os.path.join(outdir, f"{chim_name}_atac.bw")
+    ctcf_bw_path = os.path.join(outdir, f"{chim_name}_ctcf.bw")
+
+    # Write ATAC
+    bw_atac = pyBigWig.open(atac_bw_path, "w")
+    bw_atac.addHeader([(chim_name, chim_len)])
+    chunk_size = 1_000_000
+    idx = 0
+    while idx < chim_len:
+        end_idx = min(idx + chunk_size, chim_len)
+        subarr = atac_array[idx:end_idx].tolist()
+        starts = list(range(idx, end_idx))
+        ends   = list(range(idx+1, end_idx+1))
+        bw_atac.addEntries([chim_name]*(end_idx-idx), starts, ends=ends, values=subarr)
+        idx = end_idx
+    bw_atac.close()
+
+    # Write CTCF
+    bw_ctcf = pyBigWig.open(ctcf_bw_path, "w")
+    bw_ctcf.addHeader([(chim_name, chim_len)])
+    idx = 0
+    while idx < chim_len:
+        end_idx = min(idx + chunk_size, chim_len)
+        subarr = ctcf_array[idx:end_idx].tolist()
+        starts = list(range(idx, end_idx))
+        ends   = list(range(idx+1, end_idx+1))
+        bw_ctcf.addEntries([chim_name]*(end_idx-idx), starts, ends=ends, values=subarr)
+        idx = end_idx
+    bw_ctcf.close()
+
+    return atac_bw_path, ctcf_bw_path
+
+########################################################################
+#  FASTA EXTRACTION + CHIMERIC FASTA
+########################################################################
+
+def extract_fasta_region(fasta_path, start, end, do_reverse=False, do_flip=False):
+    """
+    Extract substring from a FASTA (or .fa.gz). 
+      - if do_reverse=True -> reverse the string
+      - if do_flip=True -> complement the string (like reverse-complement).
+        If you only want reverse complement, set do_reverse=True & do_flip=True.
+    Returns a string of ACTG in uppercase. 
+    """
+    import gzip
+
+    # Open gz or plain
+    opener = gzip.open if fasta_path.endswith(".gz") else open
+
+    # 1) Read entire sequence (assuming it's a single-chrom FASTA)
+    seq_chunks = []
+    with opener(fasta_path, "rt") as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                continue
+            seq_chunks.append(line)
+    full_seq = "".join(seq_chunks).upper()
+
+    # 2) Substring
+    sub_seq = full_seq[start:end]
+    if not sub_seq:
+        return ""
+
+    # 3) Reverse if needed
+    if do_reverse:
+        sub_seq = sub_seq[::-1]
+
+    # 4) Flip (complement) if needed
+    if do_flip:
+        complement = {
+            "A": "T", "T": "A",
+            "G": "C", "C": "G",
+            "N": "N"
+        }
+        # for safety, map unknown => N
+        sub_seq = "".join(complement.get(base, "N") for base in sub_seq)
+
+    return sub_seq
+
+def write_chrom_fasta(out_fa, chrom_name, seq_str):
+    """
+    Write `seq_str` to out_fa (.fa.gz) with a 70-char line wrap.
+    Returns final path to gz file.
+    """
+    import gzip
+
+    if not out_fa.endswith(".gz"):
+        out_fa += ".gz"
+
+    line_len = 70
+    with gzip.open(out_fa, "wt") as f:
+        f.write(f">{chrom_name}\n")
+        for i in range(0, len(seq_str), line_len):
+            chunk = seq_str[i:i+line_len]
+            f.write(chunk + "\n")
+
+    return out_fa
+
+def assemble_chimeric_fasta(
+    fa1_path, chr1_start, chr1_end, do_reverse1, do_flip1,
+    fa2_path, chr2_start, chr2_end, do_reverse2, do_flip2,
+    output_folder,
+    chim_name="chrCHIM"
+):
+    """
+    Extract two slices from 2 FASTA files (or same file) & produce 'chrCHIM.fa.gz'.
+    Returns the path to the final FASTA.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+
+    seq1 = extract_fasta_region(fa1_path, chr1_start, chr1_end, 
+                                do_reverse=do_reverse1, do_flip=do_flip1)
+    seq2 = extract_fasta_region(fa2_path, chr2_start, chr2_end,
+                                do_reverse=do_reverse2, do_flip=do_flip2)
+
+    chim_seq = seq1 + seq2
+    out_fa_path = os.path.join(output_folder, f"{chim_name}.fa")
+    gz_path = write_chrom_fasta(out_fa_path, chim_name, chim_seq)
+    return gz_path
+
+########################################################################
+#  Putting it all together for chimeric signals
+########################################################################
+
+def assemble_chimeric_arrays(
+    raw_atac_path,
+    raw_ctcf_path,
+    chr1, start1, end1,
+    chr2, start2, end2,
+    first_reverse=False,
+    first_flip=False,
+    second_reverse=False,
+    second_flip=False
+):
+    """
+    For the signals, we only do `reverse`; ignore flip for bigWig signals.
+    For FASTA, we can do both reverse & flip. 
+    But here, as an example, we strip out the do_flip for bigWig signals 
+    or treat do_flip same as do_reverse. 
+    """
+    # We interpret 'flip' as a DNA complement concept, 
+    # but for bigWig signals, we won't do complement. We'll do reverse only if needed.
+
+    arr_atac_1 = extract_bigwig_region_array(
+        raw_atac_path, chr1, start1, end1,
+        do_reverse=(first_reverse or first_flip)  # treat flip as reverse for signals
+    )
+    arr_atac_2 = extract_bigwig_region_array(
+        raw_atac_path, chr2, start2, end2,
+        do_reverse=(second_reverse or second_flip)
+    )
+
+    chim_atac = np.concatenate([arr_atac_1, arr_atac_2])
+
+    arr_ctcf_1 = extract_bigwig_region_array(
+        raw_ctcf_path, chr1, start1, end1,
+        do_reverse=(first_reverse or first_flip)
+    )
+    arr_ctcf_2 = extract_bigwig_region_array(
+        raw_ctcf_path, chr2, start2, end2,
+        do_reverse=(second_reverse or second_flip)
+    )
+    chim_ctcf = np.concatenate([arr_ctcf_1, arr_ctcf_2])
+
+    return chim_atac, chim_ctcf
+
+def clear_folder(folder):
+    """
+    Delete all files and subdirectories in the given folder.
+    """
+    if os.path.exists(folder):
+        for filename in os.listdir(folder):
+            file_path = os.path.join(folder, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    import shutil
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}. Reason: {e}")

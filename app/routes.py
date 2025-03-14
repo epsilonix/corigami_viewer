@@ -25,7 +25,8 @@ from app.utils import (
     predict_peaks,
     prepare_chimeric_gene_track_config,
     prepare_gene_track_config,
-    WINDOW_WIDTH
+    WINDOW_WIDTH,
+    clear_folder
 )
 from app.tasks import q
 ###############################################################################
@@ -136,7 +137,6 @@ from app.tasks import q
 from app.tasks import (
     run_editing_task,
     run_prediction_task,
-    build_chimeric_task,
     run_screening_task
 )
 
@@ -147,6 +147,7 @@ def run_prediction_and_render(
     ds_option,
     model_path,
     genome,
+    seq_dir,
     atac_bw_for_model,
     ctcf_bw_for_model,
     raw_atac_path,
@@ -155,8 +156,7 @@ def run_prediction_and_render(
     del_width=None,
     norm_atac=None,
     norm_ctcf=None,
-    screening_requested=False,
-    chimeric_fa_dir=None  # for chimeric mode to pass chrCHIM.fa.gz folder
+    screening_requested=False # for chimeric mode to pass chrCHIM.fa.gz folder
 ):
     """
     1. Runs editing.py (if ds_option='deletion') or prediction.py otherwise.
@@ -173,16 +173,7 @@ def run_prediction_and_render(
     script_path       = os.path.join(PYTHON_SRC_PATH, "corigami", "inference")
     hi_c_matrix_path  = os.path.join(output_folder, "result.npy")
 
-    # Decide which seq_dir to use
-    if region_chr == "chrCHIM" and chimeric_fa_dir:
-        seq_dir_for_prediction = chimeric_fa_dir
-    else:
-        if genome == 'hg38':
-            seq_dir_for_prediction = "./corigami_data/data/hg38/dna_sequence"
-        elif genome == 'mm10':
-            seq_dir_for_prediction = "./corigami_data/data/mm10/dna_sequence"
-        else:
-            raise ValueError(f"Unsupported genome: {genome}")
+    # Decide which seq_dir to us
 
     # 1) Launch editing.py or prediction.py (as an RQ job)
     from app.tasks import q, run_editing_task, run_prediction_task
@@ -195,7 +186,7 @@ def run_prediction_and_render(
             region_chr,
             region_start,
             model_path,
-            seq_dir_for_prediction,
+            seq_dir,
             atac_bw_for_model,
             del_start,
             del_width,
@@ -212,7 +203,7 @@ def run_prediction_and_render(
             region_start,
             region_end,
             model_path,
-            seq_dir_for_prediction,
+            seq_dir,
             atac_bw_for_model,
             output_folder,
             ctcf_bw_for_model=ctcf_bw_for_model,
@@ -288,35 +279,23 @@ def run_prediction_and_render(
 ###############################################################################
 # Main Page: GET => form, POST => run standard or chimeric logic
 ###############################################################################
+# routes.py (excerpt) -- remove references to build_chimeric.py or build_chimeric_task
+
 @main.route('/', methods=['GET', 'POST'])
 def index():
-    """
-    Main route:
-     - GET => show form
-     - POST => decide standard vs chimeric
-       * If ds_option="screening" and the user didn't provide a peaks file => call predict_peaks
-       * Build gene track config in both standard + chimeric modes
-       * Return partial or full page
-    """
     if request.method == 'GET':
         user_output_folder = get_user_output_folder()
         return render_template("index.html", screening_mode=False, user_output_folder=user_output_folder)
 
-    # 1) Check if second region is present => chimeric mode
     chimeric_active = (request.form.get('region_chr2', '').strip() != '')
     ds_option = request.form.get('ds_option', 'none')
     screening_requested = (ds_option == 'screening')
 
-    # Common environment, etc.
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    PYTHON_SRC_PATH = os.path.join(BASE_DIR, "..", "C.Origami", "src")
-    env = os.environ.copy()
-    env["PYTHONPATH"] = PYTHON_SRC_PATH
-
     output_folder = get_user_output_folder()
+    clear_folder(output_folder)
     os.makedirs(output_folder, exist_ok=True)
 
-    # 2) Model selection
+    # Model selection, genome, etc. (unchanged)
     region_model = request.form.get('model_select', 'V4')
     if region_model == 'V1':
         model_path = "corigami_data/model_weights/v1_jimin.ckpt"
@@ -329,156 +308,165 @@ def index():
     else:
         return "Invalid model selection."
 
-    # 3) Genome
-    genome = request.form.get('genome_select', 'hg38')
-    if genome not in ['hg38', 'mm10']:
-        return "Invalid genome selection."
-
-    # 4) Distinguish standard vs chimeric
+    # ... pick model_path ...
+    genome = request.form.get('genome_select')
+    session['final_genome'] = genome
     if chimeric_active:
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # CHIMERIC MODE
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        print("Running in CHIMERIC mode...")
-
+        print("Running in CHIMERIC mode (inline) ...")
         from app.utils import (
-            normalize_atac, normalize_ctcf, predict_ctcf,
+            assemble_chimeric_arrays,
+            write_chimeric_bigwig,
+            normalize_atac,
+            normalize_ctcf,
             prepare_chimeric_gene_track_config
         )
 
-        # Region 1
-        region_chr1 = request.form.get('region_chr1', '') or request.form.get('region_chr', '')
-        region_start1 = int(request.form.get('region_start1', '') or request.form.get('region_start', ''))
-        region_end1_str = request.form.get('region_end1', '') or request.form.get('region_end', '')
-        if region_end1_str.strip():
-            region_end1 = int(region_end1_str)
-        else:
-            region_end1 = region_start1 + WINDOW_WIDTH
+        # 1) Gather region1 + region2
+        region_chr1 = request.form.get('region_chr1')
+        region_start1 = int(request.form.get('region_start1'))
+        region_end1 = region_start1 + WINDOW_WIDTH
+        maybe_end1 = request.form.get('region_end1','').strip()
+        if maybe_end1:
+            region_end1 = int(maybe_end1)
 
-        # Region 2
-        region_chr2 = request.form.get('region_chr2', '').strip()
-        region_start2 = int(request.form.get('region_start2', '').strip())
-        region_end2_str = request.form.get('region_end2', '').strip()
-        if region_end2_str:
-            region_end2 = int(region_end2_str)
-        else:
-            region_end2 = region_start2 + WINDOW_WIDTH
+        region_chr2 = request.form.get('region_chr2')
+        region_start2 = int(request.form.get('region_start2'))
+        region_end2 = region_start2 + WINDOW_WIDTH
+        maybe_end2 = request.form.get('region_end2','').strip()
+        if maybe_end2:
+            region_end2 = int(maybe_end2)
 
-        # ATAC / CTCF (raw or user-provided)
-        raw_atac_path = request.form.get('atac_bw_path', '').strip()
-        raw_ctcf_path = request.form.get('ctcf_bw_path', '').strip()
+        # 2) Raw ATAC / CTCF (no normalization yet)
+        raw_atac_path = request.form.get('atac_bw_path','').strip()
+        raw_ctcf_path = request.form.get('ctcf_bw_path','').strip()
         if not raw_atac_path:
-            return "No ATAC bigwig for chimeric mode."
+            return "Chimeric mode requires an ATAC bigWig"
         if not raw_ctcf_path or raw_ctcf_path == "none":
-            return "No CTCF bigwig for chimeric mode."
+            return "Chimeric mode requires a CTCF bigWig"
 
-        # Norm
-        norm_atac = request.form.get('norm_atac')
-        norm_ctcf = request.form.get('norm_ctcf')
-        training_norm_selection = request.form.get('training_norm')
-
-        # Normalize (like standard) => final_atac_bw, final_ctcf_bw
-        if raw_ctcf_path and raw_ctcf_path != "none":
-            if norm_atac == "none" and norm_ctcf == "none":
-                if not training_norm_selection:
-                    return "Please select training norm for chimeric."
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
-                                               training_norm_selection, output_folder)
-                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr1, region_start1, region_end1,
-                                               training_norm_selection, output_folder)
-            elif norm_atac != "none" and norm_ctcf == "none":
-                final_atac_bw = raw_atac_path
-                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr1, region_start1, region_end1,
-                                               norm_atac, output_folder)
-            elif norm_atac == "none" and norm_ctcf != "none":
-                final_ctcf_bw = raw_ctcf_path
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
-                                               norm_ctcf, output_folder)
-            else:
-                if norm_atac != norm_ctcf:
-                    return "ATAC/CTCF must share the same normalization method (chimeric)."
-                final_atac_bw = raw_atac_path
-                final_ctcf_bw = raw_ctcf_path
-        else:
-            return "No CTCF bigwig? Not allowed for chimeric."
-
-        # Optional flips
+        # 3) Flips
         first_reverse  = (request.form.get('first_reverse') == 'true')
         first_flip     = (request.form.get('first_flip') == 'true')
         second_reverse = (request.form.get('second_reverse') == 'true')
         second_flip    = (request.form.get('second_flip') == 'true')
 
-        # Build chimeric
-        build_chimeric_script = os.path.join(PYTHON_SRC_PATH, "corigami", "inference", "build_chimeric.py")
-
-        ##### RQ CHANGES #####
-        job = q.enqueue(
-            build_chimeric_task,
-            build_chimeric_script,
+        # 4) Assemble arrays => "chrCHIM"
+        chim_atac, chim_ctcf = assemble_chimeric_arrays(
+            raw_atac_path,
+            raw_ctcf_path,
             region_chr1, region_start1, region_end1,
             region_chr2, region_start2, region_end2,
-            model_path,
-            f"./corigami_data/data/{genome}/dna_sequence",
-            final_ctcf_bw,
-            final_atac_bw,
-            output_folder,
-            first_reverse,
-            first_flip,
-            second_reverse,
-            second_flip,
-            env=env
+            first_reverse, first_flip,
+            second_reverse, second_flip
         )
-        # Block while job finishes
-        while not job.is_finished and not job.is_failed:
-            time.sleep(0.5)
-            job.refresh()
-        if job.is_failed:
-            return jsonify({"error": "Chimeric build failed. Check RQ worker logs."}), 500
+        chim_len = len(chim_atac)  # same as len(chim_ctcf)
 
-        try:
-            chimera_dir, chim_info = job.result
-            chim_name   = chim_info.get("CHIM_NAME", "chrCHIM")
-            chim_len    = int(chim_info.get("CHIM_LENGTH","0"))
-            chim_ctcf_bw= chim_info.get("CHIM_CTCF","")
-            chim_atac_bw= chim_info.get("CHIM_ATAC","")
-        except Exception as e:
-            return jsonify({"error": f"Error building chimeric: {e}"}), 500
+        # 5) Write “chrCHIM_atac.bw” + “chrCHIM_ctcf.bw”
+        chim_atac_bw, chim_ctcf_bw = write_chimeric_bigwig(
+            chim_atac, chim_ctcf, output_folder, chim_len, chim_name="chrCHIM"
+        )
+        print(f"Chimeric chromosome length => {chim_len} bp")
 
-        # Next, do standard run_prediction_and_render
+        # 5a) create synthetic FASTA
+        # We'll assume you keep your reference FASTAs in e.g. "corigami_data/data/hg38/dna_sequence/chr1.fa.gz", etc.
+        # We'll attempt to locate them based on region_chr1, region_chr2:
+        # This is just an example. You can adapt how you find them:
+        fa1_path = os.path.join(f"./corigami_data/data/{genome}/dna_sequence", f"{region_chr1}.fa.gz")
+        fa2_path = os.path.join(f"./corigami_data/data/{genome}/dna_sequence", f"{region_chr2}.fa.gz")
+
+        from app.utils import assemble_chimeric_fasta
+        chimera_files_dir = os.path.join(output_folder, "chimera_files")
+        os.makedirs(chimera_files_dir, exist_ok=True)
+
+        chim_fa_gz = assemble_chimeric_fasta(
+            fa1_path, region_start1, region_end1, 
+            do_reverse1=first_reverse, do_flip1=first_flip,
+            fa2_path=fa2_path, chr2_start=region_start2, chr2_end=region_end2,
+            do_reverse2=second_reverse, do_flip2=second_flip,
+            output_folder=chimera_files_dir,
+            chim_name="chrCHIM"
+        )
+
+        seq_dir = chimera_files_dir
+        session['seq_dir'] = seq_dir
+        
+        peaks_file = request.form.get('peaks_file_path', '').strip()
+        if peaks_file:
+            session['final_peaks_file'] = peaks_file
+
+
+        # 6) Normalization if requested (chimeric mode) -- updated to mimic standard mode normalization logic
+        norm_atac_method = request.form.get('norm_atac')   # e.g. 'none', 'minmax', 'log'
+        norm_ctcf_method = request.form.get('norm_ctcf')     # e.g. 'none', 'minmax', etc.
+        training_norm = request.form.get('training_norm')    # e.g. 'minmax' or another training norm method
+
+        # Both chim_atac_bw and chim_ctcf_bw should be available in chimeric mode.
+        if chim_ctcf_bw:
+            if norm_atac_method == "none" and norm_ctcf_method == "none":
+                # Require a training norm method when neither normalization is explicitly chosen.
+                if not training_norm:
+                    return "Please select training norm (standard)."
+                final_atac_bw = normalize_atac(chim_atac_bw, "chrCHIM", 0, chim_len, training_norm, output_folder)
+                final_ctcf_bw = normalize_ctcf(chim_ctcf_bw, "chrCHIM", 0, chim_len, training_norm, output_folder)
+            elif norm_atac_method != "none" and norm_ctcf_method == "none":
+                # Use the ATAC norm method for CTCF if only ATAC's norm method is provided.
+                final_atac_bw = chim_atac_bw
+                final_ctcf_bw = normalize_ctcf(chim_ctcf_bw, "chrCHIM", 0, chim_len, norm_atac_method, output_folder)
+            elif norm_atac_method == "none" and norm_ctcf_method != "none":
+                # Use the CTCF norm method for ATAC if only CTCF's norm method is provided.
+                final_ctcf_bw = chim_ctcf_bw
+                final_atac_bw = normalize_atac(chim_atac_bw, "chrCHIM", 0, chim_len, norm_ctcf_method, output_folder)
+            else:
+                # If both are provided, they must match.
+                if norm_atac_method != norm_ctcf_method:
+                    return "ATAC/CTCF must share the same norm method."
+                final_atac_bw = chim_atac_bw
+                final_ctcf_bw = chim_ctcf_bw
+        else:
+            # Fallback in the unlikely event that chim_ctcf_bw is missing.
+            final_atac_bw = chim_atac_bw
+            final_ctcf_bw = None
+
+
+        # 7) run_prediction_and_render
         from app.routes import run_prediction_and_render
         configs = run_prediction_and_render(
-            region_chr=chim_name,
+            region_chr="chrCHIM",
             region_start=0,
             region_end=chim_len,
             ds_option=ds_option,
             model_path=model_path,
             genome=genome,
-            atac_bw_for_model=chim_atac_bw,
-            ctcf_bw_for_model=chim_ctcf_bw,
-            raw_atac_path=chim_atac_bw,
+            atac_bw_for_model=final_atac_bw,
+            ctcf_bw_for_model=final_ctcf_bw,
+            raw_atac_path=final_atac_bw,
             output_folder=output_folder,
-            del_start=None,
-            del_width=None,
-            norm_atac=norm_atac,
-            norm_ctcf=norm_ctcf,
+            norm_atac=norm_atac_method,
+            norm_ctcf=norm_ctcf_method,
             screening_requested=screening_requested,
-            chimeric_fa_dir=os.path.dirname(chim_info["CHIM_FASTA"]) if "CHIM_FASTA" in chim_info else None
+            seq_dir=seq_dir  # <-- points to where chrCHIM.fa.gz resides
         )
 
-        # Also build a gene track for chimeric => combine gene coords from region1+2
-        from app.utils import prepare_chimeric_gene_track_config
+        session['final_atac_bw'] = final_atac_bw
+        session['final_ctcf_bw'] = final_ctcf_bw
+        session['final_region_chr'] = "chrCHIM"
+        session['final_region_start'] = 0
+        session['final_region_end'] = chim_len
+
+        # 8) Build a gene track for “chrCHIM”
         if genome == 'hg38':
             annotation_file = "static/genes.gencode.v38.txt"
         else:
             annotation_file = "static/genes.gencode.M21.mm10.txt"
 
+        offset = (region_end1 - region_start1)
         gene_track_cfg = prepare_chimeric_gene_track_config(
             annotation_file,
             region_chr1, region_start1, region_end1,
             region_chr2, region_start2, region_end2
         )
 
-        # Return partial or full
+        # 9) Return whichever template
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return render_template(
                 "plots_partial.html",
@@ -488,8 +476,8 @@ def index():
                 screening_config=configs["screening_config"],
                 screening_mode=screening_requested,
                 screening_params="{}",
-                norm_atac=norm_atac,
-                norm_ctcf=norm_ctcf,
+                norm_atac=norm_atac_method,
+                norm_ctcf=norm_ctcf_method,
                 gene_track_config=json.dumps(gene_track_cfg)
             )
         else:
@@ -517,20 +505,27 @@ def index():
         )
 
         # Region
-        region_chr = request.form.get('region_chr')
+        region_chr1 = request.form.get('region_chr1')
         try:
-            region_start = int(request.form.get('region_start'))
+            region_start1 = int(request.form.get('region_start1'))
         except:
             return "Invalid start position."
 
-        region_end_input = request.form.get('region_end', '').strip()
-        if region_end_input:
+        region_end1 = request.form.get('region_end1', '').strip()
+        if region_end1:
             try:
-                region_end = int(region_end_input)
+                region_end1 = int(region_end1)
             except:
                 return "Invalid end position."
         else:
-            region_end = region_start + WINDOW_WIDTH
+            region_end1 = region_start1 + WINDOW_WIDTH
+
+        if genome == 'hg38':
+            seq_dir = "./corigami_data/data/hg38/dna_sequence"
+        elif genome == 'mm10':
+            seq_dir = "./corigami_data/data/mm10/dna_sequence"
+        session['seq_dir'] = seq_dir
+
 
         atac_bw_path = request.form.get('atac_bw_path','')
         ctcf_bw_path = (request.form.get('ctcf_bw_path','') or "").strip()
@@ -548,17 +543,17 @@ def index():
             if norm_atac == "none" and norm_ctcf == "none":
                 if not training_norm:
                     return "Please select training norm (standard)."
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr, region_start, region_end,
+                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
                                                training_norm, output_folder)
-                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr, region_start, region_end,
+                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr1, region_start1, region_end1,
                                                training_norm, output_folder)
             elif norm_atac != "none" and norm_ctcf == "none":
                 final_atac_bw = raw_atac_path
-                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr, region_start, region_end,
+                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr1, region_start1, region_end1,
                                                norm_atac, output_folder)
             elif norm_atac == "none" and norm_ctcf != "none":
                 final_ctcf_bw = raw_ctcf_path
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr, region_start, region_end,
+                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
                                                norm_ctcf, output_folder)
             else:
                 if norm_atac != norm_ctcf:
@@ -572,11 +567,11 @@ def index():
             elif norm_atac == "minmax":
                 final_atac_bw = raw_atac_path
             elif norm_atac == "raw":
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr, region_start, region_end,
+                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
                                                "minmax", output_folder)
             else:
                 return "Unexpected ATAC norm if no CTCF."
-            final_ctcf_bw = predict_ctcf(final_atac_bw, region_chr, region_start, region_end, output_folder)
+            final_ctcf_bw = predict_ctcf(final_atac_bw, region_chr1, region_start1, region_end1, output_folder)
             norm_ctcf = "minmax predicted"
 
         # If ds_option=deletion => read del start/width
@@ -588,20 +583,11 @@ def index():
             except:
                 return "Invalid deletion parameters."
 
-        # ~~~ If in screening mode + user gave no peaks => auto-generate peaks ~~~
-        if ds_option == "screening":
-            if not peaks_file or peaks_file == "none":
-                # Use the newly prepped final_atac_bw
-                # The user wants MACS2-based peaks => so we do
-                # predict_peaks( ) or generate_peaks_from_bigwig_macs2
-                peaks_file = predict_peaks(final_atac_bw, region_chr, region_start, region_end, output_folder)
-                print(f"[Standard] Auto-generated peaks => {peaks_file}")
-
         from app.routes import run_prediction_and_render
         configs = run_prediction_and_render(
-            region_chr=region_chr,
-            region_start=region_start,
-            region_end=region_end,
+            region_chr=region_chr1,
+            region_start=region_start1,
+            region_end=region_end1,
             ds_option=ds_option,
             model_path=model_path,
             genome=genome,
@@ -614,15 +600,21 @@ def index():
             norm_atac=norm_atac,
             norm_ctcf=norm_ctcf,
             screening_requested=screening_requested,
-            chimeric_fa_dir=None
+            seq_dir=seq_dir
         )
+
+        session['final_atac_bw'] = final_atac_bw
+        session['final_ctcf_bw'] = final_ctcf_bw
+        session['final_region_chr'] = region_chr1
+        session['final_region_start'] = region_start1
+        session['final_region_end'] = region_end1
 
         # Build gene track for standard mode
         gene_track_cfg = prepare_gene_track_config(
             genome,
-            region_chr,
-            region_start,
-            region_end,
+            region_chr1,
+            region_start1,
+            region_end1,
             ds_option,
             del_start,
             del_width
@@ -659,247 +651,117 @@ def index():
 ###############################################################################
 @main.route('/run_screening', methods=['GET'])
 def run_screening_endpoint():
-    """
-    AJAX endpoint to run corigami's screening routine on a region,
-    optionally auto-generating peaks from BigWig if none provided.
-    If chimeric_active is true, we build a synthetic chromosome
-    then override region parameters (chrCHIM, etc.) and proceed.
-    Returns JSON including "screening_config" for the front-end plot.
-    """
-
     from app.tasks import q, run_screening_task
-    from app.utils import generate_peaks_from_bigwig_macs2, get_user_output_folder
+    from app.utils import (
+        generate_peaks_from_bigwig_macs2,
+        get_user_output_folder
+    )
+
+    # 1) Retrieve final BigWigs and region info from session
+    final_atac_bw  = session.get('final_atac_bw')
+    final_ctcf_bw  = session.get('final_ctcf_bw')
+    region_chr     = session.get('final_region_chr')
+    region_start   = session.get('final_region_start')
+    region_end     = session.get('final_region_end')
+    seq_dir        = session.get('seq_dir')
     
-    print("RUN_SCREENING_ENDPOINT CALLED", flush=True)
-    current_app.logger.info("Entered run_screening_endpoint")
-    params = request.args.to_dict()
-    current_app.logger.info("Received screening parameters: %s", params)
 
-    try:
-        # ------------------------------------------------------
-        # 1) Parse main screening parameters
-        # ------------------------------------------------------
-        from app.utils import generate_peaks_from_bigwig_macs2, get_user_output_folder
+    print(f'screening starting with seq_dir: {seq_dir}')
 
-        chimeric_active = request.args.get('chimeric_active', 'false').lower() == 'true'
 
-        region_chr = request.args.get('region_chr', 'chr2')
-        screen_start = int(request.args.get('region_start', '500000'))
-        region_end_str = request.args.get('region_end', '')
-        if not region_end_str.strip():
-            screen_end = screen_start + WINDOW_WIDTH
-        else:
-            screen_end = int(region_end_str)
+    # If any are missing => user did not run the main route first
+    if not final_atac_bw or not final_ctcf_bw or region_chr is None:
+        return jsonify({"error": "No existing data from main run. Please run prediction first."}), 400
 
-        perturb_width = int(request.args.get('perturb_width', '1000'))
-        step_size     = int(request.args.get('step_size', '1000'))
+    # 2) Extract additional parameters for how to run the screening
+    # e.g. perturb_width, step_size, model selection
+    perturb_width = int(request.args.get('perturb_width', '1000'))
+    step_size     = int(request.args.get('step_size', '1000'))
+    model_select  = request.args.get('model_select')
+    output_dir    = get_user_output_folder()
+    # ... map model_select to model_path ...
 
-        BASE_DIR = os.path.dirname(current_app.root_path)
-        output_dir = request.args.get('output_dir', get_user_output_folder())
-        if not output_dir or not os.path.exists(output_dir):
-            current_app.logger.error("Invalid or missing output directory: %s", output_dir)
-            return jsonify({"error": "Invalid or missing output directory"}), 400
+    if model_select == 'V1':
+        model_path = "corigami_data/model_weights/v1_jimin.ckpt"
+    elif model_select == 'V2':
+        model_path = "corigami_data/model_weights/v2_javier.ckpt"
+    elif model_select == 'V3':
+        model_path = "corigami_data/model_weights/v3_romane.ckpt"
+    elif model_select == 'V4':
+        model_path = "corigami_data/model_weights/v4_javier.ckpt"
 
-        # 2) Model
-        region_model = request.args.get('model_select', 'V1')
-        if region_model == 'V1':
-            model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v1_jimin.ckpt")
-        elif region_model == 'V2':
-            model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v2_javier.ckpt")
-        elif region_model == 'V3':
-            model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v3_romane.ckpt")
-        elif region_model == 'V4':
-            model_path = os.path.join(BASE_DIR, "corigami_data", "model_weights", "v4_javier.ckpt")
-        else:
-            return jsonify({"error": "Invalid model selection"}), 400
-
-        # 3) ATAC/CTCF
-        default_atac_path = os.path.join(BASE_DIR, "corigami_data", "data", "hg38", "imr90", "genomic_features", "atac.bw")
-        default_ctcf_path= os.path.join(BASE_DIR, "corigami_data", "data", "hg38", "imr90", "genomic_features", "ctcf_log2fc.bw")
-        atac_bw_path = request.args.get('atac_bw_path', default_atac_path)
-        ctcf_bw_path = request.args.get('ctcf_bw_path', default_ctcf_path)
-
-        # 4) peaks_file
-        peaks_file = request.args.get('peaks_file', "").strip()
-
-        # ------------------------------------------------------
-        # 5) If chimeric => Build Synthetic Chromosome
-        # ------------------------------------------------------
-        if chimeric_active:
-            current_app.logger.info("SCREENING in chimeric mode => building chrCHIM first...")
-
-            region_chr2     = request.args.get('region_chr2', 'chr9')
-            region_start2   = int(request.args.get('region_start2', '1500000'))
-            region_end2_str = request.args.get('region_end2', '')
-            if region_end2_str.strip():
-                region_end2 = int(region_end2_str)
-            else:
-                region_end2 = region_start2 + WINDOW_WIDTH
-
-            genome_select = request.args.get('genome_select', 'hg38')
-            seq_dir = os.path.join(BASE_DIR, "corigami_data", "data", genome_select, "dna_sequence")
-
-            first_reverse  = (request.args.get('first_reverse') == 'true')
-            first_flip     = (request.args.get('first_flip') == 'true')
-            second_reverse = (request.args.get('second_reverse') == 'true')
-            second_flip    = (request.args.get('second_flip') == 'true')
-
-            PYTHON_SRC_PATH = os.path.join(BASE_DIR, "C.Origami", "src")
-            env             = os.environ.copy()
-            env["PYTHONPATH"] = PYTHON_SRC_PATH
-            build_chimeric_script = os.path.join(PYTHON_SRC_PATH, "corigami", "inference", "build_chimeric.py")
-
-            ##### RQ CHANGES #####
-            from app.tasks import q, build_chimeric_task
-            job_chim = q.enqueue(
-                build_chimeric_task,
-                build_chimeric_script,
-                region_chr, screen_start, screen_end,
-                region_chr2, region_start2, region_end2,
-                model_path,
-                seq_dir,
-                ctcf_bw_path,
-                atac_bw_path,
-                output_dir,
-                first_reverse,
-                first_flip,
-                second_reverse,
-                second_flip,
-                env=env
-            )
-            while not job_chim.is_finished and not job_chim.is_failed:
-                time.sleep(0.5)
-                job_chim.refresh()
-            if job_chim.is_failed:
-                raise ValueError("Could not build chimeric in screening. RQ job failed.")
-
-            chimera_dir, chim_info = job_chim.result
-            region_chr   = chim_info["CHIM_NAME"]  # "chrCHIM"
-            screen_start = 0
-            screen_end   = int(chim_info["CHIM_LENGTH"])
-            atac_bw_path = chim_info["CHIM_ATAC"]
-            ctcf_bw_path = chim_info["CHIM_CTCF"]
-
-            current_app.logger.info("Now screening on %s:%d-%d", region_chr, screen_start, screen_end)
-
-    except Exception as e:
-        current_app.logger.exception("Invalid screening parameters or chimeric build error.")
-        return jsonify({"error": "Invalid screening parameters or chimeric build error", "details": str(e)}), 400
-
-    # ------------------------------------------------------
-    # 6) Actual screening logic
-    # ------------------------------------------------------
-    try:
-        # Possibly remove old screening_results
-        results_file = os.path.join(output_dir, "screening", "screening_results.json")
-        if os.path.exists(results_file):
-            os.remove(results_file)
-
-        # Auto-peaks if user did not specify peaks_file
-        auto_peaks_file = None
-        temp_bedgraph   = None
-        if not peaks_file or peaks_file == "none":
-            try:
-                auto_peaks_file, temp_bedgraph = generate_peaks_from_bigwig_macs2(
-                    bw_path=atac_bw_path,
-                    chrom=region_chr,
-                    start=screen_start,
-                    end=screen_end,
-                    outdir=output_dir
-                )
-                peaks_file = auto_peaks_file
-            except subprocess.CalledProcessError as e:
-                current_app.logger.exception("Failed to run bigWigToBedGraph or MACS2.")
-                return jsonify({"error": "Failed to run bigWigToBedGraph or MACS2", "details": str(e)}), 500
-            except Exception as e:
-                current_app.logger.exception("Failed to generate peaks from BigWig")
-                return jsonify({"error": "Failed to generate peaks from BigWig", "details": str(e)}), 500
-        else:
-            auto_peaks_file, temp_bedgraph = None, None
-
-        # call screening.py
-        PYTHON_SRC_PATH = os.path.join(BASE_DIR, "C.Origami", "src")
-        env = os.environ.copy()
-        env["PYTHONPATH"] = PYTHON_SRC_PATH
-        screening_script = os.path.join(PYTHON_SRC_PATH, "corigami", "inference", "screening.py")
-        seq_dir = os.path.join(BASE_DIR, "corigami_data", "data", "hg38", "dna_sequence")
-
-        ##### RQ CHANGES #####
-        job_screen = q.enqueue(
-            run_screening_task,
-            screening_script,
-            region_chr,
-            screen_start,
-            screen_end,
-            model_path,
-            seq_dir,
-            atac_bw_path,
-            ctcf_bw_path,
-            peaks_file,
-            output_dir,
-            perturb_width,
-            step_size,
-            env=env
+    peaks_file = session.get('final_peaks_file', '').strip()
+    print(f'run screening endpoint: peaks file: {peaks_file}')
+    if not peaks_file:
+        # If user didn’t select one in the form, or you want to handle the fallback
+        # If you want to force the user to pick a peaks file, you can raise an error instead.
+        peaks_file, temp_bedgraph = generate_peaks_from_bigwig_macs2(
+            bw_path=final_atac_bw,
+            chrom=region_chr,
+            start=region_start,
+            end=region_end,
+            outdir=output_dir
         )
-        # block until done
-        while not job_screen.is_finished and not job_screen.is_failed:
-            time.sleep(1)
-            job_screen.refresh()
-        if job_screen.is_failed:
-            current_app.logger.error("Screening command failed with RQ job id: %s", job_screen.id)
-            return jsonify({"error": "Screening script failed with RQ worker"}), 500
+        print(f'auto-generated peaks file: {peaks_file}')
+    print(f'run screening endpoint: peaks file: {peaks_file}')
+    # 4) Now do the screening with final_atac_bw, final_ctcf_bw, peaks_file
+    # (No re-assembly, no normalization, no chimeric logic needed)
+    screening_script = os.path.join("C.Origami", "src", "corigami", "inference", "screening.py")
+    env = os.environ.copy()
+    env["PYTHONPATH"] = "C.Origami/src"
 
-        if not os.path.exists(results_file):
-            current_app.logger.error("screening_results.json not found at %s", results_file)
-            return jsonify({"error": "screening_results.json was not generated."}), 500
+    # Determine the DNA sequence directory for screening:
+    seq_dir = session.get('seq_dir')
 
-        # parse the result
-        with open(results_file, "r") as f:
-            results = json.load(f)
+    job_screen = q.enqueue(
+        run_screening_task,
+        screening_script,
+        region_chr,
+        region_start,
+        region_end,
+        model_path,
+        seq_dir,
+        final_atac_bw,
+        final_ctcf_bw,
+        peaks_file,    # 9th
+        output_dir,    # 10th
+        perturb_width,
+        step_size,
+        env=env
+    )
+    # 5) Wait for completion (or do a non-blocking approach)
+    while not job_screen.is_finished and not job_screen.is_failed:
+        time.sleep(1)
+        job_screen.refresh()
 
-        window_midpoints_mb = results.get("window_midpoints_mb", [])
-        impact_scores       = results.get("impact_scores", [])
-        screening_series_data = sorted(
-            [[x, y] for x, y in zip(window_midpoints_mb, impact_scores)],
-            key=lambda d: d[0]
-        )
-        region_start_mb = screen_start / 1e6
-        region_end_mb   = screen_end   / 1e6
+    if job_screen.is_failed:
+        return jsonify({"error": "Screening script failed"}), 500
 
-        screening_chart_config = {
-            "chart": {"type": "line", "height": 100},
-            "xAxis": {
-                "min": region_start_mb,
-                "max": region_end_mb,
-                "tickColor": "#000",
-                "tickFont":  "10px sans-serif"
-            },
-            "yAxis": {
-                "title": {"text": ""},
-                "ticks": 3,
-                "tickColor": "#000",
-                "tickFont": "10px sans-serif"
-            },
-            "series": [{
-                "name": "Screening Score",
-                "data": screening_series_data,
-                "color": "dodgerblue"
-            }]
-        }
-        screening_config_json = json.dumps(screening_chart_config)
-        results["screening_config"] = screening_config_json
+    # 6) Load results, build chart config, respond
+    results_file = os.path.join(output_dir, "screening", "screening_results.json")
+    if not os.path.exists(results_file):
+        return jsonify({"error": "No screening_results.json found."}), 500
 
-        if auto_peaks_file and os.path.exists(auto_peaks_file):
-            os.remove(auto_peaks_file)
-        if temp_bedgraph and os.path.exists(temp_bedgraph):
-            os.remove(temp_bedgraph)
+    with open(results_file, "r") as f:
+        results = json.load(f)
 
-        current_app.logger.info("Returning screening results with screening_config")
-        return jsonify(results)
-
-    except Exception as e:
-        current_app.logger.exception("Exception in screening logic")
-        return jsonify({"error": "Exception in screening logic", "details": str(e)}), 500
+    # e.g. build chart config
+    window_mb = results["window_midpoints_mb"]
+    impact   = results["impact_scores"]
+    series_data = [[x,y] for x,y in zip(window_mb, impact)]
+    screening_chart = {
+      "chart": {"type": "line", "height": 100},
+      "xAxis": {"min": region_start/1e6, "max": region_end/1e6},
+      "yAxis": {"title": {"text": ""}},
+      "series": [{
+          "name": "Screening Score",
+          "data": series_data,
+          "color": "dodgerblue"
+      }]
+    }
+    results["screening_config"] = json.dumps(screening_chart)
+    
+    return jsonify(results)
 
 ###############################################################################
 # File Upload
