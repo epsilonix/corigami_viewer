@@ -1,9 +1,15 @@
-//d3_plots.js
+// d3_plots.js
 /*************************************************************
  * Canvas-Based Plotting for C.Origami
  * (Supports Hi-C heatmap, signal plots with/without x-axis break,
  *  and screening column charts.)
  *************************************************************/
+
+/**
+ * SET THIS TO TRUE IF YOU WANT TO HIDE ALL X-AXIS LABELS
+ * AND THE ZIG-ZAG BREAK SYMBOL (BUT KEEP TICK LINES).
+ */
+const HIDE_X_AXIS_LABELS = true;
 
 /**
  * Pixels per Mb in normal (continuous) mode.
@@ -38,10 +44,10 @@ function createHiResCanvas(containerSelector, width, height) {
  *************************************************************/
 function drawHiCChart(containerSelector, config) {
   // For Hi-C, we plot all the provided matrix data.
-  // In deletion mode, we simply hide the x-axis ticks.
+  // In deletion mode, we simply hide the x-axis ticks if hideXAxis==true.
   const hideTicks = config.hideXAxis === true;
   
-  const margin = { top: 5, right: 20, bottom: 30, left: 50 };
+  const margin = { top: 5, right: 20, bottom: 15, left: 50 };
   const genomicSpan = config.xAxis.max - config.xAxis.min; // in Mb
   const fullWidth = genomicSpan * PX_PER_MB;               // in pixels
   const height = config.chart.height || 250;
@@ -74,6 +80,7 @@ function drawHiCChart(containerSelector, config) {
   const colorScale = d3.scaleSequential(d3.interpolateReds)
   .domain([config.colorAxis.min, config.colorAxis.max]);
   
+  // Draw all heatmap cells
   config.series[0].data.forEach(d => {
     const col = d[0], row = d[1], val = d[2];
     const mbLeft = colIndexToMb(col);
@@ -88,6 +95,7 @@ function drawHiCChart(containerSelector, config) {
     ctx.fillRect(xLeft, yTop, cellW, cellH);
   });
   
+  // If not hideTicks => draw the baseline
   if (!hideTicks) {
     ctx.save();
     ctx.translate(0, height);
@@ -97,22 +105,36 @@ function drawHiCChart(containerSelector, config) {
     ctx.strokeStyle = "#000";
     ctx.stroke();
     
-    const xTicks = xScale.ticks(10);
-    ctx.font = "10px sans-serif";
-    ctx.fillStyle = "#000";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    xTicks.forEach(tick => {
-      const xPos = xScale(tick);
-      ctx.beginPath();
-      ctx.moveTo(xPos, 0);
-      ctx.lineTo(xPos, 6);
-      ctx.stroke();
-      ctx.fillText(d3.format(".2f")(tick), xPos, 6);
-    });
+    // Only draw text if global HIDE_X_AXIS_LABELS is false
+    if (!HIDE_X_AXIS_LABELS) {
+      const xTicks = xScale.ticks(10);
+      ctx.font = "10px sans-serif";
+      ctx.fillStyle = "#000";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      xTicks.forEach(tick => {
+        const xPos = xScale(tick);
+        ctx.beginPath();
+        ctx.moveTo(xPos, 0);
+        ctx.lineTo(xPos, 6);
+        ctx.stroke();
+        ctx.fillText(d3.format(".2f")(tick), xPos, 6);
+      });
+    } else {
+      // If we still want the vertical tick lines but no text:
+      const xTicks = xScale.ticks(10);
+      xTicks.forEach(tick => {
+        const xPos = xScale(tick);
+        ctx.beginPath();
+        ctx.moveTo(xPos, 0);
+        ctx.lineTo(xPos, 6);
+        ctx.stroke();
+      });
+    }
     ctx.restore();
     
-    if (config.xAxis.title) {
+    // x-axis title
+    if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
       ctx.save();
       ctx.textAlign = "center";
       ctx.textBaseline = "bottom";
@@ -163,7 +185,7 @@ function drawLineChartContinuous(containerSelector, config) {
     .nice()
     .range([height, 0]);
   
-  // Draw x-axis
+  // Draw baseline for x-axis
   ctx.save();
   ctx.translate(0, height);
   ctx.beginPath();
@@ -172,27 +194,41 @@ function drawLineChartContinuous(containerSelector, config) {
   ctx.strokeStyle = "#000";
   ctx.stroke();
   
-  ctx.font = "10px sans-serif";
-  ctx.fillStyle = "#000";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  xScale.ticks(10).forEach(tick => {
-    const xPos = xScale(tick);
-    ctx.beginPath();
-    ctx.moveTo(xPos, 0);
-    ctx.lineTo(xPos, 6);
-    ctx.stroke();
-    ctx.fillText(d3.format(".2f")(tick), xPos, 6);
-  });
+  // Ticks on x-axis
+  const xTicks = xScale.ticks(10);
+  if (!HIDE_X_AXIS_LABELS) {
+    ctx.font = "10px sans-serif";
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    xTicks.forEach(tick => {
+      const xPos = xScale(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+      ctx.fillText(d3.format(".2f")(tick), xPos, 6);
+    });
+  } else {
+    // hide text, but keep small lines
+    xTicks.forEach(tick => {
+      const xPos = xScale(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+    });
+  }
   ctx.restore();
   
-  // Draw y-axis (ticks only; no label)
+  // Y-axis baseline
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(0, height);
   ctx.strokeStyle = "#000";
   ctx.stroke();
   
+  // Y ticks
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.font = "10px sans-serif";
@@ -202,6 +238,7 @@ function drawLineChartContinuous(containerSelector, config) {
     ctx.moveTo(0, yPos);
     ctx.lineTo(-6, yPos);
     ctx.stroke();
+    // We always show Y labels for now
     ctx.fillText(tick, -8, yPos);
   });
   
@@ -217,8 +254,8 @@ function drawLineChartContinuous(containerSelector, config) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
   
-  // Draw x-axis label if provided
-  if (config.xAxis.title) {
+  // x-axis label if provided
+  if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
@@ -236,10 +273,7 @@ function drawLineChartWithBreak(containerSelector, config) {
   const leftSpan = leftDomain[1] - leftDomain[0];
   const rightSpan = rightDomain[1] - rightDomain[0];
   const totalSpan = leftSpan + rightSpan;
-  // Set gap to 0 so the two halves are adjacent.
-  const gapPx = 0;
-  
-  // The available width for the two segments (in pixels)
+  const gapPx = 0; // so the two halves are adjacent
   const availableWidth = totalSpan * PX_PER_MB;
   const height = config.chart.height || 150;
   const canvasWidth = availableWidth + margin.left + margin.right + gapPx;
@@ -248,11 +282,11 @@ function drawLineChartWithBreak(containerSelector, config) {
   const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
   ctx.translate(margin.left, margin.top);
   
-  // Compute pixel widths for left and right segments
+  // chunk widths
   const leftWidthPx = (leftSpan / totalSpan) * availableWidth;
   const rightWidthPx = (rightSpan / totalSpan) * availableWidth;
   
-  // Build x-scales for each segment with a fixed tick step of 0.2 Mb.
+  // x-scales
   const scaleLeft = d3.scaleLinear()
     .domain(leftDomain)
     .range([0, leftWidthPx]);
@@ -260,31 +294,24 @@ function drawLineChartWithBreak(containerSelector, config) {
     .domain(rightDomain)
     .range([0, rightWidthPx]);
   
-  // Generate ticks for each segment using a fixed step of 0.2 Mb.
+  // Build tick arrays
   const leftTicks = d3.range(leftDomain[0], leftDomain[1] + 0.001, 0.2);
   let rightTicks = d3.range(rightDomain[0], rightDomain[1] + 0.001, 0.2);
-  // Remove the first tick from the right side to avoid overlapping
   if (rightTicks.length && Math.abs(rightTicks[0] - rightDomain[0]) < 1e-6) {
     rightTicks.shift();
   }
   
-  // Data: filter to include only points in left or right segments.
+  // Filter data
   const data = config.series[0].data || [];
   const filtered = data.filter(d => {
     const xVal = d[0];
-    return ((xVal >= leftDomain[0] && xVal <= leftDomain[1]) ||
-            (xVal >= rightDomain[0] && xVal <= rightDomain[1]));
+    return (xVal >= leftDomain[0] && xVal <= leftDomain[1]) ||
+           (xVal >= rightDomain[0] && xVal <= rightDomain[1]);
   });
-  
-  // Y-scale based on filtered data.
   const yMax = d3.max(filtered, d => d[1]) || 1;
   const yMin = d3.min(filtered, d => d[1]) || 0;
-  const yScale = d3.scaleLinear()
-    .domain([yMin, yMax])
-    .nice()
-    .range([height, 0]);
+  const yScale = d3.scaleLinear().domain([yMin, yMax]).nice().range([height, 0]);
   
-  // Helper function: maps x value (Mb) to pixel position.
   function xScale(xVal) {
     if (xVal >= leftDomain[0] && xVal <= leftDomain[1]) {
       return scaleLeft(xVal);
@@ -293,17 +320,18 @@ function drawLineChartWithBreak(containerSelector, config) {
     }
     return NaN;
   }
-  
-  // Draw y-axis (ticks only)
+
+  // Y-axis line
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(0, height);
   ctx.strokeStyle = "#000";
   ctx.stroke();
+
+  // Y-axis ticks
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.font = "10px sans-serif";
-  ctx.fillStyle = "#000";
   yScale.ticks(5).forEach(tick => {
     const yPos = yScale(tick);
     ctx.beginPath();
@@ -313,59 +341,84 @@ function drawLineChartWithBreak(containerSelector, config) {
     ctx.fillText(tick, -8, yPos);
   });
   
-  // Draw left x-axis
+  // Draw left x-axis baseline
   ctx.save();
   ctx.translate(0, height);
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(leftWidthPx, 0);
   ctx.stroke();
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  leftTicks.forEach(tick => {
-    const xPos = scaleLeft(tick);
-    ctx.beginPath();
-    ctx.moveTo(xPos, 0);
-    ctx.lineTo(xPos, 6);
-    ctx.stroke();
-    // Use custom formatter if provided; else default to ".2f"
-    const tickLabel = config.xAxis.tickFormat ? config.xAxis.tickFormat(tick) : d3.format(".2f")(tick);
-    ctx.fillText(tickLabel, xPos, 6);
-  });  
+  
+  // left ticks
+  if (!HIDE_X_AXIS_LABELS) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = "10px sans-serif";
+    leftTicks.forEach(tick => {
+      const xPos = scaleLeft(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+      ctx.fillText(d3.format(".2f")(tick), xPos, 6);
+    });
+  } else {
+    // just lines, no text
+    leftTicks.forEach(tick => {
+      const xPos = scaleLeft(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+    });
+  }
   ctx.restore();
   
-  // Draw right x-axis
+  // Draw right x-axis baseline
   ctx.save();
   ctx.translate(leftWidthPx + gapPx, height);
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(rightWidthPx, 0);
   ctx.stroke();
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  rightTicks.forEach(tick => {
-    const xPos = scaleRight(tick);
-    ctx.beginPath();
-    ctx.moveTo(xPos, 0);
-    ctx.lineTo(xPos, 6);
-    ctx.stroke();
-    // Use custom formatter if available; otherwise default
-    const tickLabel = config.xAxis.tickFormat ? config.xAxis.tickFormat(tick) : d3.format(".2f")(tick);
-    ctx.fillText(tickLabel, xPos, 6);
-  });  
+  
+  if (!HIDE_X_AXIS_LABELS) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = "10px sans-serif";
+    rightTicks.forEach(tick => {
+      const xPos = scaleRight(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+      ctx.fillText(d3.format(".2f")(tick), xPos, 6);
+    });
+  } else {
+    // lines only
+    rightTicks.forEach(tick => {
+      const xPos = scaleRight(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+    });
+  }
   ctx.restore();
   
-  // Draw a very small zig-zag break marker (optional)
-  ctx.save();
-  ctx.translate(leftWidthPx, height);
-  ctx.beginPath();
-  ctx.moveTo(-3, 0);
-  ctx.lineTo(0, 8);
-  ctx.lineTo(3, 0);
-  ctx.strokeStyle = "#000";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-  ctx.restore();
+  // The "zig-zag" break marker. If HIDE_X_AXIS_LABELS => skip it entirely
+  if (!HIDE_X_AXIS_LABELS) {
+    ctx.save();
+    ctx.translate(leftWidthPx, height);
+    ctx.beginPath();
+    ctx.moveTo(-3, 0);
+    ctx.lineTo(0, 8);
+    ctx.lineTo(3, 0);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.restore();
+  }
   
   // Draw the signal line
   ctx.beginPath();
@@ -379,8 +432,8 @@ function drawLineChartWithBreak(containerSelector, config) {
   ctx.lineWidth = 1.5;
   ctx.stroke();
   
-  // Draw x-axis label if provided
-  if (config.xAxis.title) {
+  // x-axis label if provided
+  if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
     ctx.save();
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
@@ -435,7 +488,7 @@ function drawColumnChart(containerSelector, config) {
     .nice()
     .range([height, 0]);
   
-  // Draw bars.
+  // Draw bars
   data.forEach(d => {
     const x = xScale(d[0]) - barWidth / 2;
     const y = yScale(d[1]);
@@ -444,7 +497,7 @@ function drawColumnChart(containerSelector, config) {
     ctx.fillRect(x, y, barWidth, h);
   });
   
-  // --- Draw x-axis ---
+  // --- Draw x-axis baseline ---
   ctx.save();
   ctx.translate(0, height);
   ctx.beginPath();
@@ -454,19 +507,29 @@ function drawColumnChart(containerSelector, config) {
   ctx.stroke();
   
   const xTicks = xScale.ticks(10);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.font = "10px sans-serif";
-  xTicks.forEach(tick => {
-    const xPos = xScale(tick);
-    ctx.beginPath();
-    ctx.moveTo(xPos, 0);
-    ctx.lineTo(xPos, 6);
-    ctx.stroke();
-    // Use the custom tick formatter if defined; otherwise default to .2f
-    const tickLabel = config.xAxis.tickFormat ? config.xAxis.tickFormat(tick) : d3.format(".2f")(tick);
-    ctx.fillText(tickLabel, xPos, 6);
-  });
+  if (!HIDE_X_AXIS_LABELS) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = "10px sans-serif";
+    xTicks.forEach(tick => {
+      const xPos = xScale(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+      const tickLabel = config.xAxis.tickFormat ? config.xAxis.tickFormat(tick) : d3.format(".2f")(tick);
+      ctx.fillText(tickLabel, xPos, 6);
+    });
+  } else {
+    // just the small lines
+    xTicks.forEach(tick => {
+      const xPos = xScale(tick);
+      ctx.beginPath();
+      ctx.moveTo(xPos, 0);
+      ctx.lineTo(xPos, 6);
+      ctx.stroke();
+    });
+  }
   ctx.restore();
   
   // --- Draw y-axis ---
@@ -491,13 +554,15 @@ function drawColumnChart(containerSelector, config) {
   });
   ctx.restore();
   
-  // x-axis title.
-  ctx.textAlign = "center";
-  ctx.textBaseline = "bottom";
-  ctx.font = "12px sans-serif";
-  ctx.fillText(config.xAxis.title.text, fullWidth / 2, height + margin.bottom - 10);
+  // x-axis title if provided
+  if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(config.xAxis.title.text, fullWidth / 2, height + margin.bottom - 10);
+  }
   
-  // y-axis title.
+  // y-axis title
   ctx.save();
   ctx.translate(-margin.left, height / 2);
   ctx.rotate(-Math.PI / 2);
@@ -507,7 +572,7 @@ function drawColumnChart(containerSelector, config) {
   ctx.fillText(config.yAxis.title.text, 0, 0);
   ctx.restore();
   
-  // Chart title if provided.
+  // Chart title if provided
   if (config.title && config.title.text) {
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -741,7 +806,237 @@ if (config.xAxis.isChimeric) {
   };
 }
 
+// CUSTOM AXIS SECTION
+function drawCustomAxis(containerSelector, config) {
+  if (!config?.region1) {
+    console.warn("drawCustomAxis: missing config.region1");
+    return;
+  }
+  const r1 = config.region1;
+  const r2 = config.region2 || null;
 
+  const hasDeletion = (
+    !r2 &&
+    config.deletionStartMb != null &&
+    config.deletionEndMb   != null &&
+    config.deletionStartMb < config.deletionEndMb
+  );
 
+  // Shared constants
+  const PX_PER_MB = 200;
+  const margin = { top: 20, right: 30, bottom: 10, left: 50 };
+  const axisHeight = 50;
+  const barHeight  = 15;
+  const tickStep   = 0.2;
+  const container  = document.querySelector(containerSelector);
+  if (!container) {
+    console.error("drawCustomAxis: container not found:", containerSelector);
+    return;
+  }
+  while (container.firstChild) container.removeChild(container.firstChild);
 
+  /*****************************************************
+   * CASE 1) Chimeric => region1 + region2
+   *****************************************************/
+  if (r2) {
+    console.log('custom x axis: chimeric');
+    const c1Mb = r1.endMb - r1.startMb;
+    const c2Mb = r2.endMb - r2.startMb;
+    const totalWidthPx = (c1Mb + c2Mb) * PX_PER_MB;
+    const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
 
+    // chunk1 scale
+    const scale1 = d3.scaleLinear()
+      .domain([r1.startMb, r1.endMb])
+      .range([0, c1Mb * PX_PER_MB]);
+    // chunk2 scale
+    const scale2 = d3.scaleLinear()
+      .domain([r2.startMb, r2.endMb])
+      .range([0, c2Mb * PX_PER_MB]);
+    const chunk2Offset = c1Mb * PX_PER_MB;
+
+    // chunk1 pastel bar
+    drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#CCFFCC", r1.chrom);
+    // chunk1 baseline
+    drawBaseline(ctx, 0, c1Mb*PX_PER_MB);
+    // chunk1 ticks
+    drawTicksBelow(ctx, scale1, r1.startMb, r1.endMb, tickStep);
+
+    // chunk2 pastel bar
+    ctx.save();
+    ctx.translate(chunk2Offset, 0);
+    drawPastelBar(ctx, 0, c2Mb*PX_PER_MB, barHeight, "#FFFFCC", r2.chrom);
+    drawBaseline(ctx, 0, c2Mb*PX_PER_MB);
+    drawTicksBelow(ctx, scale2, r2.startMb, r2.endMb, tickStep);
+    ctx.restore();
+    return;
+  }
+
+  /*****************************************************
+   * CASE 2) Deletion => single-chrom with break
+   *****************************************************/
+  if (hasDeletion) {
+    console.log('custom x axis: deletion');
+    const startMb    = r1.startMb;
+    const endMb      = r1.endMb;
+    const delStartMb = config.deletionStartMb;
+    const delEndMb   = config.deletionEndMb;
+
+    // chunk1 => [startMb..delStartMb]
+    // chunk2 => [delEndMb..endMb]
+    const c1Mb = delStartMb - startMb;
+    const c2Mb = endMb - delEndMb;
+
+    // We'll use NO gap, so chunk2 starts immediately at x=chunk1Width
+    const chunk1Width = c1Mb * PX_PER_MB;
+    const chunk2Width = c2Mb * PX_PER_MB;
+    const totalWidthPx = chunk1Width + chunk2Width;
+
+    const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
+
+    // chunk1 scale
+    const scale1 = d3.scaleLinear()
+      .domain([startMb, delStartMb])
+      .range([0, chunk1Width]);
+    // chunk2 scale
+    const scale2 = d3.scaleLinear()
+      .domain([delEndMb, endMb])
+      .range([0, chunk2Width]);
+
+    // 1) chunk1 bar, baseline, ticks
+    drawPastelBar(ctx, 0, chunk1Width, barHeight, "#CCFFCC", r1.chrom);
+    drawBaseline(ctx, 0, chunk1Width);
+    drawTicksBelow(ctx, scale1, startMb, delStartMb, tickStep, delStartMb);
+
+    // 2) The thin red line from y=-barHeight..y=0 at x=chunk1Width
+    //    to indicate the break
+    ctx.save();
+    ctx.strokeStyle = "red";
+    ctx.beginPath();
+    ctx.moveTo(chunk1Width, -barHeight);
+    ctx.lineTo(chunk1Width, 0);
+    ctx.stroke();
+    ctx.restore();
+
+    // 3) chunk2 bar, baseline, ticks
+    ctx.save();
+    ctx.translate(chunk1Width, 0);
+    drawPastelBar(ctx, 0, chunk2Width, barHeight, "#CCFFCC", r1.chrom);
+    drawBaseline(ctx, 0, chunk2Width);
+    drawTicksBelow(ctx, scale2, delEndMb + 1e-9, endMb, tickStep);
+    ctx.restore();
+
+    return;
+  }
+
+  /*****************************************************
+   * CASE 3) Single-chrom, no break, no region2
+   *****************************************************/
+  console.log('custom x axis: single-chrom');
+  const c1Mb = r1.endMb - r1.startMb;
+  const totalWidthPx = c1Mb * PX_PER_MB;
+  const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
+
+  const scale = d3.scaleLinear()
+    .domain([r1.startMb, r1.endMb])
+    .range([0, c1Mb*PX_PER_MB]);
+
+  drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#CCFFCC", r1.chrom);
+  drawBaseline(ctx, 0, c1Mb*PX_PER_MB);
+  drawTicksBelow(ctx, scale, r1.startMb, r1.endMb, tickStep);
+}
+
+/*************************************************************
+ * Helper: createCanvas
+ *************************************************************/
+function createCanvas(container, totalWidthPx, axisHeight, margin) {
+  const canvasWidth  = totalWidthPx + margin.left + margin.right;
+  const canvasHeight = axisHeight  + margin.top  + margin.bottom;
+
+  const canvas = document.createElement("canvas");
+  canvas.style.width  = canvasWidth  + "px";
+  canvas.style.height = canvasHeight + "px";
+  container.appendChild(canvas);
+
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width  = canvasWidth  * ratio;
+  canvas.height = canvasHeight * ratio;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(ratio, ratio);
+  ctx.translate(margin.left, margin.top);
+
+  return { ctx, canvasWidth, canvasHeight, ratio };
+}
+
+/*************************************************************
+ * Helper: drawPastelBar
+ *************************************************************/
+function drawPastelBar(ctx, x, widthPx, barHeight, color, chromLabel) {
+  ctx.save();
+  ctx.fillStyle = color;
+  ctx.fillRect(x, -barHeight, widthPx, barHeight);
+  // left aligned label
+  ctx.fillStyle = "#000";
+  ctx.font = "12px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(chromLabel, x + 5, -barHeight / 2);
+  ctx.restore();
+}
+
+/*************************************************************
+ * Helper: drawBaseline
+ *************************************************************/
+function drawBaseline(ctx, xStart, xEnd) {
+  ctx.beginPath();
+  ctx.moveTo(xStart, 0);
+  ctx.lineTo(xEnd, 0);
+  ctx.strokeStyle = "#000";
+  ctx.stroke();
+}
+
+/*************************************************************
+ * Helper: drawTicksBelow
+ * If we provide "highlightMb", that tick is drawn in red.
+ *************************************************************/
+function drawTicksBelow(ctx, scale, minMb, maxMb, stepMb, highlightMb=null) {
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = "10px sans-serif";
+
+  // Build an array of ticks from minMb..maxMb
+  let tickVals = [];
+  for (let t = minMb; t <= maxMb + 1e-9; t += stepMb) {
+    tickVals.push(parseFloat(t.toFixed(9))); // round to avoid float precision issues
+  }
+
+  // If the first tick == delEndMb, skip it
+  // e.g. if you pass "delEndMb" as minMb
+  // (Of course, you can rename "delEndMb" or do some better logic.)
+  if (tickVals.length > 1 && Math.abs(tickVals[0] - minMb) < 1e-9) {
+    // Remove the first tick from the array
+    tickVals.shift();
+  }
+
+  // Now draw all remaining tickVals
+  tickVals.forEach(t => {
+    const x = scale(t);
+    // highlight logic
+    if (highlightMb !== null && Math.abs(t - highlightMb) < 1e-9) {
+      ctx.strokeStyle = "red";
+      ctx.fillStyle   = "red";
+    } else {
+      ctx.strokeStyle = "#000";
+      ctx.fillStyle   = "#000";
+    }
+
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 6);
+    ctx.stroke();
+    ctx.fillText(t.toFixed(1), x, 8);
+  });
+
+  ctx.restore();
+}

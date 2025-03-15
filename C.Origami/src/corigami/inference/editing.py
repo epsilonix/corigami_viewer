@@ -63,7 +63,7 @@ def single_deletion(output_path, chr_name, start, deletion_start, deletion_width
     pred = infer.prediction(seq_region, ctcf_region, atac_region, model_path)
     
     # Save the predicted Hi-C matrix as an npy file.
-    npy_dir = os.path.join(output_path, "deletion", "npy")
+    npy_dir = os.path.join(output_path)
     if not os.path.exists(npy_dir):
         os.makedirs(npy_dir)
     npy_filename = "result.npy"

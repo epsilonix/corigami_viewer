@@ -466,6 +466,20 @@ def index():
             region_chr2, region_start2, region_end2
         )
 
+        custom_axis_config = {
+            "region1": {
+                "chrom": region_chr1,
+                "startMb": region_start1 / 1e6,
+                "endMb":   region_end1 / 1e6
+            },
+            "region2": {
+                "chrom": region_chr2,
+                "startMb": region_start2 / 1e6,
+                "endMb":   region_end2 / 1e6
+            }
+        }
+
+
         # 9) Return whichever template
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return render_template(
@@ -478,7 +492,8 @@ def index():
                 screening_params="{}",
                 norm_atac=norm_atac_method,
                 norm_ctcf=norm_ctcf_method,
-                gene_track_config=json.dumps(gene_track_cfg)
+                gene_track_config=json.dumps(gene_track_cfg),
+                custom_axis_config=json.dumps(custom_axis_config)
             )
         else:
             return render_template(
@@ -490,7 +505,8 @@ def index():
                 screening_mode=screening_requested,
                 screening_params="{}",
                 gene_track_config=json.dumps(gene_track_cfg),
-                user_output_folder=output_folder
+                user_output_folder=output_folder,
+                custom_axis_config=json.dumps(custom_axis_config)
             )
 
     else:
@@ -619,6 +635,16 @@ def index():
             del_start,
             del_width
         )
+        custom_axis_config = {
+            "region1": {
+                "chrom": region_chr1,
+                "startMb": region_start1 / 1e6,
+                "endMb":   region_end1 / 1e6
+            }
+        }
+        if ds_option == "deletion" and del_start is not None and del_width is not None:
+            custom_axis_config["deletionStartMb"] = del_start / 1e6
+            custom_axis_config["deletionEndMb"]   = (del_start + del_width) / 1e6
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return render_template(
@@ -631,7 +657,8 @@ def index():
                 screening_params="{}",
                 norm_atac=norm_atac,
                 norm_ctcf=norm_ctcf,
-                gene_track_config=json.dumps(gene_track_cfg)
+                gene_track_config=json.dumps(gene_track_cfg),
+                custom_axis_config=json.dumps(custom_axis_config)
             )
         else:
             return render_template(
@@ -643,7 +670,8 @@ def index():
                 screening_mode=screening_requested,
                 screening_params="{}",
                 gene_track_config=json.dumps(gene_track_cfg),
-                user_output_folder=output_folder
+                user_output_folder=output_folder,
+                custom_axis_config=json.dumps(custom_axis_config)
             )
 
 ###############################################################################

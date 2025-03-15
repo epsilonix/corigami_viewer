@@ -7,7 +7,7 @@
   </div>
 
   <div id="hi_c_chart"></div>
-  
+  <div id="custom_axis"></div>
   <div class="atac_title_container">
     <div class="atac_title">
       <span class="atac-square"></span>
@@ -45,11 +45,12 @@
   var ctcfConfig = {{ ctcf_config|safe }};
   var atacConfig = {{ atac_config|safe }};
   var geneTrackConfig = {{ gene_track_config|safe }};
+  var customAxisConfig = {{ custom_axis_config|safe }};
   drawHiCChart('#hi_c_chart', hiCConfig);
   drawLineChart('#ctcf_chart', ctcfConfig);
   drawLineChart('#atac_chart', atacConfig);
   drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
-
+  drawCustomAxis('#custom_axis', customAxisConfig);
   // If we have a screening config, draw it
   {% if screening_mode and screening_config %}
     var screeningConfig = {{ screening_config|safe }};
