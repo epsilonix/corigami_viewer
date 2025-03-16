@@ -26,7 +26,11 @@ from app.utils import (
     prepare_chimeric_gene_track_config,
     prepare_gene_track_config,
     WINDOW_WIDTH,
-    clear_folder
+    clear_folder,
+    assemble_chimeric_arrays,
+    write_chimeric_bigwig,
+    extract_bigwig_region_array,
+    assemble_chimeric_fasta
 )
 from app.tasks import q
 ###############################################################################
@@ -131,14 +135,6 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
 ###############################################################################
 # NEW HELPER: Unified "Prediction + Render" function
 ###############################################################################
-##### RQ CHANGES #####
-# We'll import RQ tasks & queue here
-from app.tasks import q
-from app.tasks import (
-    run_editing_task,
-    run_prediction_task,
-    run_screening_task
-)
 
 def run_prediction_and_render(
     region_chr,
@@ -283,19 +279,20 @@ def run_prediction_and_render(
 
 @main.route('/', methods=['GET', 'POST'])
 def index():
+    # Declare user output folder
+    output_folder = get_user_output_folder()
     if request.method == 'GET':
-        user_output_folder = get_user_output_folder()
-        return render_template("index.html", screening_mode=False, user_output_folder=user_output_folder)
+        return render_template("index.html", screening_mode=False, output_folder=output_folder)
 
+    # Check chimeric / deletion / screening settings 
     chimeric_active = (request.form.get('region_chr2', '').strip() != '')
     ds_option = request.form.get('ds_option', 'none')
     screening_requested = (ds_option == 'screening')
 
-    output_folder = get_user_output_folder()
     clear_folder(output_folder)
     os.makedirs(output_folder, exist_ok=True)
 
-    # Model selection, genome, etc. (unchanged)
+    # Get model path
     region_model = request.form.get('model_select', 'V4')
     if region_model == 'V1':
         model_path = "corigami_data/model_weights/v1_jimin.ckpt"
@@ -305,79 +302,89 @@ def index():
         model_path = "corigami_data/model_weights/v3_romane.ckpt"
     elif region_model == 'V4':
         model_path = "corigami_data/model_weights/v4_javier.ckpt"
-    else:
-        return "Invalid model selection."
 
-    # ... pick model_path ...
+    # Get genome path
     genome = request.form.get('genome_select')
+    if genome == 'hg38':
+        seq_dir = "./corigami_data/data/hg38/dna_sequence"
+    elif genome == 'mm10':
+        seq_dir = "./corigami_data/data/mm10/dna_sequence"
+    session['seq_dir'] = seq_dir
+
     session['final_genome'] = genome
+
+    # Get region 1
+    region_chr1 = request.form.get('region_chr1')
+    region_start1 = int(request.form.get('region_start1'))
+    region_end1 = int(request.form.get('region_end1') or (region_start1 + WINDOW_WIDTH))
+
+    first_reverse = False
+    first_flip    = False
+    second_reverse= False
+    second_flip   = False
+
+    # Get region 2
     if chimeric_active:
-        print("Running in CHIMERIC mode (inline) ...")
-        from app.utils import (
-            assemble_chimeric_arrays,
-            write_chimeric_bigwig,
-            normalize_atac,
-            normalize_ctcf,
-            prepare_chimeric_gene_track_config
-        )
-
-        # 1) Gather region1 + region2
-        region_chr1 = request.form.get('region_chr1')
-        region_start1 = int(request.form.get('region_start1'))
-        region_end1 = region_start1 + WINDOW_WIDTH
-        maybe_end1 = request.form.get('region_end1','').strip()
-        if maybe_end1:
-            region_end1 = int(maybe_end1)
-
         region_chr2 = request.form.get('region_chr2')
         region_start2 = int(request.form.get('region_start2'))
-        region_end2 = region_start2 + WINDOW_WIDTH
-        maybe_end2 = request.form.get('region_end2','').strip()
-        if maybe_end2:
-            region_end2 = int(maybe_end2)
-
-        # 2) Raw ATAC / CTCF (no normalization yet)
-        raw_atac_path = request.form.get('atac_bw_path','').strip()
-        raw_ctcf_path = request.form.get('ctcf_bw_path','').strip()
-        if not raw_atac_path:
-            return "Chimeric mode requires an ATAC bigWig"
-        if not raw_ctcf_path or raw_ctcf_path == "none":
-            return "Chimeric mode requires a CTCF bigWig"
-
-        # 3) Flips
+        region_end2 = int(request.form.get('region_end2') or (region_start2 + WINDOW_WIDTH))
         first_reverse  = (request.form.get('first_reverse') == 'true')
         first_flip     = (request.form.get('first_flip') == 'true')
         second_reverse = (request.form.get('second_reverse') == 'true')
         second_flip    = (request.form.get('second_flip') == 'true')
 
-        # 4) Assemble arrays => "chrCHIM"
-        chim_atac, chim_ctcf = assemble_chimeric_arrays(
-            raw_atac_path,
-            raw_ctcf_path,
-            region_chr1, region_start1, region_end1,
-            region_chr2, region_start2, region_end2,
-            first_reverse, first_flip,
-            second_reverse, second_flip
-        )
-        chim_len = len(chim_atac)  # same as len(chim_ctcf)
+    # Get raw ATAC and CTCF paths
+    raw_atac_path = request.form.get('atac_bw_path','').strip()
+    raw_ctcf_path = request.form.get('ctcf_bw_path','').strip()
 
-        # 5) Write “chrCHIM_atac.bw” + “chrCHIM_ctcf.bw”
-        chim_atac_bw, chim_ctcf_bw = write_chimeric_bigwig(
-            chim_atac, chim_ctcf, output_folder, chim_len, chim_name="chrCHIM"
-        )
-        print(f"Chimeric chromosome length => {chim_len} bp")
+    # 1) ATAC array assembly
+    if chimeric_active:
+        a1 = extract_bigwig_region_array(raw_atac_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
+        a2 = extract_bigwig_region_array(raw_atac_path, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
+        atac_arr = np.concatenate([a1, a2])
+    else:
+        atac_arr = extract_bigwig_region_array(raw_atac_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
 
-        # 5a) create synthetic FASTA
-        # We'll assume you keep your reference FASTAs in e.g. "corigami_data/data/hg38/dna_sequence/chr1.fa.gz", etc.
-        # We'll attempt to locate them based on region_chr1, region_chr2:
-        # This is just an example. You can adapt how you find them:
-        fa1_path = os.path.join(f"./corigami_data/data/{genome}/dna_sequence", f"{region_chr1}.fa.gz")
-        fa2_path = os.path.join(f"./corigami_data/data/{genome}/dna_sequence", f"{region_chr2}.fa.gz")
+    # 2) CTCF path or array
+    final_ctcf_path = raw_ctcf_path if raw_ctcf_path and raw_ctcf_path.lower() != 'none' else None
+    ctcf_arr = None
 
-        from app.utils import assemble_chimeric_fasta
-        chimera_files_dir = os.path.join(output_folder, "chimera_files")
+    if not final_ctcf_path:  # => predict
+        if chimeric_active:
+            p1 = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, output_folder)
+            p2 = predict_ctcf(raw_atac_path, region_chr2, region_start2, region_end2, output_folder)
+            r1 = extract_bigwig_region_array(p1, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
+            r2 = extract_bigwig_region_array(p2, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
+            ctcf_arr = np.concatenate([r1, r2])
+        else:
+            final_ctcf_path = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, output_folder)
+
+    # 3) Write final bigWigs if chimeric
+    if chimeric_active:
+        chim_len = len(atac_arr)
+        if ctcf_arr is None:  # user gave a real CTCF bigWig, so build an array
+            r1 = extract_bigwig_region_array(raw_ctcf_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
+            r2 = extract_bigwig_region_array(raw_ctcf_path, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
+            ctcf_arr = np.concatenate([r1, r2])
+        atac_bw, ctcf_bw = write_chimeric_bigwig(atac_arr, ctcf_arr, output_folder, chim_len, "chrCHIM")
+        final_atac_path, final_ctcf_path = atac_bw, ctcf_bw
+    else:
+        # Non-chimeric
+        final_atac_path = raw_atac_path
+        # If final_ctcf_path wasn't set (predicted above), it's a path from predict_ctcf
+    print("ATAC:", final_atac_path)
+    print("CTCF:", final_ctcf_path)
+
+    # 5a) FASTA
+    if chimeric_active:
+        fa_dir = f"./corigami_data/data/{genome}/dna_sequence"
+        fa1_path = os.path.join(fa_dir, f"{region_chr1}.fa.gz")
+        fa2_path = os.path.join(fa_dir, f"{region_chr2}.fa.gz")
+
+        chimera_files_dir = os.path.join(output_folder, "chimera_fasta")
         os.makedirs(chimera_files_dir, exist_ok=True)
 
+        # Build synthetic chrCHIM.fa.gz
         chim_fa_gz = assemble_chimeric_fasta(
             fa1_path, region_start1, region_end1, 
             do_reverse1=first_reverse, do_flip1=first_flip,
@@ -386,86 +393,98 @@ def index():
             output_folder=chimera_files_dir,
             chim_name="chrCHIM"
         )
-
+        print("Created chimeric FASTA =>", chim_fa_gz)
         seq_dir = chimera_files_dir
-        session['seq_dir'] = seq_dir
-        
-        peaks_file = request.form.get('peaks_file_path', '').strip()
-        if peaks_file:
-            session['final_peaks_file'] = peaks_file
+    else:
+        # Non-chimeric mode: optionally do nothing or just use fa1_path
+        seq_dir = f"./corigami_data/data/{genome}/dna_sequence"
+
+    session['seq_dir'] = seq_dir
+    
+    #Get Peaks file
+    peaks_file = request.form.get('peaks_file_path', '').strip()
+    if peaks_file:
+        session['final_peaks_file'] = peaks_file
 
 
-        # 6) Normalization if requested (chimeric mode) -- updated to mimic standard mode normalization logic
-        norm_atac_method = request.form.get('norm_atac')   # e.g. 'none', 'minmax', 'log'
-        norm_ctcf_method = request.form.get('norm_ctcf')     # e.g. 'none', 'minmax', etc.
-        training_norm = request.form.get('training_norm')    # e.g. 'minmax' or another training norm method
+    # 6) Normalization if requested (chimeric mode) -- updated to mimic standard mode normalization logic
+    norm_atac_method = request.form.get('norm_atac')
+    norm_ctcf_method = request.form.get('norm_ctcf')
+    training_norm = request.form.get('training_norm')
 
-        # Both chim_atac_bw and chim_ctcf_bw should be available in chimeric mode.
-        if chim_ctcf_bw:
-            if norm_atac_method == "none" and norm_ctcf_method == "none":
-                # Require a training norm method when neither normalization is explicitly chosen.
-                if not training_norm:
-                    return "Please select training norm (standard)."
-                final_atac_bw = normalize_atac(chim_atac_bw, "chrCHIM", 0, chim_len, training_norm, output_folder)
-                final_ctcf_bw = normalize_ctcf(chim_ctcf_bw, "chrCHIM", 0, chim_len, training_norm, output_folder)
-            elif norm_atac_method != "none" and norm_ctcf_method == "none":
-                # Use the ATAC norm method for CTCF if only ATAC's norm method is provided.
-                final_atac_bw = chim_atac_bw
-                final_ctcf_bw = normalize_ctcf(chim_ctcf_bw, "chrCHIM", 0, chim_len, norm_atac_method, output_folder)
-            elif norm_atac_method == "none" and norm_ctcf_method != "none":
-                # Use the CTCF norm method for ATAC if only CTCF's norm method is provided.
-                final_ctcf_bw = chim_ctcf_bw
-                final_atac_bw = normalize_atac(chim_atac_bw, "chrCHIM", 0, chim_len, norm_ctcf_method, output_folder)
-            else:
-                # If both are provided, they must match.
-                if norm_atac_method != norm_ctcf_method:
-                    return "ATAC/CTCF must share the same norm method."
-                final_atac_bw = chim_atac_bw
-                final_ctcf_bw = chim_ctcf_bw
-        else:
-            # Fallback in the unlikely event that chim_ctcf_bw is missing.
-            final_atac_bw = chim_atac_bw
-            final_ctcf_bw = None
+    if chimeric_active:
+        chrom, start, end = "chrCHIM", 0, chim_len
+    else:
+        chrom = region_chr1
+        start = region_start1
+        end   = region_end1
 
+    norm_atac_path = None
+    norm_ctcf_path = None
 
-        # 7) run_prediction_and_render
-        from app.routes import run_prediction_and_render
-        configs = run_prediction_and_render(
-            region_chr="chrCHIM",
-            region_start=0,
-            region_end=chim_len,
-            ds_option=ds_option,
-            model_path=model_path,
-            genome=genome,
-            atac_bw_for_model=final_atac_bw,
-            ctcf_bw_for_model=final_ctcf_bw,
-            raw_atac_path=final_atac_bw,
-            output_folder=output_folder,
-            norm_atac=norm_atac_method,
-            norm_ctcf=norm_ctcf_method,
-            screening_requested=screening_requested,
-            seq_dir=seq_dir  # <-- points to where chrCHIM.fa.gz resides
-        )
+    if norm_atac_method == "none" and norm_ctcf_method == "none":
+        if not training_norm:
+            return "Please select training norm (standard)."
+        norm_atac_path = normalize_atac(final_atac_path, chrom, start, end, training_norm, output_folder)
+        norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, training_norm, output_folder)
 
-        session['final_atac_bw'] = final_atac_bw
-        session['final_ctcf_bw'] = final_ctcf_bw
-        session['final_region_chr'] = "chrCHIM"
-        session['final_region_start'] = 0
-        session['final_region_end'] = chim_len
+    elif norm_atac_method != "none" and norm_ctcf_method == "none":
+        # If only ATAC's norm is provided => use that for both
+        norm_atac_path = final_atac_path
+        norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, norm_atac_method, output_folder)
 
-        # 8) Build a gene track for “chrCHIM”
-        if genome == 'hg38':
-            annotation_file = "static/genes.gencode.v38.txt"
-        else:
-            annotation_file = "static/genes.gencode.M21.mm10.txt"
+    elif norm_atac_method == "none" and norm_ctcf_method != "none":
+        # If only CTCF's norm is provided => use that for both
+        norm_ctcf_path = final_ctcf_path
+        norm_atac_path = normalize_atac(final_atac_path, chrom, start, end, norm_ctcf_method, output_folder)
 
-        offset = (region_end1 - region_start1)
+    else:
+        # If both are provided, they must match
+        if norm_atac_method != norm_ctcf_method:
+            return "ATAC/CTCF must share the same norm method."
+        norm_atac_path = final_atac_path
+        norm_ctcf_path = final_ctcf_path
+
+    print("Normalization complete.")
+    print("ATAC =>", norm_atac_path)
+    print("CTCF =>", norm_ctcf_path)
+
+    # Decide if standard or chimeric
+    if chimeric_active:
+        # (Example) final coords for "chrCHIM"
+        run_args = {
+            "region_chr": "chrCHIM",
+            "region_start": 0,
+            "region_end": chim_len,
+            "ds_option": ds_option,
+            "model_path": model_path,
+            "genome": genome,
+            "atac_bw_for_model": final_atac_path,
+            "ctcf_bw_for_model": final_ctcf_path,
+            "raw_atac_path": final_atac_path,
+            "output_folder": output_folder,
+            "norm_atac": norm_atac_method,
+            "norm_ctcf": norm_ctcf_method,
+            "screening_requested": screening_requested,
+            "seq_dir": seq_dir
+        }
+
+        configs = run_prediction_and_render(**run_args)
+
+        session.update({
+            'final_atac_bw': final_atac_path,
+            'final_ctcf_bw': final_ctcf_path,
+            'final_region_chr': "chrCHIM",
+            'final_region_start': 0,
+            'final_region_end': chim_len
+        })
+
+        # Build chimeric gene track + axis
+        annotation_file = "static/genes.gencode.v38.txt" if genome == 'hg38' else "static/genes.gencode.M21.mm10.txt"
         gene_track_cfg = prepare_chimeric_gene_track_config(
-            annotation_file,
-            region_chr1, region_start1, region_end1,
+            annotation_file, region_chr1, region_start1, region_end1,
             region_chr2, region_start2, region_end2
         )
-
         custom_axis_config = {
             "region1": {
                 "chrom": region_chr1,
@@ -479,161 +498,46 @@ def index():
             }
         }
 
-
-        # 9) Return whichever template
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return render_template(
-                "plots_partial.html",
-                hi_c_config=configs["hi_c_config"],
-                ctcf_config=configs["ctcf_config"],
-                atac_config=configs["atac_config"],
-                screening_config=configs["screening_config"],
-                screening_mode=screening_requested,
-                screening_params="{}",
-                norm_atac=norm_atac_method,
-                norm_ctcf=norm_ctcf_method,
-                gene_track_config=json.dumps(gene_track_cfg),
-                custom_axis_config=json.dumps(custom_axis_config)
-            )
-        else:
-            return render_template(
-                "index.html",
-                hi_c_config=configs["hi_c_config"],
-                ctcf_config=configs["ctcf_config"],
-                atac_config=configs["atac_config"],
-                screening_config=configs["screening_config"],
-                screening_mode=screening_requested,
-                screening_params="{}",
-                gene_track_config=json.dumps(gene_track_cfg),
-                user_output_folder=output_folder,
-                custom_axis_config=json.dumps(custom_axis_config)
-            )
-
     else:
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        # STANDARD MODE
-        # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-        print("Running in STANDARD mode...")
-        from app.utils import (
-            normalize_atac, normalize_ctcf, predict_ctcf,
-            predict_peaks, generate_peaks_from_bigwig_macs2,
-            prepare_gene_track_config
-        )
-
-        # Region
-        region_chr1 = request.form.get('region_chr1')
-        try:
-            region_start1 = int(request.form.get('region_start1'))
-        except:
-            return "Invalid start position."
-
-        region_end1 = request.form.get('region_end1', '').strip()
-        if region_end1:
-            try:
-                region_end1 = int(region_end1)
-            except:
-                return "Invalid end position."
-        else:
-            region_end1 = region_start1 + WINDOW_WIDTH
-
-        if genome == 'hg38':
-            seq_dir = "./corigami_data/data/hg38/dna_sequence"
-        elif genome == 'mm10':
-            seq_dir = "./corigami_data/data/mm10/dna_sequence"
-        session['seq_dir'] = seq_dir
-
-
-        atac_bw_path = request.form.get('atac_bw_path','')
-        ctcf_bw_path = (request.form.get('ctcf_bw_path','') or "").strip()
-        peaks_file   = request.form.get('peaks_file_path', "").strip()
-        norm_atac    = request.form.get('norm_atac')
-        norm_ctcf    = request.form.get('norm_ctcf')
-        training_norm= request.form.get('training_norm')
-
-        raw_atac_path = atac_bw_path
-        raw_ctcf_path = ctcf_bw_path if ctcf_bw_path != "none" else None
-
-        # Normalization logic
-        if raw_ctcf_path:
-            # both files
-            if norm_atac == "none" and norm_ctcf == "none":
-                if not training_norm:
-                    return "Please select training norm (standard)."
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
-                                               training_norm, output_folder)
-                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr1, region_start1, region_end1,
-                                               training_norm, output_folder)
-            elif norm_atac != "none" and norm_ctcf == "none":
-                final_atac_bw = raw_atac_path
-                final_ctcf_bw = normalize_ctcf(raw_ctcf_path, region_chr1, region_start1, region_end1,
-                                               norm_atac, output_folder)
-            elif norm_atac == "none" and norm_ctcf != "none":
-                final_ctcf_bw = raw_ctcf_path
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
-                                               norm_ctcf, output_folder)
-            else:
-                if norm_atac != norm_ctcf:
-                    return "ATAC/CTCF must share the same norm method."
-                final_atac_bw = raw_atac_path
-                final_ctcf_bw = raw_ctcf_path
-        else:
-            # No CTCF => predict
-            if norm_atac == "log":
-                return "If no CTCF, ATAC must be raw or minmax (log not allowed)."
-            elif norm_atac == "minmax":
-                final_atac_bw = raw_atac_path
-            elif norm_atac == "raw":
-                final_atac_bw = normalize_atac(raw_atac_path, region_chr1, region_start1, region_end1,
-                                               "minmax", output_folder)
-            else:
-                return "Unexpected ATAC norm if no CTCF."
-            final_ctcf_bw = predict_ctcf(final_atac_bw, region_chr1, region_start1, region_end1, output_folder)
-            norm_ctcf = "minmax predicted"
-
-        # If ds_option=deletion => read del start/width
-        del_start, del_width = None, None
+        # Standard mode => optional deletion
+        del_start = del_width = None
         if ds_option == "deletion":
-            try:
-                del_start = int(request.form.get('del_start','1500000'))
-                del_width = int(request.form.get('del_width','500000'))
-            except:
-                return "Invalid deletion parameters."
+            del_start = int(request.form.get('del_start', '1500000'))
+            del_width = int(request.form.get('del_width', '500000'))
 
-        from app.routes import run_prediction_and_render
-        configs = run_prediction_and_render(
-            region_chr=region_chr1,
-            region_start=region_start1,
-            region_end=region_end1,
-            ds_option=ds_option,
-            model_path=model_path,
-            genome=genome,
-            atac_bw_for_model=final_atac_bw,
-            ctcf_bw_for_model=final_ctcf_bw,
-            raw_atac_path=raw_atac_path,
-            output_folder=output_folder,
-            del_start=del_start,
-            del_width=del_width,
-            norm_atac=norm_atac,
-            norm_ctcf=norm_ctcf,
-            screening_requested=screening_requested,
-            seq_dir=seq_dir
-        )
+        run_args = {
+            "region_chr": region_chr1,
+            "region_start": region_start1,
+            "region_end": region_end1,
+            "ds_option": ds_option,
+            "model_path": model_path,
+            "genome": genome,
+            "atac_bw_for_model": final_atac_path,
+            "ctcf_bw_for_model": final_ctcf_path,
+            "raw_atac_path": raw_atac_path,
+            "output_folder": output_folder,
+            "del_start": del_start,
+            "del_width": del_width,
+            "norm_atac": norm_atac_method,
+            "norm_ctcf": norm_ctcf_method,
+            "screening_requested": screening_requested,
+            "seq_dir": seq_dir
+        }
 
-        session['final_atac_bw'] = final_atac_bw
-        session['final_ctcf_bw'] = final_ctcf_bw
-        session['final_region_chr'] = region_chr1
-        session['final_region_start'] = region_start1
-        session['final_region_end'] = region_end1
+        configs = run_prediction_and_render(**run_args)
 
-        # Build gene track for standard mode
+        session.update({
+            'final_atac_bw': final_atac_path,
+            'final_ctcf_bw': final_ctcf_path,
+            'final_region_chr': region_chr1,
+            'final_region_start': region_start1,
+            'final_region_end': region_end1
+        })
+
+        # Standard gene track + axis
         gene_track_cfg = prepare_gene_track_config(
-            genome,
-            region_chr1,
-            region_start1,
-            region_end1,
-            ds_option,
-            del_start,
-            del_width
+            genome, region_chr1, region_start1, region_end1,
+            ds_option, del_start, del_width
         )
         custom_axis_config = {
             "region1": {
@@ -643,36 +547,27 @@ def index():
             }
         }
         if ds_option == "deletion" and del_start is not None and del_width is not None:
-            custom_axis_config["deletionStartMb"] = del_start / 1e6
-            custom_axis_config["deletionEndMb"]   = (del_start + del_width) / 1e6
+            custom_axis_config.update({
+                "deletionStartMb": del_start / 1e6,
+                "deletionEndMb": (del_start + del_width) / 1e6
+            })
 
-        if request.headers.get("X-Requested-With") == "XMLHttpRequest":
-            return render_template(
-                "plots_partial.html",
-                hi_c_config=configs["hi_c_config"],
-                ctcf_config=configs["ctcf_config"],
-                atac_config=configs["atac_config"],
-                screening_config=configs["screening_config"],
-                screening_mode=screening_requested,
-                screening_params="{}",
-                norm_atac=norm_atac,
-                norm_ctcf=norm_ctcf,
-                gene_track_config=json.dumps(gene_track_cfg),
-                custom_axis_config=json.dumps(custom_axis_config)
-            )
-        else:
-            return render_template(
-                "index.html",
-                hi_c_config=configs["hi_c_config"],
-                ctcf_config=configs["ctcf_config"],
-                atac_config=configs["atac_config"],
-                screening_config=configs["screening_config"],
-                screening_mode=screening_requested,
-                screening_params="{}",
-                gene_track_config=json.dumps(gene_track_cfg),
-                user_output_folder=output_folder,
-                custom_axis_config=json.dumps(custom_axis_config)
-            )
+    # Decide partial vs full template
+    tmpl = "plots_partial.html" if request.headers.get("X-Requested-With") == "XMLHttpRequest" else "index.html"
+    return render_template(
+        tmpl,
+        hi_c_config=configs["hi_c_config"],
+        ctcf_config=configs["ctcf_config"],
+        atac_config=configs["atac_config"],
+        screening_config=configs["screening_config"],
+        screening_mode=screening_requested,
+        screening_params="{}",
+        norm_atac=norm_atac_method,
+        norm_ctcf=norm_ctcf_method,
+        gene_track_config=json.dumps(gene_track_cfg),
+        user_output_folder=output_folder,
+        custom_axis_config=json.dumps(custom_axis_config)
+    )
 
 ###############################################################################
 # Screening Route

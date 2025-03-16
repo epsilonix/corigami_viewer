@@ -37,6 +37,16 @@ div#gene-track-wrapper {
 /* Style for the add second chromosome toggle */
 .add-second-chr-container {
   text-align: center;
+  width: 100%;
+  display: inline-flex;
+  vertical-align: middle;
+  cursor:pointer
+}
+span.toggle-plus-label {
+  font-size: 0.80em;
+  line-height: 0;
+  margin: auto 0;
+  color:#888;
 }
 .toggle-plus {
   font-size: 2em;
@@ -50,8 +60,6 @@ div#gene-track-wrapper {
   text-align: center;
   vertical-align: middle;
   transform-origin: center center;
-  margin: auto;
-  margin-bottom: 20px;
 }
 .toggle-plus.active {
   transform: rotate(45deg);

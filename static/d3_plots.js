@@ -7,7 +7,7 @@
 
 /**
  * SET THIS TO TRUE IF YOU WANT TO HIDE ALL X-AXIS LABELS
- * AND THE ZIG-ZAG BREAK SYMBOL (BUT KEEP TICK LINES).
+ * AND THE ZIG-ZAG BREAK SYMBOL AND THE TICK MARKS.
  */
 const HIDE_X_AXIS_LABELS = true;
 
@@ -44,7 +44,7 @@ function createHiResCanvas(containerSelector, width, height) {
  *************************************************************/
 function drawHiCChart(containerSelector, config) {
   // For Hi-C, we plot all the provided matrix data.
-  // In deletion mode, we simply hide the x-axis ticks if hideXAxis==true.
+  // In deletion mode, we simply hide the x-axis if config.hideXAxis==true.
   const hideTicks = config.hideXAxis === true;
   
   const margin = { top: 5, right: 20, bottom: 15, left: 50 };
@@ -78,7 +78,7 @@ function drawHiCChart(containerSelector, config) {
   
   // Color scale for heatmap cells
   const colorScale = d3.scaleSequential(d3.interpolateReds)
-  .domain([config.colorAxis.min, config.colorAxis.max]);
+    .domain([config.colorAxis.min, config.colorAxis.max]);
   
   // Draw all heatmap cells
   config.series[0].data.forEach(d => {
@@ -95,7 +95,7 @@ function drawHiCChart(containerSelector, config) {
     ctx.fillRect(xLeft, yTop, cellW, cellH);
   });
   
-  // If not hideTicks => draw the baseline
+  // If we are not hiding the axis entirely
   if (!hideTicks) {
     ctx.save();
     ctx.translate(0, height);
@@ -105,8 +105,8 @@ function drawHiCChart(containerSelector, config) {
     ctx.strokeStyle = "#000";
     ctx.stroke();
     
-    // Only draw text if global HIDE_X_AXIS_LABELS is false
     if (!HIDE_X_AXIS_LABELS) {
+      // Draw the tick marks & labels
       const xTicks = xScale.ticks(10);
       ctx.font = "10px sans-serif";
       ctx.fillStyle = "#000";
@@ -119,16 +119,6 @@ function drawHiCChart(containerSelector, config) {
         ctx.lineTo(xPos, 6);
         ctx.stroke();
         ctx.fillText(d3.format(".2f")(tick), xPos, 6);
-      });
-    } else {
-      // If we still want the vertical tick lines but no text:
-      const xTicks = xScale.ticks(10);
-      xTicks.forEach(tick => {
-        const xPos = xScale(tick);
-        ctx.beginPath();
-        ctx.moveTo(xPos, 0);
-        ctx.lineTo(xPos, 6);
-        ctx.stroke();
       });
     }
     ctx.restore();
@@ -195,8 +185,8 @@ function drawLineChartContinuous(containerSelector, config) {
   ctx.stroke();
   
   // Ticks on x-axis
-  const xTicks = xScale.ticks(10);
   if (!HIDE_X_AXIS_LABELS) {
+    const xTicks = xScale.ticks(10);
     ctx.font = "10px sans-serif";
     ctx.fillStyle = "#000";
     ctx.textAlign = "center";
@@ -208,15 +198,6 @@ function drawLineChartContinuous(containerSelector, config) {
       ctx.lineTo(xPos, 6);
       ctx.stroke();
       ctx.fillText(d3.format(".2f")(tick), xPos, 6);
-    });
-  } else {
-    // hide text, but keep small lines
-    xTicks.forEach(tick => {
-      const xPos = xScale(tick);
-      ctx.beginPath();
-      ctx.moveTo(xPos, 0);
-      ctx.lineTo(xPos, 6);
-      ctx.stroke();
     });
   }
   ctx.restore();
@@ -238,7 +219,7 @@ function drawLineChartContinuous(containerSelector, config) {
     ctx.moveTo(0, yPos);
     ctx.lineTo(-6, yPos);
     ctx.stroke();
-    // We always show Y labels for now
+    // We show Y labels
     ctx.fillText(tick, -8, yPos);
   });
   
@@ -349,7 +330,6 @@ function drawLineChartWithBreak(containerSelector, config) {
   ctx.lineTo(leftWidthPx, 0);
   ctx.stroke();
   
-  // left ticks
   if (!HIDE_X_AXIS_LABELS) {
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -361,15 +341,6 @@ function drawLineChartWithBreak(containerSelector, config) {
       ctx.lineTo(xPos, 6);
       ctx.stroke();
       ctx.fillText(d3.format(".2f")(tick), xPos, 6);
-    });
-  } else {
-    // just lines, no text
-    leftTicks.forEach(tick => {
-      const xPos = scaleLeft(tick);
-      ctx.beginPath();
-      ctx.moveTo(xPos, 0);
-      ctx.lineTo(xPos, 6);
-      ctx.stroke();
     });
   }
   ctx.restore();
@@ -393,15 +364,6 @@ function drawLineChartWithBreak(containerSelector, config) {
       ctx.lineTo(xPos, 6);
       ctx.stroke();
       ctx.fillText(d3.format(".2f")(tick), xPos, 6);
-    });
-  } else {
-    // lines only
-    rightTicks.forEach(tick => {
-      const xPos = scaleRight(tick);
-      ctx.beginPath();
-      ctx.moveTo(xPos, 0);
-      ctx.lineTo(xPos, 6);
-      ctx.stroke();
     });
   }
   ctx.restore();
@@ -445,7 +407,7 @@ function drawLineChartWithBreak(containerSelector, config) {
   }
 }
 
-/** Deletion-mode signal plot with discontinuous (broken) x-axis. */
+/** Column Chart (for screening data) */
 function drawColumnChart(containerSelector, config) {
   const margin = { top: 20, right: 20, bottom: 40, left: 50 };
   const fullWidth = (config.xAxis.max - config.xAxis.min) * PX_PER_MB;
@@ -506,8 +468,8 @@ function drawColumnChart(containerSelector, config) {
   ctx.strokeStyle = "black";
   ctx.stroke();
   
-  const xTicks = xScale.ticks(10);
   if (!HIDE_X_AXIS_LABELS) {
+    const xTicks = xScale.ticks(10);
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.font = "10px sans-serif";
@@ -519,15 +481,6 @@ function drawColumnChart(containerSelector, config) {
       ctx.stroke();
       const tickLabel = config.xAxis.tickFormat ? config.xAxis.tickFormat(tick) : d3.format(".2f")(tick);
       ctx.fillText(tickLabel, xPos, 6);
-    });
-  } else {
-    // just the small lines
-    xTicks.forEach(tick => {
-      const xPos = xScale(tick);
-      ctx.beginPath();
-      ctx.moveTo(xPos, 0);
-      ctx.lineTo(xPos, 6);
-      ctx.stroke();
     });
   }
   ctx.restore();
@@ -563,14 +516,16 @@ function drawColumnChart(containerSelector, config) {
   }
   
   // y-axis title
-  ctx.save();
-  ctx.translate(-margin.left, height / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.font = "12px sans-serif";
-  ctx.fillText(config.yAxis.title.text, 0, 0);
-  ctx.restore();
+  if (config.yAxis && config.yAxis.title) {
+    ctx.save();
+    ctx.translate(-margin.left, height / 2);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = "12px sans-serif";
+    ctx.fillText(config.yAxis.title.text, 0, 0);
+    ctx.restore();
+  }
   
   // Chart title if provided
   if (config.title && config.title.text) {
@@ -783,18 +738,16 @@ function drawGeneTrackChart(selector, config) {
       }
     }
 
-    }).catch(function(error) {
+  }).catch(function(error) {
     console.error("Error loading gene annotation data:", error);
-    });
+  });
 }
 
 
+// Example Chimeric axis logic
 if (config.xAxis.isChimeric) {
   // These values are provided by your backend in config.xAxis:
-  // config.xAxis.region1StartMb: e.g. 3 (for 3 Mb)
-  // config.xAxis.region1LengthMb: e.g. 3 (for a 3 Mb region)
-  // config.xAxis.region2StartMb: e.g. 3 (for 3 Mb in the second region)
-  
+  // config.xAxis.region1StartMb, config.xAxis.region1LengthMb, etc.
   config.xAxis.tickFormat = function(tick) {
     if (tick < config.xAxis.region1LengthMb) {
       // In the first synthetic segment, add region1StartMb

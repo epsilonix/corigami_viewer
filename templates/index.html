@@ -102,7 +102,7 @@
           </div>
           <div class="col-40">
             <label for="region_start1" class="small-label">Start (bp)*</label>
-            <input type="number" id="region_start1" name="region_start1" value="{{ request.form.region_start or '1500000' }}" required>
+            <input type="number" id="region_start1" name="region_start1" value="{{ request.form.region_start1}}" required>
           </div>
           <div class="col-40">
             <label for="region_end1" class="small-label">End (bp)</label>
@@ -111,9 +111,10 @@
         </div>
         <div id="region-bound-error" class="region-bound-error"></div>
         <!-- Add Second Chromosome Toggle (Plus/X) -->
-        <div class="row no-bottom-margin">
-          <div class="col-full add-second-chr-container">
+        <div class="row">
+          <div class="add-second-chr-container" id="toggle-second-chr-container">
             <span id="toggle-second-chr" class="toggle-plus">+</span>
+            <span class="toggle-plus-label">Add second region</span>
           </div>
         </div>
 
@@ -142,7 +143,7 @@
             <!-- First Chromosome Orientation -->
             <div class="col-half">
               <fieldset class="yesNo">
-                <legend>First chrom</legend>
+                <legend>First region</legend>
                 <span class="radioButton radioButton__false">
                   <input type="checkbox" id="first_reverse" name="first_orientation" value="reverse" />
                   <label for="first_reverse">Reverse</label>
@@ -156,7 +157,7 @@
             <!-- Second Chromosome Orientation -->
             <div class="col-half">
               <fieldset class="yesNo">
-                <legend>Second chrom</legend>
+                <legend>Second region</legend>
                 <span class="radioButton radioButton__false">
                   <input type="checkbox" id="second_reverse" name="second_orientation" value="reverse" />
                   <label for="second_reverse">Reverse</label>
@@ -223,6 +224,9 @@
               <label for="ctcf-minmax" class="switch-label">minmax</label>
               <span class="switch-selector"></span>
             </div>
+          </div>
+          <div id="ctcf-error-message" class="error-message">
+            Raw ATAC BigWig is needed when CTCF is not provided
           </div>
         </div>
         <!-- Training Normalization -->
