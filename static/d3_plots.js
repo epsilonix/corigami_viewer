@@ -455,7 +455,7 @@ function drawColumnChart(containerSelector, config) {
     const x = xScale(d[0]) - barWidth / 2;
     const y = yScale(d[1]);
     const h = height - y;
-    ctx.fillStyle = series.color || "steelblue";
+    ctx.fillStyle = series.color || "#9FC0DE";
     ctx.fillRect(x, y, barWidth, h);
   });
   
@@ -661,7 +661,7 @@ function drawGeneTrackChart(selector, config) {
      .attr("x2", d => xScale(Math.min(d.end, regionEnd)))
      .attr("y1", d => d.row * rowHeight + rowHeight / 2)
      .attr("y2", d => d.row * rowHeight + rowHeight / 2)
-     .attr("stroke", d => d.strand === "+" ? "#87CEEB" : "#FFA500")
+     .attr("stroke", d => d.strand === "+" ? "#9FC0DE" : "#F2C894")
      .attr("stroke-width", Math.min(rowHeight * 0.2, 1.5))
      .attr("stroke-linecap", "round");
 
@@ -777,7 +777,7 @@ function drawCustomAxis(containerSelector, config) {
 
   // Shared constants
   const PX_PER_MB = 200;
-  const margin = { top: 20, right: 30, bottom: 10, left: 50 };
+  const margin = { top: 20, right: 30, bottom: 0, left: 50 };
   const axisHeight = 50;
   const barHeight  = 15;
   const tickStep   = 0.2;
@@ -809,7 +809,7 @@ function drawCustomAxis(containerSelector, config) {
     const chunk2Offset = c1Mb * PX_PER_MB;
 
     // chunk1 pastel bar
-    drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#CCFFCC", r1.chrom);
+    drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#779ECC", r1.chrom);
     // chunk1 baseline
     drawBaseline(ctx, 0, c1Mb*PX_PER_MB);
     // chunk1 ticks
@@ -818,7 +818,7 @@ function drawCustomAxis(containerSelector, config) {
     // chunk2 pastel bar
     ctx.save();
     ctx.translate(chunk2Offset, 0);
-    drawPastelBar(ctx, 0, c2Mb*PX_PER_MB, barHeight, "#FFFFCC", r2.chrom);
+    drawPastelBar(ctx, 0, c2Mb*PX_PER_MB, barHeight, "#9FC0DE", r2.chrom);
     drawBaseline(ctx, 0, c2Mb*PX_PER_MB);
     drawTicksBelow(ctx, scale2, r2.startMb, r2.endMb, tickStep);
     ctx.restore();
@@ -857,7 +857,7 @@ function drawCustomAxis(containerSelector, config) {
       .range([0, chunk2Width]);
 
     // 1) chunk1 bar, baseline, ticks
-    drawPastelBar(ctx, 0, chunk1Width, barHeight, "#CCFFCC", r1.chrom);
+    drawPastelBar(ctx, 0, chunk1Width, barHeight, "#779ECC", r1.chrom);
     drawBaseline(ctx, 0, chunk1Width);
     drawTicksBelow(ctx, scale1, startMb, delStartMb, tickStep, delStartMb);
 
@@ -874,7 +874,7 @@ function drawCustomAxis(containerSelector, config) {
     // 3) chunk2 bar, baseline, ticks
     ctx.save();
     ctx.translate(chunk1Width, 0);
-    drawPastelBar(ctx, 0, chunk2Width, barHeight, "#CCFFCC", r1.chrom);
+    drawPastelBar(ctx, 0, chunk2Width, barHeight, "#779ECC", r1.chrom);
     drawBaseline(ctx, 0, chunk2Width);
     drawTicksBelow(ctx, scale2, delEndMb + 1e-9, endMb, tickStep);
     ctx.restore();
@@ -894,7 +894,7 @@ function drawCustomAxis(containerSelector, config) {
     .domain([r1.startMb, r1.endMb])
     .range([0, c1Mb*PX_PER_MB]);
 
-  drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#CCFFCC", r1.chrom);
+  drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#779ECC", r1.chrom);
   drawBaseline(ctx, 0, c1Mb*PX_PER_MB);
   drawTicksBelow(ctx, scale, r1.startMb, r1.endMb, tickStep);
 }
@@ -927,6 +927,13 @@ function createCanvas(container, totalWidthPx, axisHeight, margin) {
 function drawPastelBar(ctx, x, widthPx, barHeight, color, chromLabel) {
   ctx.save();
   ctx.fillStyle = color;
+
+  // Conditionally set the text color based on background color
+  let textColor = "#000";   // default to black
+  if (color.toLowerCase() === "#779ecc") {
+    textColor = "#fff";     // white
+  }
+
   ctx.fillRect(x, -barHeight, widthPx, barHeight);
   // left aligned label
   ctx.fillStyle = "#000";

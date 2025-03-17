@@ -116,28 +116,28 @@ span.toggle-plus-label {
 }
 .radioButton input:not(:checked):hover + label,
 .radioButton input:not(:checked):focus + label { 
-  background-color: #bee3f8;
+  background-color: #fff;
   border-color: #2b6cb0;
   cursor: pointer;
 }
 .radioButton__true input:checked + label {
-  background-color: #48bb78;
-  box-shadow: 0 0 0 2px #48bb78;
+  background-color: #F2C894;
+  box-shadow: 0 0 0 1px #F2C894;
 }
 .radioButton__true input:not(:checked):hover + label,
 .radioButton__true input:not(:checked):focus + label {  
-  border-color: #48bb78;
-  color: #48bb78;
+  border-color: #F2C894;
+  color: #F2C894;
 } 
 .radioButton__false input:checked + label {
-  background-color: #f56565;
-  box-shadow: 0 0 0 2px #f56565;
+  background-color: #F2C894;
+  box-shadow: 0 0 0 2px #F2C894;
 }
 .radioButton__false input:not(:checked):hover + label,
 .radioButton__false input:not(:checked):focus + label {
   background-color: white;
-  border-color: #f56565;
-  color: #f56565;
+  border-color: #F2C894;
+  color: #F2C894;
 }
 
 .upload-button.loading {
@@ -162,13 +162,13 @@ p.loading-screening-text {
   vertical-align: middle;
 }
 .atac-square {
-  background-color: #168316;
+  background-color: #FF985A;
 }
 .ctcf-square {
-  background-color: #0001fe;
+  background-color: #FFB347;
 }
 .screening-square {
-  background-color: #2090ff;
+  background-color: #9FC0DE;
 }
 
 #output-container {
@@ -180,8 +180,8 @@ p.loading-screening-text {
   width: 50px;
   aspect-ratio: 1;
   border-radius: 50%;
-  border: 8px solid lightblue;
-  border-right-color: orange;
+  border: 8px solid #9FC0DE;
+  border-right-color: #F2C894;
   animation: l2 1s infinite linear;
 }
 @keyframes l2 {
@@ -232,6 +232,9 @@ div#gene_track_chart::-webkit-scrollbar {
 }
 .form-header {
   padding-left: 10px;
+  border: 1px solid #FF985A;
+  margin: 10px 10px 15px 10px;
+  color: #FF985A;
 }
 #deletion-fields .row {
   margin-bottom: 5px;
@@ -244,7 +247,7 @@ div#gene_track_chart::-webkit-scrollbar {
 
 .form-header h1 {
   margin-bottom: 10px;
-  font-size: 1.7rem;
+  font-size: 1.3rem;
 }
 .form-container {
   flex: 0 0 35%;
@@ -314,7 +317,7 @@ input[type="number"] {
   display: inline-block;
   padding: 8px 16px;
   margin-left: 10px;
-  background-color: #4285f4;
+  background-color:#779ECC ;
   color: white;
   border: none;
   border-radius: 4px;
@@ -325,7 +328,7 @@ input[type="number"] {
   line-height: 24px;
 }
 .upload-button:hover {
-  background-color: #357ae8;
+  background-color: #9FC0DE;
 }
 
 /* Toggle Switches */
@@ -370,7 +373,7 @@ input[type="number"] {
   width: 33.33%;
   height: 28px;
   border-radius: 32px;
-  background-color: #1ab394;
+  background-color: #FFB347;
   transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 
@@ -472,7 +475,7 @@ ul.global-error-list li::before {
   width: 33.33%;
   height: 28px;
   border-radius: 32px;
-  background-color: #f8ac59;
+  background-color: #FFB347;
   transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
 }
 #ds_none:checked ~ .switch-selector {
@@ -489,7 +492,7 @@ ul.global-error-list li::before {
 .submit-button {
   display: block;
   padding: 8px 16px;
-  background-color: #4285f4;
+  background-color: #779ECC;
   color: white;
   border: none;
   border-radius: 4px;
@@ -500,7 +503,7 @@ ul.global-error-list li::before {
   margin:25px auto 10px;
 }
 .submit-button:hover {
-  background-color: #357ae8;
+  background-color: #9FC0DE;
 }
 
 /* Modal and Instructions */
@@ -541,7 +544,7 @@ ul.global-error-list li::before {
   text-decoration:underline;
 }
 .instructions-link a {
-  color: #007BFF;
+  color: #FF985A;
   text-decoration: none;
 }
 .instructions-link a:hover {

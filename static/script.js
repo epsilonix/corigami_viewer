@@ -883,33 +883,33 @@ document.addEventListener('DOMContentLoaded', function() {
   const submitBtn = document.querySelector('input[type="submit"].submit-button');
   const formElem  = document.getElementById("corigami-form");
 
-  function cancelCurrentRun() {
-    fetch("/cancel_run", {
-      method: "POST",
-      credentials: "same-origin"  // or 'include'
-    })
-      .then(res => res.json())
-      .then(data => {
-        console.log("Cancel run response:", data);
-        runInProgress = false;
-        if (submitBtn) submitBtn.value = "Generate plots";
-      })
-      .catch(err => console.error("Error canceling run:", err));
-  }
+  // function cancelCurrentRun() {
+  //   fetch("/cancel_run", {
+  //     method: "POST",
+  //     credentials: "same-origin"  // or 'include'
+  //   })
+  //     .then(res => res.json())
+  //     .then(data => {
+  //       console.log("Cancel run response:", data);
+  //       runInProgress = false;
+  //       if (submitBtn) submitBtn.value = "Generate plots";
+  //     })
+  //     .catch(err => console.error("Error canceling run:", err));
+  // }
   
 
   formElem.addEventListener("submit", function(e) {
     if (runInProgress) {
       e.preventDefault();
-      cancelCurrentRun();
+      // cancelCurrentRun();
       return false;
     }
 
     e.preventDefault();
     if (!checkFormRequirements()) return false;
 
-    runInProgress = true;
-    if (submitBtn) submitBtn.value = "Cancel current run";
+    // runInProgress = true;
+    // if (submitBtn) submitBtn.value = "Cancel current run";
 
     const container = document.getElementById("output-container");
     container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';

@@ -98,7 +98,7 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
         "series": [{
             "name": "CTCF Signal",
             "data": [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)],
-            "color": "blue"
+            "color": "#FFB347"
         }]
     }
 
@@ -112,7 +112,7 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
         "series": [{
             "name": "ATAC Signal",
             "data": [[x, y] for x, y in zip(atac_positions_mb, atac_values)],
-            "color": "green"
+            "color": "#FF985A"
         }]
     }
 
@@ -462,6 +462,12 @@ def index():
     print("ATAC =>", norm_atac_path)
     print("CTCF =>", norm_ctcf_path)
 
+    if norm_atac_method == "none":
+        final_atac_path = norm_atac_path  # actually use the new normalized file
+
+    if norm_ctcf_method == "none":
+        final_ctcf_path = norm_ctcf_path
+
     # Decide if standard or chimeric
     if chimeric_active:
         # (Example) final coords for "chrCHIM"
@@ -695,7 +701,7 @@ def run_screening_endpoint():
       "series": [{
           "name": "Screening Score",
           "data": series_data,
-          "color": "dodgerblue"
+          "color": "#9FC0DE"
       }]
     }
     results["screening_config"] = json.dumps(screening_chart)
