@@ -239,10 +239,10 @@ def predict_ctcf(atac_bw, chrom, start, end, output_folder):
     print("Running CTCF prediction command:", " ".join(generate_cmd))
     subprocess.run(generate_cmd, check=True, env=os.environ, capture_output=True, text=True)
     # Normalize the predicted CTCF file (using minmax as default for predicted files)
-    normalized_ctcf = normalize_ctcf(ctcf_generated, chrom, start, end, "minmax", output_folder)
+
     if os.path.exists(roi_file):
         os.remove(roi_file)
-    return normalized_ctcf
+    return ctcf_generated
 
 def predict_peaks(bw_path, chrom, start, end, outdir):
     """

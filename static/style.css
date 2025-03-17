@@ -219,7 +219,12 @@ body {
   margin: 0;
   padding: 0;
 }
-
+div#peaks_file_container {
+  margin-top: 20px;
+}
+div#deletion-fields {
+  margin-top: 20px;
+}
 div#gene_track_chart {
   position: relative;
   margin-top: 10px;

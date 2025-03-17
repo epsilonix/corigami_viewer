@@ -316,6 +316,8 @@ def index():
     elif region_model == 'V4':
         model_path = "corigami_data/model_weights/v4_javier.ckpt"
 
+    session['model_path'] = model_path
+
     # Get genome path
     genome = request.form.get('genome_select')
     if genome == 'hg38':
@@ -415,15 +417,17 @@ def index():
     session['seq_dir'] = seq_dir
     
     #Get Peaks file
-    peaks_file = request.form.get('peaks_file_path', '').strip()
-    if peaks_file:
-        session['final_peaks_file'] = peaks_file
+
 
 
     # 6) Normalization if requested (chimeric mode) -- updated to mimic standard mode normalization logic
+    print("Normalization requested")
     norm_atac_method = request.form.get('norm_atac')
+    print("norm_atac_method =>", norm_atac_method)
     norm_ctcf_method = request.form.get('norm_ctcf')
+    print("norm_ctcf_method =>", norm_ctcf_method)
     training_norm = request.form.get('training_norm')
+    print("training_norm =>", training_norm)
 
     if chimeric_active:
         chrom, start, end = "chrCHIM", 0, chim_len
@@ -435,23 +439,54 @@ def index():
     norm_atac_path = None
     norm_ctcf_path = None
 
-    if norm_atac_method == "none" and norm_ctcf_method == "none":
-        if not training_norm:
-            return "Please select training norm (standard)."
-        norm_atac_path = normalize_atac(final_atac_path, chrom, start, end, training_norm, output_folder)
-        norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, training_norm, output_folder)
+    ## Screening logic
+    if screening_requested:
+        session['perturb_width'] = request.form.get('perturb_width')
+        session['step_size'] = request.form.get('step_size')
 
-    elif norm_atac_method != "none" and norm_ctcf_method == "none":
+        peaks_file = request.form.get('peaks_file_path', '').strip()
+
+        if not peaks_file or peaks_file.lower() == "none":
+            # If user didn’t select one in the form, or you want to handle the fallback
+            # If you want to force the user to pick a peaks file, you can raise an error instead.
+            peaks_file, temp_bedgraph = generate_peaks_from_bigwig_macs2(
+                bw_path=final_atac_path,
+                chrom=chrom,
+                start=start,
+                end=end,
+                outdir=output_folder
+            )
+            print(f'auto-generated peaks file: {peaks_file}')
+
+    session['peaks_file'] = peaks_file
+
+    if norm_atac_method == "none" or norm_atac_method is None and norm_ctcf_method == "none" or norm_ctcf_method is None:
+        print("Route 1: norm_atac_method and norm_ctcf_method are none")
+        if not training_norm:
+            print("training_norm is none, setting to minmax")
+            training_norm = 'minmax'
+        print(f"training_norm is {training_norm}")
+        norm_atac_path = normalize_atac(final_atac_path, chrom, start, end, training_norm, output_folder)
+        print(f'normalizing atac with parameters: {training_norm}, {chrom}, {start}, {end}, saving to: {norm_atac_path}')
+        norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, training_norm, output_folder)
+        print(f'normalizing ctcf with parameters: {training_norm}, {chrom}, {start}, {end}, saving to: {norm_ctcf_path}')
+
+    elif norm_atac_method != "none" or norm_atac_method is not None and norm_ctcf_method == "none" or norm_ctcf_method is None:
+        print("Route 2: norm_atac_method is not none and norm_ctcf_method is none")
         # If only ATAC's norm is provided => use that for both
         norm_atac_path = final_atac_path
         norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, norm_atac_method, output_folder)
+        print(f'normalizing ctcf with parameters: {norm_atac_method}, {chrom}, {start}, {end}, saving to: {norm_ctcf_path}')
 
     elif norm_atac_method == "none" and norm_ctcf_method != "none":
+        print("Route 3: norm_atac_method is none and norm_ctcf_method is not none")
         # If only CTCF's norm is provided => use that for both
         norm_ctcf_path = final_ctcf_path
         norm_atac_path = normalize_atac(final_atac_path, chrom, start, end, norm_ctcf_method, output_folder)
+        print(f'normalizing atac with parameters: {norm_ctcf_method}, {chrom}, {start}, {end}, saving to: {norm_atac_path}')
 
     else:
+        print("i dont know how we got here")
         # If both are provided, they must match
         if norm_atac_method != norm_ctcf_method:
             return "ATAC/CTCF must share the same norm method."
@@ -609,10 +644,11 @@ def run_screening_endpoint():
     region_start   = session.get('final_region_start')
     region_end     = session.get('final_region_end')
     seq_dir        = session.get('seq_dir')
-    
-
+    perturb_width  = session.get('perturb_width')
+    step_size      = session.get('step_size')
+    model_path     = session.get('model_path')
+    peaks_file     = session.get('peaks_file')
     print(f'screening starting with seq_dir: {seq_dir}')
-
 
     # If any are missing => user did not run the main route first
     if not final_atac_bw or not final_ctcf_bw or region_chr is None:
@@ -620,43 +656,15 @@ def run_screening_endpoint():
 
     # 2) Extract additional parameters for how to run the screening
     # e.g. perturb_width, step_size, model selection
-    perturb_width = int(request.args.get('perturb_width', '1000'))
-    step_size     = int(request.args.get('step_size', '1000'))
-    model_select  = request.args.get('model_select')
     output_dir    = get_user_output_folder()
-    # ... map model_select to model_path ...
 
-    if model_select == 'V1':
-        model_path = "corigami_data/model_weights/v1_jimin.ckpt"
-    elif model_select == 'V2':
-        model_path = "corigami_data/model_weights/v2_javier.ckpt"
-    elif model_select == 'V3':
-        model_path = "corigami_data/model_weights/v3_romane.ckpt"
-    elif model_select == 'V4':
-        model_path = "corigami_data/model_weights/v4_javier.ckpt"
 
-    peaks_file = session.get('final_peaks_file', '').strip()
-    print(f'run screening endpoint: peaks file: {peaks_file}')
-    if not peaks_file:
-        # If user didn’t select one in the form, or you want to handle the fallback
-        # If you want to force the user to pick a peaks file, you can raise an error instead.
-        peaks_file, temp_bedgraph = generate_peaks_from_bigwig_macs2(
-            bw_path=final_atac_bw,
-            chrom=region_chr,
-            start=region_start,
-            end=region_end,
-            outdir=output_dir
-        )
-        print(f'auto-generated peaks file: {peaks_file}')
     print(f'run screening endpoint: peaks file: {peaks_file}')
     # 4) Now do the screening with final_atac_bw, final_ctcf_bw, peaks_file
     # (No re-assembly, no normalization, no chimeric logic needed)
     screening_script = os.path.join("C.Origami", "src", "corigami", "inference", "screening.py")
     env = os.environ.copy()
     env["PYTHONPATH"] = "C.Origami/src"
-
-    # Determine the DNA sequence directory for screening:
-    seq_dir = session.get('seq_dir')
 
     job_screen = q.enqueue(
         run_screening_task,

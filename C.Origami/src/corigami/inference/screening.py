@@ -106,13 +106,12 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
               save_pred=False, save_perturbation=False, save_diff=True, save_impact_score=True,
               save_bedgraph=True, plot_impact_score=True, plot_frames=False, peaks_file=None):
     # Load data and model.
-
     print(f'screening: {screen_start}, {screen_end}, {perturb_width}, {step_size}', flush=True)
     print(f'screening peaks_file: {peaks_file}', flush=True)
     seq, ctcf, atac = infer.load_data_default(chr_name, seq_path, ctcf_path, atac_path)
     model = model_utils.load_default(model_path)
     
-    # Determine screening windows.
+    # Determine screening windows. (Same logic you already have.)
     if peaks_file:
         # If the peaks file comes from auto-generation, skip one header row.
         skip_rows = 1 if "auto_peaks.narrowPeak" in peaks_file else 0
@@ -136,41 +135,75 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
         windows = [w * step_size + screen_start for w in range(int((screen_end - screen_start) / step_size))]
         print("Total windows (uniform): {}".format(len(windows)))
 
-    
+    # Prepare arrays for storing results.
     preds = np.empty((0, 256, 256))
     preds_deletion = np.empty((0, 256, 256))
     diff_maps = np.empty((0, 256, 256))
     perturb_starts = []
     perturb_ends = []
-    
+
     processed_windows = 0
+    skipped_windows = 0
     print('Screening...')
+
+    # The total width the model needs is 2,097,152 plus the deletion width.
+    # (Because `predict_difference` calls `end = start + 2_097_152 + deletion_width`.)
+    # We'll call that "MODEL_WINDOW_SIZE".
+    MODEL_BASE_SIZE = 2_097_152
+
     for center in tqdm(windows):
-        # Define the window based on the peak midpoint.
+        # Define the perturbation window around 'center'.
         w_start = center - (perturb_width // 2)
         window_end = w_start + perturb_width
-        # Adjust boundaries if necessary.
+
+        # Adjust boundaries if necessary (optional).
         if w_start < screen_start:
-            w_start = screen_start
+            w_start = screen_startif
             window_end = w_start + perturb_width
         if window_end > screen_end:
             w_start = screen_end - perturb_width
             window_end = screen_end
+
+        # The model uses `pred_start` as the "anchor" for the 2M window:
+        pred_start = int(w_start + perturb_width / 2 - MODEL_BASE_SIZE / 2)
+
+        # *** Here we skip partial windows if [pred_start, pred_start + 2M + deletion_width] is out of range. ***
+
+        region_start = pred_start
+        region_end = pred_start + MODEL_BASE_SIZE + perturb_width  # same as 'end' in predict_difference
+
+        # If region_start or region_end is outside [screen_start, screen_end], skip
+        if region_start < screen_start or region_end > screen_end:
+            skipped_windows += 1
+            continue  # skip this window entirely
+
+        # Otherwise, we can safely process it
         processed_windows += 1
-        pred_start = int(w_start + perturb_width / 2 - 2097152 / 2)
-        pred, pred_deletion, diff_map = predict_difference(chr_name, pred_start, int(w_start), perturb_width, model, seq, ctcf, atac, screen_start, screen_end)
+        pred, pred_deletion, diff_map = predict_difference(
+            chr_name, pred_start, int(w_start), perturb_width,
+            model, seq, ctcf, atac,
+            screen_start, screen_end
+        )
+
+        # Optional frame plotting
         if plot_frames:
-            plot_combination(output_path, celltype, chr_name, pred_start, w_start, perturb_width, pred, pred_deletion, diff_map, 'screening')
+            plot_combination(
+                output_path, celltype, chr_name,
+                pred_start, w_start, perturb_width,
+                pred, pred_deletion, diff_map, 'screening'
+            )
+
+        # Append to arrays
         preds = np.append(preds, np.expand_dims(pred, 0), axis=0)
         preds_deletion = np.append(preds_deletion, np.expand_dims(pred_deletion, 0), axis=0)
         diff_maps = np.append(diff_maps, np.expand_dims(diff_map, 0), axis=0)
         perturb_starts.append(w_start)
         perturb_ends.append(window_end)
-    
+
     print("Total windows processed: {}".format(processed_windows))
-    
-    # Instead of generating a plot image, output a JSON file with the results.
-    # Compute midpoints (in bp) for each window.
+    print("Total windows skipped (partial): {}".format(skipped_windows))
+
+    # ... Your existing code to save JSON, etc. ...
     window_midpoints = (np.array(perturb_starts) + np.array(perturb_ends)) / 2
     window_midpoints_mb = (window_midpoints / 1e6).tolist()
     results = {
@@ -181,8 +214,8 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
         "perturb_width": perturb_width,
         "step_size": step_size
     }
-    # Build the results directory.
-    # If celltype is provided and non-empty, include it in the output folder; otherwise, omit it.
+    
+    # Build the results directory, etc.
     if celltype and celltype.strip() != "":
         results_dir = os.path.join(output_path, celltype, "screening")
     else:

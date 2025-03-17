@@ -493,10 +493,11 @@ function drawColumnChart(containerSelector, config) {
   ctx.strokeStyle = "black";
   ctx.stroke();
   
-  const yTicks = yScale.ticks();
+  const yTicks = yScale.ticks(5);  // Reduced number of ticks to match other plots
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.font = "10px sans-serif";
+  ctx.fillStyle = "black";  // Explicitly set text color to black
   yTicks.forEach(tick => {
     const yPos = yScale(tick);
     ctx.beginPath();
@@ -809,7 +810,7 @@ function drawCustomAxis(containerSelector, config) {
     const chunk2Offset = c1Mb * PX_PER_MB;
 
     // chunk1 pastel bar
-    drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#779ECC", r1.chrom);
+    drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#F2C894", r1.chrom);
     // chunk1 baseline
     drawBaseline(ctx, 0, c1Mb*PX_PER_MB);
     // chunk1 ticks
@@ -857,7 +858,7 @@ function drawCustomAxis(containerSelector, config) {
       .range([0, chunk2Width]);
 
     // 1) chunk1 bar, baseline, ticks
-    drawPastelBar(ctx, 0, chunk1Width, barHeight, "#779ECC", r1.chrom);
+    drawPastelBar(ctx, 0, chunk1Width, barHeight, "#F2C894", r1.chrom);
     drawBaseline(ctx, 0, chunk1Width);
     drawTicksBelow(ctx, scale1, startMb, delStartMb, tickStep, delStartMb);
 
@@ -874,7 +875,7 @@ function drawCustomAxis(containerSelector, config) {
     // 3) chunk2 bar, baseline, ticks
     ctx.save();
     ctx.translate(chunk1Width, 0);
-    drawPastelBar(ctx, 0, chunk2Width, barHeight, "#779ECC", r1.chrom);
+    drawPastelBar(ctx, 0, chunk2Width, barHeight, "#F2C894", r1.chrom);
     drawBaseline(ctx, 0, chunk2Width);
     drawTicksBelow(ctx, scale2, delEndMb + 1e-9, endMb, tickStep);
     ctx.restore();
@@ -894,7 +895,7 @@ function drawCustomAxis(containerSelector, config) {
     .domain([r1.startMb, r1.endMb])
     .range([0, c1Mb*PX_PER_MB]);
 
-  drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#779ECC", r1.chrom);
+  drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#F2C894", r1.chrom);
   drawBaseline(ctx, 0, c1Mb*PX_PER_MB);
   drawTicksBelow(ctx, scale, r1.startMb, r1.endMb, tickStep);
 }
