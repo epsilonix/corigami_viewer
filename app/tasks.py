@@ -22,54 +22,38 @@ q = Queue('default', connection=redis_conn)
 #   so it appears in real time, as if we were in the route.
 ###############################################################################
 def run_cmd(cmd, env=None, cwd=None, timeout=None):
-    """
-    Runs the given command, printing stdout/stderr lines in real-time
-    to the *worker*'s console.
-    Raises RuntimeError if the command exits with non-zero.
-    """
     print(f"[RQ-Worker] Executing: {' '.join(cmd)}")
-    process = subprocess.Popen(
-        cmd,
-        env=env,
-        cwd=cwd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True
-    )
+    from rq import get_current_job
+    
+    process = subprocess.Popen(cmd, env=env, cwd=cwd)
     start_time = time.time()
 
-    # Stream output to worker console
     while True:
-        # Check if process ended
-        if process.poll() is not None:
+        # 1) Check if the job ended
+        ret = process.poll()
+        if ret is not None:
+            # process is done
             break
 
-        # Check for timeout
+        # 2) Check if RQ says "canceled"
+        job = get_current_job()
+        if job and job.get_status() == 'canceled':
+            process.kill()
+            raise RuntimeError("Job was canceled by user.")
+
+        # 3) Check timeout
         if timeout and (time.time() - start_time) > timeout:
             process.kill()
-            raise RuntimeError("Timed out while running: " + " ".join(cmd))
+            raise RuntimeError("Timed out: " + " ".join(cmd))
 
-        # Read lines from stdout
-        line = process.stdout.readline()
-        if line:
-            print(line, end="")
+        # short sleep so we don’t spin CPU
+        time.sleep(0.2)
 
-        # Also read stderr
-        err_line = process.stderr.readline()
-        if err_line:
-            print(err_line, end="")
+    # After the process ends, get the final exit code
+    ret = process.wait()
+    if ret != 0:
+        raise RuntimeError(f"Command failed with return code {ret}: {' '.join(cmd)}")
 
-        time.sleep(0.01)
-
-    # Drain the remaining lines (in case process ended quickly)
-    for line in process.stdout:
-        print(line, end="")
-    for line in process.stderr:
-        print(line, end="")
-
-    retcode = process.wait()
-    if retcode != 0:
-        raise RuntimeError(f"Command failed with return code {retcode}: {' '.join(cmd)}")
 
 ###############################################################################
 # TASK 1: run_editing (for ds_option=='deletion')

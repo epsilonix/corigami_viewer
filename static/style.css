@@ -33,7 +33,10 @@ div#gene-track-wrapper {
   flex: 0 0 100%;
   padding: 0 10px;
 }
-
+input[type="submit"].submit-button.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 /* Style for the add second chromosome toggle */
 .add-second-chr-container {
   text-align: center;
@@ -230,18 +233,6 @@ div#gene_track_chart::-webkit-scrollbar {
 .form-header {
   padding-left: 10px;
 }
-.error-message {
-  color: red;
-  font-size: 0.8em;
-  margin-left: 10px;
-  margin-bottom: 10px;
-}
-.region-bound-error {
-  color: red;
-  font-size: 0.8em;
-  margin-left: 10px;
-}
-
 #deletion-fields .row {
   margin-bottom: 5px;
 }
@@ -408,7 +399,52 @@ input[type="number"] {
 #training-norm-container.disabled-toggle .switch-selector {
   background-color: #333 !important;
 }
+div#global-error-module {
+  font-size: 0.8rem;
+  margin: 0 10px 20px 10px;
+  border: 1px solid lightgrey;
+  border-radius: 5px;
+  padding: 0 20px;
+  color: #555;
+}
 
+/* Optional: remove default bullet style */
+ul.global-error-list {
+  list-style-type: none; /* or whatever spacing you prefer */
+  margin: 1rem 0;
+  padding:0;
+}
+
+/* The magic: Each LI gets a background icon. We can do it via ::before pseudo-element. */
+ul.global-error-list li {
+  position: relative;
+  margin-left: 0; /* if you want a flush left edge */
+  margin-bottom: 0.5rem; /* spacing between lines */
+  padding-left: 24px; /* space for the icon */
+}
+
+/* Insert the warning.svg as a pseudo-element before the actual text */
+ul.global-error-list li::before {
+  content: "";
+  position: absolute;
+  left: 0; 
+  top: 0; 
+  width: 16px;
+  height: 16px;
+  background: url("/static/warning.svg") no-repeat center center;
+  background-size: contain; /* or '16px 16px' if you want to fix dimensions */
+  margin-top: 2px; /* adjust vertical alignment as needed */
+}
+/* CTCF selector */
+#ctcf-switch.disabled-toggle .switch-input:checked + .switch-label {
+  color: #676a6c !important;
+}
+#ctcf-switch.disabled-toggle .switch-input:not(:checked) + .switch-label {
+  color: #676a6c !important;
+}
+#ctcf-switch.disabled-toggle .switch-selector {
+  background-color:#d7d7d7 !important
+}
 /* ATAC/CTCF Normalization Toggle */
 #atac-no-norm:checked ~ .switch-selector,
 #ctcf-no-norm:checked ~ .switch-selector {

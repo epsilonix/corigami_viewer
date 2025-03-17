@@ -41,10 +41,10 @@ test_mode = False
 
 @main.before_request
 def before_request():
-    """
-    Cleanup session folders before each request.
-    """
+    print("BEFORE REQUEST: session_id =", session.get('session_id'))
+    print("BEFORE REQUEST: current_job_id =", session.get('current_job_id'))
     cleanup_session_folders()
+
 
 ###############################################################################
 # Standard Plot Config Preparation
@@ -188,7 +188,8 @@ def run_prediction_and_render(
             del_width,
             output_folder,
             ctcf_bw_for_model=ctcf_bw_for_model,
-            env=env
+            env=env,
+            job_timeout=1000
         )
     else:
         prediction_script = os.path.join(script_path, "prediction.py")
@@ -203,35 +204,43 @@ def run_prediction_and_render(
             atac_bw_for_model,
             output_folder,
             ctcf_bw_for_model=ctcf_bw_for_model,
-            env=env
+            env=env,
+            job_timeout=1000
         )
 
     # **Store the job ID in session so we can cancel if needed**
     session['current_job_id'] = job.id
+    print(f"Enqueued job with ID = {job.id}")
 
     # 2) Wait for result (blocking) but also check for "canceled"
     start_wait = time.time()
-    while not job.is_finished and not job.is_failed:
+    timeout_secs = 300  # or whatever timeout you want
+    while True:
+        # Refresh RQ job status
         job.refresh()
-        # If user canceled => job.get_status() == 'canceled'
+
+        # If the job was canceled or failed, raise an error
         if job.get_status() == 'canceled':
             raise RuntimeError("Job was canceled by the user.")
+        if job.is_failed:
+            raise RuntimeError("Error in RQ job. Check worker logs.")
 
-        if (time.time() - start_wait) >= 60:
-            # If we haven't gotten result.npy after 60s, we can still keep waiting
-            # or handle a timeout. For now, do nothing except break if you want a hard limit
-            pass
-        if os.path.exists(hi_c_matrix_path):
+        # If the job is fully finished, break out 
+        if job.is_finished:
             break
+
+        # Optional: check how long we've been waiting
+        if (time.time() - start_wait) > timeout_secs:
+            raise RuntimeError("Timed out waiting for RQ job to finish writing result.npy")
+
         time.sleep(0.5)
 
-    if job.is_failed:
-        raise RuntimeError("Error in RQ job. Check worker logs.")
-
+    # By here, the job is done and 'result.npy' should be fully written.
     if not os.path.exists(hi_c_matrix_path):
         raise RuntimeError(f"Hi-C matrix not found at {hi_c_matrix_path}")
 
     hi_c_matrix = np.load(hi_c_matrix_path)
+
 
     # 3) Build chart configs
     hi_c_config, ctcf_config, atac_config, _, _ = prepare_plot_configs(
@@ -279,6 +288,10 @@ def run_prediction_and_render(
 
 @main.route('/', methods=['GET', 'POST'])
 def index():
+    print("===== ENTERING index() =====")
+    print("Method =", request.method)
+    print("request.form =>", request.form)
+    print("session['current_job_id'] before anything =>", session.get('current_job_id'))
     # Declare user output folder
     output_folder = get_user_output_folder()
     if request.method == 'GET':
@@ -554,6 +567,9 @@ def index():
 
     # Decide partial vs full template
     tmpl = "plots_partial.html" if request.headers.get("X-Requested-With") == "XMLHttpRequest" else "index.html"
+    print("INDEX route finishing with session_id =", session.get('session_id'))
+    print("INDEX route finishing with current_job_id =", session.get('current_job_id'))
+
     return render_template(
         tmpl,
         hi_c_config=configs["hi_c_config"],
@@ -739,6 +755,9 @@ def cancel_run():
     Returns JSON indicating success or error.
     """
     from app.tasks import q
+    print("=== DEBUG CANCEL RUN ===")
+    print("session_id =", session.get('session_id'))
+    print("current_job_id =", session.get('current_job_id'))
     job_id = session.get('current_job_id')
     if not job_id:
         return jsonify({"error": "No job in progress"}), 400

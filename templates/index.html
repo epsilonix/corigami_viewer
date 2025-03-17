@@ -64,6 +64,7 @@
             </div>
           </div>
         </div>
+        <div class="global-error-module" id="global-error-module"></div>
         <!-- Combined Model & Genome Row -->
         <div class="row">
           <div class="col-half">
@@ -109,7 +110,6 @@
             <input type="number" id="region_end1" name="region_end1">
           </div>
         </div>
-        <div id="region-bound-error" class="region-bound-error"></div>
         <!-- Add Second Chromosome Toggle (Plus/X) -->
         <div class="row">
           <div class="add-second-chr-container" id="toggle-second-chr-container">
@@ -137,7 +137,6 @@
               <input type="number" id="region_end2" name="region_end2">
             </div>
           </div>
-          <div id="region-bound-error-2" class="region-bound-error-2"></div>
           <!-- Orientation Toggles for Reverse/Flip -->
           <div class="row orientation-toggles">
             <!-- First Chromosome Orientation -->
@@ -225,14 +224,11 @@
               <span class="switch-selector"></span>
             </div>
           </div>
-          <div id="ctcf-error-message" class="error-message">
-            Raw ATAC BigWig is needed when CTCF is not provided
-          </div>
         </div>
         <!-- Training Normalization -->
         <div class="row" id="training-norm-container">
           <div class="col-full">
-            <label class="small-label">Apply norm method for training*:</label>
+            <label class="small-label">Select normalization method for training*:</label>
             <div class="switch norm-toggle" id="training-norm-switch">
               <input id="training-log" name="training_norm" type="radio" value="log" class="switch-input">
               <label for="training-log" class="switch-label">log</label>
@@ -254,9 +250,6 @@
               <label for="del_width" class="small-label">Deletion Width (bp):*</label>
               <input type="number" id="del_width" name="del_width" value="{{ request.form.del_width or '500000' }}">
             </div>
-          </div>
-          <div id="deletion-error" class="error-message" style="display: none;">
-            Deletion area must be within start and end position
           </div>
         </div>
         <!-- Peaks File Container (for screening) -->
