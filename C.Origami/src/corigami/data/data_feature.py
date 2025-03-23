@@ -72,6 +72,7 @@ class GenomicFeatureSingleThread(Feature):
         self.feature = self.read_feature(path)
 
     def get(self, chr_name, start, end):
+        print(f'CALLING def get in data_feature.py with self.norm = {self.norm}')
         feature = self.feature_to_npy(chr_name, start, end)
         feature = np.nan_to_num(feature, 0) # Important! replace nan with 0
         if self.norm == 'log':

@@ -2,12 +2,13 @@
      data-screening="{{ 'true' if screening_mode else 'false' }}"
      style="width: 100%; overflow-x: auto;">
   
-  <div id="gene-track-wrapper" style="overflow-y: hidden;"> 
-    <div id="gene_track_chart"></div>
-  </div>
+
 
   <div id="hi_c_chart"></div>
   <div id="custom_axis"></div>
+    <div id="gene-track-wrapper" style="overflow-y: hidden;"> 
+    <div id="gene_track_chart"></div>
+  </div>
   <div class="atac_title_container">
     <div class="atac_title">
       <span class="atac-square"></span>
@@ -32,7 +33,7 @@
     </div>
     <div id="screening_chart"></div>
   {% endif %}
-
+  <div id="custom_axis_bottom"></div>
 </div>
 
 <!-- Ensure D3.js and d3_plots.js are loaded -->
@@ -47,10 +48,11 @@
   var geneTrackConfig = {{ gene_track_config|safe }};
   var customAxisConfig = {{ custom_axis_config|safe }};
   drawHiCChart('#hi_c_chart', hiCConfig);
-  drawLineChart('#ctcf_chart', ctcfConfig);
-  drawLineChart('#atac_chart', atacConfig);
+  drawColumnChart('#ctcf_chart', ctcfConfig);
+  drawColumnChart('#atac_chart', atacConfig);
   drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
   drawCustomAxis('#custom_axis', customAxisConfig);
+  drawCustomAxis('#custom_axis_bottom', customAxisConfig);
   // If we have a screening config, draw it
   {% if screening_mode and screening_config %}
     var screeningConfig = {{ screening_config|safe }};

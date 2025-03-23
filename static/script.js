@@ -3,6 +3,7 @@
  *************************************************************/
 const WINDOW_WIDTH = 2097152; // 2 Mb window
 window.chromosomeLengths = {};
+window.initComplete = false;
 
 /*************************************************************
  * Local Storage Helpers
@@ -10,9 +11,11 @@ window.chromosomeLengths = {};
 function storeFormFields() {
   // Save first region and other fields
   const fields = [
-    "region_chr1", "region_start1", "region_end1",
-    "del_start", "del_width", "perturb_width",
-    "step_size", "model_select", "atac_bw_path",
+    "region_chr1", "region_start1", 
+    /* remove region_end1 from this list! */
+    "del_start", "del_width", 
+    "perturb_width", "step_size", 
+    "model_select", "atac_bw_path", 
     "ctcf_bw_path", "peaks_file_path"
   ];
   fields.forEach(field => {
@@ -20,8 +23,24 @@ function storeFormFields() {
     if (elem) localStorage.setItem(field, elem.value);
   });
 
-  // Save second region fields
-  const secondFields = ["region_chr2", "region_start2", "region_end2"];
+  // Special handling for region_end1: only store it if user actually typed something
+  const endField1 = document.getElementById("region_end1");
+  if (endField1 && endField1.value.trim()) {
+    localStorage.setItem("region_end1", endField1.value);
+  } else {
+    localStorage.removeItem("region_end1");
+  }
+
+  // Same idea for region_end2:
+  const endField2 = document.getElementById("region_end2");
+  if (endField2 && endField2.value.trim()) {
+    localStorage.setItem("region_end2", endField2.value);
+  } else {
+    localStorage.removeItem("region_end2");
+  }
+
+  // Save second region fields (chr + start):
+  const secondFields = ["region_chr2", "region_start2"];
   secondFields.forEach(field => {
     const elem = document.getElementById(field);
     if (elem) localStorage.setItem(field, elem.value);
@@ -43,25 +62,50 @@ function storeFormFields() {
 }
 
 function restoreFormFields() {
-  // Fields for first region and other parameters
+  // Fields for first region and other parameters (excluding region_end1!)
   const fields = [
-    "region_chr1", "region_start1", "region_end1",
-    "del_start", "del_width", "perturb_width",
-    "step_size", "model_select", "atac_bw_path",
-    "ctcf_bw_path", "peaks_file_path", "genome_select"
+    "region_chr1", "region_start1",
+    "del_start", "del_width", 
+    "perturb_width", "step_size", 
+    "model_select", "atac_bw_path", 
+    "ctcf_bw_path", "peaks_file_path", 
+    "genome_select"
   ];
   fields.forEach(field => {
     const storedVal = localStorage.getItem(field);
     const elem = document.getElementById(field);
-    if (storedVal && elem) elem.value = storedVal;
+    if (storedVal && elem) {
+      elem.value = storedVal;
+    }
   });
 
-  // Fields for second region
-  const secondFields = ["region_chr2", "region_start2", "region_end2"];
+  // Restore region_end1 ONLY if user explicitly typed a value
+  const storedEnd1 = localStorage.getItem("region_end1");
+  const endElem1 = document.getElementById("region_end1");
+  if (storedEnd1 && endElem1) {
+    endElem1.value = storedEnd1;
+  } else {
+    // user never typed it, so remain blank and show placeholder
+    endElem1.value = "";
+  }
+
+  // Same idea for region_end2
+  const storedEnd2 = localStorage.getItem("region_end2");
+  const endElem2 = document.getElementById("region_end2");
+  if (storedEnd2 && endElem2) {
+    endElem2.value = storedEnd2;
+  } else {
+    endElem2.value = "";
+  }
+
+  // Restore region_chr2 and region_start2
+  const secondFields = ["region_chr2", "region_start2"];
   secondFields.forEach(field => {
     const storedVal = localStorage.getItem(field);
     const elem = document.getElementById(field);
-    if (storedVal && elem) elem.value = storedVal;
+    if (storedVal && elem) {
+      elem.value = storedVal;
+    }
   });
 
   // Norm fields
@@ -88,30 +132,31 @@ function restoreFormFields() {
  * Form Behavior Helpers
  *************************************************************/
 function populateChromosomeDropdown() {
+  // This now *only* populates chromosomes and returns the promise,
+  // no calls to restoreFormFields() or collectAndDisplayErrors().
   const genomeSelect = document.getElementById("genome_select");
   let genome = genomeSelect ? genomeSelect.value : "hg38";
   let url = (genome === "mm10") ? "static/mm10_chr_lengths.json" : "static/hg38_chr_lengths.json";
 
-  const chrSelect1 = document.getElementById("region_chr1");
-  const chrSelect2 = document.getElementById("region_chr2");
-  const chrSelects = [chrSelect1, chrSelect2];
-
-  fetch(url)
+  return fetch(url)
     .then(response => response.json())
     .then(data => {
       window.chromosomeLengths = data;
-      chrSelects.forEach(select => {
+
+      const chrSelect1 = document.getElementById("region_chr1");
+      const chrSelect2 = document.getElementById("region_chr2");
+      [chrSelect1, chrSelect2].forEach(select => {
         if (!select) return;
         select.innerHTML = "";
         for (const chr in data) {
           let cleanChr = chr.replace(/^chr/i, "");
           let option = document.createElement("option");
-          option.value = chr; 
+          option.value = chr; // e.g. "chr1"
           option.text = `${cleanChr} (${data[chr]})`;
           select.appendChild(option);
         }
       });
-      collectAndDisplayErrors();
+      console.log("Chromosome dropdown populated for", genome);
     })
     .catch(error => {
       console.error("Error fetching chromosome lengths:", error);
@@ -261,7 +306,6 @@ function checkNormalizationMismatch() {
  * Additional check for combined Region 1 + Region 2 total <= 20 Mb
  */
 function validateTotalRegionSize() {
-  // Region 1
   const start1 = parseInt(document.getElementById("region_start1").value, 10);
   let end1     = parseInt(document.getElementById("region_end1").value, 10);
   if (isNaN(end1)) {
@@ -269,7 +313,6 @@ function validateTotalRegionSize() {
   }
   const size1 = isNaN(start1) ? 0 : (end1 - start1);
 
-  // Region 2 (only if toggled on)
   let size2 = 0;
   const secondChrDiv = document.getElementById("second_chr_fields");
   if (secondChrDiv && secondChrDiv.style.display !== "none") {
@@ -291,19 +334,23 @@ function validateTotalRegionSize() {
  * Aggregator for All Errors
  *************************************************************/
 function collectAndDisplayErrors() {
+  if (!window.initComplete) {
+    console.log("Skipping validation because init is not complete.");
+    return;
+  }
   const errorContainer = document.getElementById("global-error-module");
   if (!errorContainer) return;
 
   const errors = [];
+  const warnings = [];
 
-  // Region checks
+  // -- Already existing checks --
   const eReg1 = validateRegion1Bounds();
   if (eReg1) errors.push(eReg1);
 
   const eReg2 = validateRegion2Bounds();
   if (eReg2) errors.push(eReg2);
 
-  // Deletion, CTCF checks, mismatch
   const eDel = validateDeletionAreaErrors();
   if (eDel) errors.push(eDel);
 
@@ -313,27 +360,58 @@ function collectAndDisplayErrors() {
   const eNormMismatch = checkNormalizationMismatch();
   if (eNormMismatch) errors.push(eNormMismatch);
 
-  // Combined total size check
   const eTotal = validateTotalRegionSize();
   if (eTotal) errors.push(eTotal);
 
-  // Display errors in a UL
-  errorContainer.innerHTML = "";
-  if (errors.length > 0) {
-    errorContainer.style.display = "block";
-    const ul = document.createElement("ul");
-    ul.classList.add("global-error-list");
-    errors.forEach(msg => {
-      const li = document.createElement("li");
-      li.textContent = msg;
-      ul.appendChild(li);
-    });
-    errorContainer.appendChild(ul);
-  } else {
-    errorContainer.style.display = "none";
+  // -- NEW: Check screening region edges --
+  const eScreenEdges = checkScreeningRegionEdges(); 
+  if (eScreenEdges) {
+    if (eScreenEdges.isWarning) {
+      warnings.push(eScreenEdges.message);
+    } else if (eScreenEdges.isError) {
+      errors.push(eScreenEdges.message);
+    }
   }
 
-  // Disable the "Generate plots" button if errors or missing fields
+  // -- NEW function for region minimum size
+  const eMinSize = checkMinimumRegionSize();
+  if (eMinSize && eMinSize.isWarning) {
+    warnings.push(eMinSize.message);
+  }
+
+  // Clear old content
+  errorContainer.innerHTML = "";
+
+  if (errors.length === 0 && warnings.length === 0) {
+    errorContainer.style.display = "none";
+  } else {
+    errorContainer.style.display = "block";
+
+    // 1) Show blocking errors
+    if (errors.length > 0) {
+      const ulErrors = document.createElement("ul");
+      ulErrors.classList.add("global-error-list");
+      errors.forEach(msg => {
+        const li = document.createElement("li");
+        li.textContent = msg;
+        ulErrors.appendChild(li);
+      });
+      errorContainer.appendChild(ulErrors);
+    }
+
+    // 2) Show non-blocking warnings
+    if (warnings.length > 0) {
+      const ulWarn = document.createElement("ul");
+      ulWarn.classList.add("global-warning-list");
+      warnings.forEach(msg => {
+        const li = document.createElement("li");
+        li.textContent = msg;
+        ulWarn.appendChild(li);
+      });
+      errorContainer.appendChild(ulWarn);
+    }
+  }
+
   const submitBtn = document.querySelector('input[type="submit"].submit-button');
   if (errors.length > 0 || !checkRequiredFieldsFilled()) {
     submitBtn.disabled = true;
@@ -347,36 +425,56 @@ function collectAndDisplayErrors() {
 /*************************************************************
  * Toggles & Additional Behaviors
  *************************************************************/
-// Helper to show second region
 function showSecondChr() {
-  const secondChrDiv = document.getElementById('second_chr_fields');
-  const togglePlus   = document.getElementById('toggle-second-chr');
-  const chimericInput= document.getElementById('chimeric_active');
-  const peaksInput   = document.getElementById("peaks_file_upload");
-  const peaksDropdown= document.getElementById("peaks_file_path");
+  const secondChrDiv  = document.getElementById('second_chr_fields');
+  const togglePlus    = document.getElementById('toggle-second-chr');
+  const chimericInput = document.getElementById('chimeric_active');
+  const peaksInput    = document.getElementById("peaks_file_upload");
+  const peaksDropdown = document.getElementById("peaks_file_path");
 
   secondChrDiv.style.display = "block";
   togglePlus.classList.add("active");
   chimericInput.value = "true";
   localStorage.setItem("chimeric_active", "true");
-  if (peaksInput)    peaksInput.disabled = true;
-  if (peaksDropdown) peaksDropdown.disabled = true;
+
+  if (peaksInput) {
+    peaksInput.disabled = true;
+  }
+
+  if (peaksDropdown) {
+    if (!peaksDropdown.dataset.originalOptions) {
+      peaksDropdown.dataset.originalOptions = peaksDropdown.innerHTML;
+    }
+    peaksDropdown.innerHTML = '<option value="auto_generated">Automatically generate</option>';
+    peaksDropdown.value = "auto_generated";
+    peaksDropdown.disabled = true;
+  }
+
+  collectAndDisplayErrors();
 }
 
-// Helper to hide second region
 function hideSecondChr() {
-  const secondChrDiv = document.getElementById('second_chr_fields');
-  const togglePlus   = document.getElementById('toggle-second-chr');
-  const chimericInput= document.getElementById('chimeric_active');
-  const peaksInput   = document.getElementById("peaks_file_upload");
-  const peaksDropdown= document.getElementById("peaks_file_path");
+  const secondChrDiv  = document.getElementById('second_chr_fields');
+  const togglePlus    = document.getElementById('toggle-second-chr');
+  const chimericInput = document.getElementById('chimeric_active');
+  const peaksInput    = document.getElementById("peaks_file_upload");
+  const peaksDropdown = document.getElementById("peaks_file_path");
 
   secondChrDiv.style.display = "none";
   togglePlus.classList.remove("active");
   chimericInput.value = "false";
   localStorage.setItem("chimeric_active", "false");
-  if (peaksInput)    peaksInput.disabled = false;
-  if (peaksDropdown) peaksDropdown.disabled = false;
+
+  if (peaksInput) {
+    peaksInput.disabled = false;
+  }
+
+  if (peaksDropdown && peaksDropdown.dataset.originalOptions) {
+    peaksDropdown.innerHTML = peaksDropdown.dataset.originalOptions;
+    peaksDropdown.disabled = false;
+  }
+
+  collectAndDisplayErrors();
 }
 
 function toggleOptionalFields() {
@@ -399,15 +497,11 @@ function toggleOptionalFields() {
     if (delFields) delFields.style.display = "none";
     if (peaksContainer) peaksContainer.style.display = "block";
     if (togglePlusElemContainer) togglePlusElemContainer.style.display = "block";
-    // We restore the second region from localStorage or keep it on
-    // We'll handle this at page load
   } else {
-    // 'none' => normal prediction
     if (delFields) delFields.style.display = "none";
     if (scrFields) scrFields.style.display = "none";
     if (peaksContainer) peaksContainer.style.display = "none";
     if (togglePlusElemContainer) togglePlusElemContainer.style.display = "block";
-    // We'll restore second region from localStorage or keep it on
   }
 }
 
@@ -451,39 +545,22 @@ function checkFormRequirements() {
  *************************************************************/
 function populateDropdownFromServer(selectId, fileType) {
   const selectElem = document.getElementById(selectId);
-  const xhr = new XMLHttpRequest();
-  xhr.open("GET", "/list_uploads?file_type=" + encodeURIComponent(fileType));
-  xhr.onload = function() {
-    if (xhr.status === 200) {
-      const serverFiles = JSON.parse(xhr.responseText);
-      for (let i = selectElem.options.length - 1; i >= 0; i--) {
-        const option = selectElem.options[i];
-        if (option.value !== "none" && !option.value.startsWith("./corigami_data")) {
-          selectElem.remove(i);
-        }
-      }
+  return fetch("/list_uploads?file_type=" + encodeURIComponent(fileType))
+    .then(response => response.json())
+    .then(serverFiles => {
       serverFiles.forEach(file => {
-        const exists = Array.from(selectElem.options).some(opt => opt.value === file.value);
-        if (!exists) {
+        const alreadyExists = Array.from(selectElem.options)
+          .some(opt => opt.value === file.value);
+        if (!alreadyExists) {
           const newOption = document.createElement("option");
           newOption.value = file.value;
           newOption.text = file.name;
           selectElem.appendChild(newOption);
         }
       });
-      const storedVal = localStorage.getItem(selectId);
-      if (storedVal) {
-        for (let option of selectElem.options) {
-          if (option.value === storedVal) {
-            selectElem.value = storedVal;
-            break;
-          }
-        }
-      }
       console.log("Dropdown", selectId, "populated with:", serverFiles);
-    }
-  };
-  xhr.send();
+    })
+    .catch(err => console.error(`Error populating ${fileType} dropdown:`, err));
 }
 
 /*************************************************************
@@ -573,11 +650,6 @@ function runScreening() {
     document.getElementById("region_end1").value = regionEndVal;
   }
 
-  if (regionChr !== "chrCHIM" && regionStartVal < 1048576) {
-    alert("Cannot run screening if start < 1,048,576 in standard mode!");
-    return;
-  }
-
   const screeningContainerElem = document.getElementById("screening_chart");
   if (screeningContainerElem) {
     screeningContainerElem.innerHTML = "<div class='loader' style='display:block;margin:0 auto;'></div>";
@@ -627,9 +699,6 @@ function runScreening() {
   xhr.send();
 }
 
-/**
- * CTCF norm toggles
- */
 function updateCtcfNormalization() {
   const ctcfSelect = document.getElementById('ctcf_bw_path');
   const ctcfSwitch = document.getElementById('ctcf-switch');
@@ -650,9 +719,6 @@ function updateCtcfNormalization() {
   }
 }
 
-/**
- * "Apply norm method for training" section
- */
 function updateTrainingNormField() {
   const ctcfFile   = document.getElementById("ctcf_bw_path").value;
   const atacState  = document.querySelector('input[name="norm_atac"]:checked').value;
@@ -695,7 +761,10 @@ function updateTrainingNormField() {
  *************************************************************/
 function checkRequiredFieldsFilled() {
   const dsOption = document.querySelector('input[name="ds_option"]:checked');
-  if (!dsOption) return false; // none is selected
+  if (!dsOption) {
+    console.log("No ds_option selected; disabling button");
+    return false;
+  }
 
   // Basic required fields
   const reqIds = [
@@ -706,7 +775,6 @@ function checkRequiredFieldsFilled() {
     "atac_bw_path"
   ];
 
-  // Additional based on ds_option
   if (dsOption.value === "deletion") {
     reqIds.push("del_start", "del_width");
   } else if (dsOption.value === "screening") {
@@ -715,11 +783,17 @@ function checkRequiredFieldsFilled() {
 
   for (let id of reqIds) {
     const elem = document.getElementById(id);
-    if (!elem) return false;
+    if (!elem) {
+      console.log(`Required field #${id} not found in DOM`);
+      return false;
+    }
     if (!elem.value || !elem.value.trim()) {
+      console.log(`Required field #${id} is empty -> '${elem.value}'`);
       return false;
     }
   }
+
+  console.log("All required fields are filled!");
   return true;
 }
 
@@ -729,18 +803,43 @@ function checkRequiredFieldsFilled() {
 document.addEventListener('DOMContentLoaded', function() {
   console.log("DOM fully loaded");
 
-  populateChromosomeDropdown();
-  restoreFormFields();
-  toggleOptionalFields();
-  updateEndPosition();
-  updateCtcfNormalization();
-  updateTrainingNormField();
+  // 1) Kick off all fetches in parallel
+  const pChr  = populateChromosomeDropdown(); // Chromosome
+  const pAtac = populateDropdownFromServer("atac_bw_path", "atac");
+  const pCtcf = populateDropdownFromServer("ctcf_bw_path", "ctcf");
+  const pPeaks= populateDropdownFromServer("peaks_file_path", "peaks");
+
+  // 2) Wait for *all* promises to resolve
+  Promise.all([pChr, pAtac, pCtcf, pPeaks])
+    .then(() => {
+      // Now region_chr1 / region_chr2 are filled,
+      // and atac_bw_path, ctcf_bw_path, peaks_file_path are also filled
+
+      // Only now do we do final init:
+      restoreFormFields();
+      toggleOptionalFields();
+      updateCtcfNormalization();
+      updateTrainingNormField();
+      updateEndPosition();
+
+      // Mark init complete & validate
+      window.initComplete = true;
+      collectAndDisplayErrors();
+
+      console.log("All dropdowns done. Initialization complete!");
+    })
+    .catch(err => {
+      console.error("Populate calls failed:", err);
+    });
 
   // ========== Restore second region on reload (shortened) ==========
+  // (We do this after ds_option is set in localStorage,
+  //  but if you rely on region_chr1 <option>, remember
+  //  they are only guaranteed after the fetch. 
+  //  That's why we do final checks in .then(...).)
   const dsOption = document.querySelector('input[name="ds_option"]:checked');
   const chimericVal = localStorage.getItem("chimeric_active");
   if (dsOption && dsOption.value === "deletion") {
-    // always hide in deletion mode
     hideSecondChr();
   } else {
     if (chimericVal === "true") {
@@ -750,8 +849,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }
   // ================================================================
-
-  collectAndDisplayErrors();
 
   // Region 1 changes
   document.getElementById("region_start1").addEventListener("input", () => {
@@ -839,11 +936,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   });
 
-  // Populate file dropdowns
-  populateDropdownFromServer("atac_bw_path", "atac");
-  populateDropdownFromServer("ctcf_bw_path", "ctcf");
-  populateDropdownFromServer("peaks_file_path", "peaks");
-
   // File uploads
   document.getElementById("atac_bw_file").addEventListener("change", () => {
     ajaxUploadFile("atac_bw_file", "atac", "atac_bw_path");
@@ -886,7 +978,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // function cancelCurrentRun() {
   //   fetch("/cancel_run", {
   //     method: "POST",
-  //     credentials: "same-origin"  // or 'include'
+  //     credentials: "same-origin"
   //   })
   //     .then(res => res.json())
   //     .then(data => {
@@ -896,20 +988,15 @@ document.addEventListener('DOMContentLoaded', function() {
   //     })
   //     .catch(err => console.error("Error canceling run:", err));
   // }
-  
 
   formElem.addEventListener("submit", function(e) {
     if (runInProgress) {
       e.preventDefault();
-      // cancelCurrentRun();
       return false;
     }
 
     e.preventDefault();
     if (!checkFormRequirements()) return false;
-
-    // runInProgress = true;
-    // if (submitBtn) submitBtn.value = "Cancel current run";
 
     const container = document.getElementById("output-container");
     container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';
@@ -930,7 +1017,6 @@ document.addEventListener('DOMContentLoaded', function() {
     .then(response => {
       runInProgress = false;
       if (submitBtn) submitBtn.value = "Generate plots";
-
       if (!response.ok) throw new Error("Network response was not ok");
       return response.text();
     })
@@ -949,3 +1035,83 @@ document.addEventListener('DOMContentLoaded', function() {
     runScreening();
   }
 });
+
+/*************************************************************
+ * checkScreeningRegionEdges + checkMinimumRegionSize (duplicate)
+ *************************************************************/
+function checkScreeningRegionEdges() {
+  const dsOption = document.querySelector('input[name="ds_option"]:checked');
+  if (!dsOption || dsOption.value !== "screening") {
+    return null;
+  }
+
+  const secondChrDiv = document.getElementById("second_chr_fields");
+  if (secondChrDiv && secondChrDiv.style.display !== "none") {
+    return {
+      isWarning: true,
+      message: "When providing two regions, screening will skip the first and last 1 Mb of the combined region."
+    };
+  }
+
+  const chrSelect = document.getElementById("region_chr1");
+  const startElem = document.getElementById("region_start1");
+  const endElem   = document.getElementById("region_end1");
+  if (!chrSelect || !window.chromosomeLengths) return null;
+
+  const selectedChr = chrSelect.value;
+  const chrLength   = window.chromosomeLengths[selectedChr];
+  if (typeof chrLength === "undefined") return null;
+
+  const start = parseInt(startElem.value, 10);
+  const defaultEnd = start + WINDOW_WIDTH; 
+  const end   = endElem.value ? parseInt(endElem.value, 10) : defaultEnd;
+
+  const buffer = WINDOW_WIDTH / 2; // 1 Mb
+  if (start < buffer || end > chrLength - buffer) {
+    return {
+      isWarning: true,
+      message: "Screening will not occur within 1 Mb of the start or end of the chromosome."
+    };
+  }
+  return null;
+}
+
+function checkMinimumRegionSize() {
+  console.log("checkMinimumRegionSize() is called");
+  const TWO_MB = 2097152;
+
+  const start1 = parseInt(document.getElementById("region_start1").value, 10);
+  let end1   = parseInt(document.getElementById("region_end1").value, 10);
+  if (isNaN(start1)) return null;
+
+  if (isNaN(end1)) {
+    end1 = start1 + TWO_MB;
+  }
+  const size1 = end1 - start1;
+
+  const secondChrDiv = document.getElementById("second_chr_fields");
+  if (secondChrDiv && secondChrDiv.style.display !== "none") {
+    const start2 = parseInt(document.getElementById("region_start2").value, 10);
+    let end2   = parseInt(document.getElementById("region_end2").value, 10);
+    if (isNaN(start2)) return null;
+
+    if (isNaN(end2)) {
+      end2 = start2 + TWO_MB;
+    }
+    const size2 = end2 - start2;
+    if (size1 < TWO_MB || size2 < TWO_MB) {
+      return {
+        isWarning: true,
+        message: "For best results, please ensure each provided region is greater than 2 Mb in length."
+      };
+    }
+  } else {
+    if (size1 < TWO_MB) {
+      return {
+        isWarning: true,
+        message: "For best results, please ensure each provided region is greater than 2 Mb in length."
+      };
+    }
+  }
+  return null;
+}

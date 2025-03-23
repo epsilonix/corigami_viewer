@@ -37,13 +37,51 @@
       <div id="instructions-modal" class="modal">
         <div class="modal-content">
           <span class="close">&times;</span>
-          <h2>Instructions</h2>
-          <p>
-            When uploading files, please indicate the current normalization state of your ATAC and CTCF files.
-            If you do not provide a CTCF file, a raw ATAC file is required, and the CTCF signal will be generated automatically using maxATAC.
-          </p>
+          <!-- Links to paper and GitHub -->
+          <div class="modal-header">
+            For more information on C.Origami, 
+            <a href="https://www.nature.com/articles/s41587-022-01612-8" target="_blank">read the paper</a> or visit the 
+            <a href="https://github.com/tanjimin/C.Origami" target="_blank">GitHub repository</a>.
+          </div>
+      
+          <!-- Step-by-step instructions -->
+          <div class="modal-instructions">
+            <ol>
+              <li>
+              <strong>Select a mode</strong>:
+              <ul>
+                <li><strong>Prediction</strong>: Predicts a Hi-C plot for a given locus using C.Origami</li>
+                <li><strong>Deletion</strong>: Predicts the effect of deleting a region</li>
+                <li><strong>Screening</strong>: Calculates an impact score for peaks (requires several minutes)</li>
+              </ul>
+            </li>
+            <li><strong>Select a pre-trained model and genome</strong></li>
+            <li>
+              <strong>Provide a chromosome and window</strong> up to <em>20 Mb in length</em>. 
+              You can also add a second region, which simulates a translocation (i.e. splicing together two loci).
+            </li>
+            <li>
+              <strong>Provide an ATAC and CTCF file.</strong> 
+              Make sure to specify the normalization method <strong>currently</strong> applied to each BigWig file. 
+              If no CTCF file is provided, one will be automatically generated using maxATAC 
+              (but this requires a <em>non-normalized ATAC</em> file).
+            </li>
+            <li>
+              <strong>Deletion route</strong>: Select a deletion start and width within the bounds of your chosen chromosome window.
+            </li>
+            <li>
+              <strong>Screening route</strong>: Choose a perturbation width and step size to systematically alter peaks. 
+              <em>Note: </em> when providing two regions, the screening will be skipped for the first and last 1 Mb of the combined region.
+            </li>
+            <li>
+              <strong>Generate your plots!</strong> The process can take a few minutes, especially for large regions 
+              or screening mode, so please be patient.
+            </li>
+          </ol>
+        </div>
         </div>
       </div>
+      
       <form id="corigami-form" method="post" action="/" enctype="multipart/form-data">
         <input type="hidden" id="output_dir" value="{{ user_output_folder }}">
         <input type="hidden" id="chimeric_active" name="chimeric_active" value="false">
@@ -71,16 +109,10 @@
             <label for="model_select" class="small-label">Model*:</label>
             <select id="model_select" name="model_select" required>
               <option value="V1" {% if request.form.model_select == 'V1' %}selected{% endif %}>
-                V1 (Jimin's model, uses log norm)
-              </option>
-              <option value="V2" {% if request.form.model_select == 'V2' %}selected{% endif %}>
-                V2 (Javier's model, uses minmax norm)
-              </option>
-              <option value="V3" {% if request.form.model_select == 'V3' %}selected{% endif %}>
-                V3 (Romane's model, uses log norm)
+                IMR-90 (log normalized)
               </option>
               <option value="V4" {% if request.form.model_select == 'V4' %}selected{% endif %}>
-                V4 (Javier's new model)
+                B-ALL (observed/expected, minmax normalized)
               </option>
             </select>
           </div>
@@ -144,11 +176,11 @@
               <fieldset class="yesNo">
                 <legend>First region</legend>
                 <span class="radioButton radioButton__false">
-                  <input type="checkbox" id="first_reverse" name="first_orientation" value="reverse" />
+                  <input type="checkbox" id="first_reverse" name="first_reverse" value="true" />
                   <label for="first_reverse">Reverse</label>
                 </span>
                 <span class="radioButton radioButton__true">
-                  <input type="checkbox" id="first_flip" name="first_orientation" value="flip" />
+                  <input type="checkbox" id="first_flip" name="first_flip" value="true" />
                   <label for="first_flip">Flip</label>
                 </span>
               </fieldset>
@@ -158,11 +190,11 @@
               <fieldset class="yesNo">
                 <legend>Second region</legend>
                 <span class="radioButton radioButton__false">
-                  <input type="checkbox" id="second_reverse" name="second_orientation" value="reverse" />
+                  <input type="checkbox" id="second_reverse" name="second_reverse" value="true" />
                   <label for="second_reverse">Reverse</label>
                 </span>
                 <span class="radioButton radioButton__true">
-                  <input type="checkbox" id="second_flip" name="second_orientation" value="flip" />
+                  <input type="checkbox" id="second_flip" name="second_flip" value="true" />
                   <label for="second_flip">Flip</label>
                 </span>
               </fieldset>
@@ -176,7 +208,8 @@
             <label for="atac_bw_path" class="small-label">ATAC‑seq BigWig File*:</label>
             <div class="file-upload-group">
               <select id="atac_bw_path" name="atac_bw_path" required>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/atac.bw" selected>Preset (hg38/imr90)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/atac.bw" selected>IMR-90 Preset (raw)</option>
+                <option value="./corigami_data/data/hg38/ball/MCG023_ATAC_merged_IS_slop20_RP20M_minmax01.bw">B-ALL Preset (minmax normalized)</option>
               </select>
               <label class="upload-button" for="atac_bw_file">Upload</label>
             </div>
@@ -204,7 +237,8 @@
             <div class="file-upload-group">
               <select id="ctcf_bw_path" name="ctcf_bw_path">
                 <option value="none" selected>None</option>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw">Preset (hg38/imr90, log norm)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw">IMR-90 Preset (log normalized)</option>
+                <option value="./corigami_data/data/hg38/ball/MCG023_CTCF_merged_maxatac_predict.bw">B-ALL Preset (minmax normalized)</option>
               </select>
               <label class="upload-button" for="ctcf_bw_file">Upload</label>
             </div>
@@ -260,7 +294,7 @@
               <select id="peaks_file_path" name="peaks_file_path">
                 <option value="none" selected>None</option>
                 <option value="./corigami_data/data/hg38/imr90/genomic_features/MACS2_peaks.narrowPeak.txt">
-                  Preset (hg38/imr90)
+                  IMR-90 Preset
                 </option>
               </select>
               <label class="upload-button" for="peaks_file_upload">Upload</label>

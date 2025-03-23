@@ -124,7 +124,7 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
         peaks_df = peaks_df[(peaks_df['mid'] >= screen_start) & (peaks_df['mid'] <= screen_end)]
         
         # Determine number of peaks to select.
-        num_peaks = int((screen_end - screen_start) // 400000)
+        num_peaks = int((screen_end - screen_start) // 200000)
         print("Selecting top {} peaks by score from {} available peaks".format(num_peaks, len(peaks_df)))
         
         # Sort peaks by score (column index 4) in descending order and take the top num_peaks.
@@ -158,7 +158,7 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
 
         # Adjust boundaries if necessary (optional).
         if w_start < screen_start:
-            w_start = screen_startif
+            w_start = screen_start
             window_end = w_start + perturb_width
         if window_end > screen_end:
             w_start = screen_end - perturb_width
@@ -229,21 +229,20 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
 
 def predict_difference(chr_name, start, deletion_start, deletion_width, model, seq, ctcf, atac, screen_start, screen_end):
     
-    if chr_name == "chrCHIM":
-        chrom_len = screen_end - screen_start
+    # if chr_name == "chrCHIM":
+    #     chrom_len = screen_end - screen_start
 
-        # Clip start and end to avoid out-of-bounds on chrCHIM
-        if start < 0:
-            start = 0
-        end = start + 2_097_152 + deletion_width
-        if end > chrom_len:
-            end = chrom_len
-    else:
-        # For any other chromosome, do whatever logic you want
-        end = start + 2_097_152 + deletion_width
+    #     # Clip start and end to avoid out-of-bounds on chrCHIM
+    #     if start < 0:
+    #         start = 0
+    #     end = start + 2_097_152 + deletion_width
+    #     if end > chrom_len:
+    #         end = chrom_len
+    # else:
+    #     # For any other chromosome, do whatever logic you want
+    #     end = start + 2_097_152 + deletion_width
    
-   
-
+    end = start + 2_097_152 + deletion_width
     seq_region, ctcf_region, atac_region = infer.get_data_at_interval(chr_name, start, end, seq, ctcf, atac)
     inputs = preprocess_prediction(chr_name, start, seq_region, ctcf_region, atac_region)
     pred = model(inputs)[0].detach().cpu().numpy()

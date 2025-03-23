@@ -93,12 +93,13 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
     ctcf_positions_mb = [p / 1e6 for p in ctcf_positions]
     ctcf_chart_config = {
         "chart": {"height": 100},
+        "normMethod": norm_ctcf,
         "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
-        "yAxis": {"title": "CTCF Signal"},
+        "yAxis": {},
         "series": [{
             "name": "CTCF Signal",
             "data": [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)],
-            "color": "#FFB347"
+            "color": "#779ECC"
         }]
     }
 
@@ -107,8 +108,9 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
     atac_positions_mb = [p / 1e6 for p in atac_positions]
     atac_chart_config = {
         "chart": {"height": 100},
+        "normMethod": norm_atac,
         "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
-        "yAxis": {"title": "ATAC Signal"},
+        "yAxis": {},
         "series": [{
             "name": "ATAC Signal",
             "data": [[x, y] for x, y in zip(atac_positions_mb, atac_values)],
@@ -189,7 +191,7 @@ def run_prediction_and_render(
             output_folder,
             ctcf_bw_for_model=ctcf_bw_for_model,
             env=env,
-            job_timeout=1000
+            job_timeout=2000
         )
     else:
         prediction_script = os.path.join(script_path, "prediction.py")
@@ -205,7 +207,7 @@ def run_prediction_and_render(
             output_folder,
             ctcf_bw_for_model=ctcf_bw_for_model,
             env=env,
-            job_timeout=1000
+            job_timeout=2000
         )
 
     # **Store the job ID in session so we can cancel if needed**
@@ -214,7 +216,7 @@ def run_prediction_and_render(
 
     # 2) Wait for result (blocking) but also check for "canceled"
     start_wait = time.time()
-    timeout_secs = 300  # or whatever timeout you want
+    timeout_secs = 2500  # or whatever timeout you want
     while True:
         # Refresh RQ job status
         job.refresh()
@@ -299,6 +301,8 @@ def index():
 
     # Check chimeric / deletion / screening settings 
     chimeric_active = (request.form.get('region_chr2', '').strip() != '')
+    if chimeric_active:
+        session['chimeric_active'] = True
     ds_option = request.form.get('ds_option', 'none')
     screening_requested = (ds_option == 'screening')
 
@@ -347,6 +351,11 @@ def index():
         first_flip     = (request.form.get('first_flip') == 'true')
         second_reverse = (request.form.get('second_reverse') == 'true')
         second_flip    = (request.form.get('second_flip') == 'true')
+        
+        print("first_reverse =>", first_reverse)
+        print("first_flip =>", first_flip)
+        print("second_reverse =>", second_reverse)
+        print("second_flip =>", second_flip)
 
     # Get raw ATAC and CTCF paths
     raw_atac_path = request.form.get('atac_bw_path','').strip()
@@ -458,9 +467,9 @@ def index():
             )
             print(f'auto-generated peaks file: {peaks_file}')
 
-    session['peaks_file'] = peaks_file
+        session['peaks_file'] = peaks_file
 
-    if norm_atac_method == "none" or norm_atac_method is None and norm_ctcf_method == "none" or norm_ctcf_method is None:
+    if (norm_atac_method in [None, "none"]) and (norm_ctcf_method in [None, "none"]):
         print("Route 1: norm_atac_method and norm_ctcf_method are none")
         if not training_norm:
             print("training_norm is none, setting to minmax")
@@ -471,14 +480,14 @@ def index():
         norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, training_norm, output_folder)
         print(f'normalizing ctcf with parameters: {training_norm}, {chrom}, {start}, {end}, saving to: {norm_ctcf_path}')
 
-    elif norm_atac_method != "none" or norm_atac_method is not None and norm_ctcf_method == "none" or norm_ctcf_method is None:
+    elif (norm_atac_method not in [None, "none"]) and (norm_ctcf_method in [None, "none"]):
         print("Route 2: norm_atac_method is not none and norm_ctcf_method is none")
         # If only ATAC's norm is provided => use that for both
         norm_atac_path = final_atac_path
         norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, norm_atac_method, output_folder)
         print(f'normalizing ctcf with parameters: {norm_atac_method}, {chrom}, {start}, {end}, saving to: {norm_ctcf_path}')
 
-    elif norm_atac_method == "none" and norm_ctcf_method != "none":
+    elif (norm_atac_method in [None, "none"]) and (norm_ctcf_method not in [None, "none"]):
         print("Route 3: norm_atac_method is none and norm_ctcf_method is not none")
         # If only CTCF's norm is provided => use that for both
         norm_ctcf_path = final_ctcf_path
@@ -486,7 +495,7 @@ def index():
         print(f'normalizing atac with parameters: {norm_ctcf_method}, {chrom}, {start}, {end}, saving to: {norm_atac_path}')
 
     else:
-        print("i dont know how we got here")
+        print("both files already normalized")
         # If both are provided, they must match
         if norm_atac_method != norm_ctcf_method:
             return "ATAC/CTCF must share the same norm method."
@@ -543,12 +552,14 @@ def index():
             "region1": {
                 "chrom": region_chr1,
                 "startMb": region_start1 / 1e6,
-                "endMb":   region_end1 / 1e6
+                "endMb":   region_end1 / 1e6,
+                "isReversed": first_reverse
             },
             "region2": {
                 "chrom": region_chr2,
                 "startMb": region_start2 / 1e6,
-                "endMb":   region_end2 / 1e6
+                "endMb":   region_end2 / 1e6,
+                "isReversed": second_reverse
             }
         }
 
@@ -597,7 +608,8 @@ def index():
             "region1": {
                 "chrom": region_chr1,
                 "startMb": region_start1 / 1e6,
-                "endMb":   region_end1 / 1e6
+                "endMb":   region_end1 / 1e6,
+                "isReversed": first_reverse
             }
         }
         if ds_option == "deletion" and del_start is not None and del_width is not None:
@@ -680,7 +692,8 @@ def run_screening_endpoint():
         output_dir,    # 10th
         perturb_width,
         step_size,
-        env=env
+        env=env,
+        job_timeout=2000
     )
     # 5) Wait for completion (or do a non-blocking approach)
     while not job_screen.is_finished and not job_screen.is_failed:
@@ -703,15 +716,19 @@ def run_screening_endpoint():
     impact   = results["impact_scores"]
     series_data = [[x,y] for x,y in zip(window_mb, impact)]
     screening_chart = {
+      "screening": True,
       "chart": {"type": "line", "height": 100},
       "xAxis": {"min": region_start/1e6, "max": region_end/1e6},
-      "yAxis": {"title": {"text": ""}},
+      "yAxis": {},
       "series": [{
           "name": "Screening Score",
           "data": series_data,
           "color": "#9FC0DE"
       }]
     }
+    if session.get('chimeric_active'):  
+        screening_chart["isChimeric"] = True
+
     results["screening_config"] = json.dumps(screening_chart)
     
     return jsonify(results)

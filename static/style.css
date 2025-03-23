@@ -165,7 +165,7 @@ p.loading-screening-text {
   background-color: #FF985A;
 }
 .ctcf-square {
-  background-color: #FFB347;
+  background-color: #779ECC;
 }
 .screening-square {
   background-color: #9FC0DE;
@@ -230,6 +230,7 @@ div#gene_track_chart {
   margin-top: 10px;
   scrollbar-width: none; /* Firefox */
   -ms-overflow-style: none; /* IE 10+ */
+  margin-bottom: 25px;
 } 
 
 div#gene_track_chart::-webkit-scrollbar {
@@ -417,14 +418,14 @@ div#global-error-module {
 }
 
 /* Optional: remove default bullet style */
-ul.global-error-list {
+ul.global-error-list, ul.global-warning-list{
   list-style-type: none; /* or whatever spacing you prefer */
   margin: 1rem 0;
   padding:0;
 }
 
 /* The magic: Each LI gets a background icon. We can do it via ::before pseudo-element. */
-ul.global-error-list li {
+ul.global-error-list li, ul.global-warning-list li {
   position: relative;
   margin-left: 0; /* if you want a flush left edge */
   margin-bottom: 0.5rem; /* spacing between lines */
@@ -432,16 +433,22 @@ ul.global-error-list li {
 }
 
 /* Insert the warning.svg as a pseudo-element before the actual text */
-ul.global-error-list li::before {
+ul.global-error-list li::before, ul.global-warning-list li::before {
   content: "";
   position: absolute;
   left: 0; 
   top: 0; 
   width: 16px;
   height: 16px;
-  background: url("/static/warning.svg") no-repeat center center;
-  background-size: contain; /* or '16px 16px' if you want to fix dimensions */
+  
+  background-size: contain!important;
   margin-top: 2px; /* adjust vertical alignment as needed */
+}
+ul.global-error-list li::before {
+  background: url("/static/warning.svg") no-repeat center center;
+}
+ul.global-warning-list li::before {
+  background: url("/static/green-circle.svg") no-repeat center center;
 }
 /* CTCF selector */
 #ctcf-switch.disabled-toggle .switch-input:checked + .switch-label {
@@ -526,22 +533,37 @@ ul.global-error-list li::before {
 .modal-content {
   background-color: #fff;
   margin: 15% auto;
-  padding: 20px;
   border: 1px solid #888;
   width: 80%;
   max-width: 600px;
   border-radius: 4px;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+.modal-header {
+  padding: 20px 50px 20px 20px;
+  background-color:#2b6cb0;
+  color:white;
+  font-style: italic;
+}
+.modal-header a{
+  color:#FFB347;
+}
+.modal-instructions {
+  padding: 10px 20px 20px 20px;
 }
 .close {
-  color: #aaa;
+  color: white;
   float: right;
-  font-size: 28px;
-  font-weight: bold;
+  font-size: 30px;
+  /* font-weight: bold; */
   cursor: pointer;
+  margin-right: 20px;
+  margin-top: 10px;
 }
 .close:hover,
 .close:focus {
-  color: black;
+  color: #FFB347;
 }
 .instructions-link {
   margin-bottom: 20px;

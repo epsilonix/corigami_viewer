@@ -97,7 +97,7 @@ def generate_peaks_from_bigwig_macs2(bw_path, chrom, start, end, outdir):
         "macs2", "bdgpeakcall",
         "-i", temp_bedgraph,
         "-o", auto_peaks,
-        "--cutoff", "2.0"
+        "--cutoff", "0.5"
     ]
     print("Running:", " ".join(macs2_cmd))
     result_macs2 = subprocess.run(macs2_cmd, check=True, capture_output=True, text=True)
@@ -105,7 +105,25 @@ def generate_peaks_from_bigwig_macs2(bw_path, chrom, start, end, outdir):
     print("macs2 bdgpeakcall stderr:", result_macs2.stderr)
     return auto_peaks, temp_bedgraph
 
-def get_bigwig_signal(bw_path, chrom, start, end, bins=256):
+def get_bigwig_signal(
+    bw_path, 
+    chrom, 
+    start, 
+    end, 
+    bins=None,      # if None, we compute from bins_per_mb
+    bins_per_mb=100 # each MB => 100 bins
+):
+    import pyBigWig
+    region_len_bp = end - start
+    region_len_mb = (region_len_bp / 1e6)
+
+    # If user didn’t specify bins, compute it from bins_per_mb
+    if bins is None:
+        # e.g. 20 Mb => 20*100=2000 bins
+        # 2 Mb  => 2*100=200 bins
+        # round or clamp as you like
+        bins = max(int(region_len_mb * bins_per_mb), 1)
+
     try:
         bw = pyBigWig.open(bw_path)
     except Exception as e:
@@ -119,6 +137,7 @@ def get_bigwig_signal(bw_path, chrom, start, end, bins=256):
         return [], []
 
     chrom_length = bw.chroms()[chrom]
+    # integer bin_width in basepairs
     bin_width = max(1, (end - start) // bins)
 
     values, positions = [], []
@@ -126,30 +145,28 @@ def get_bigwig_signal(bw_path, chrom, start, end, bins=256):
         bin_start = start + i * bin_width
         bin_end   = min(bin_start + bin_width, end)
 
-        # --- CLAMP to valid range ---
+        # clamp
         if bin_start < 0:
             bin_start = 0
         if bin_end > chrom_length:
             bin_end = chrom_length
-
         if bin_start >= chrom_length:
-            # Beyond the end of the chromosome; fill with 0
-            positions.append((start + end)/2)  # or whatever center you'd like
+            # beyond the end
+            positions.append((start + end)//2)
             values.append(0.0)
             continue
-
         if bin_end <= bin_start:
-            # invalid after clamping => 0
-            positions.append((start + end)/2)
+            # invalid after clamp
+            positions.append((start + end)//2)
             values.append(0.0)
             continue
 
-        # Grab the average
+        # Get average coverage
         avg = bw.stats(chrom, bin_start, bin_end, type="mean")[0]
         avg = avg if avg is not None else 0.0
 
-        # The midpoint of this bin
-        mid = (bin_start + bin_end)/2
+        # midpoint of that bin
+        mid = (bin_start + bin_end) / 2
         values.append(avg)
         positions.append(mid)
 
@@ -300,10 +317,10 @@ def prepare_gene_track_config(genome, region_chr, region_start, region_end,
 def prepare_chimeric_gene_track_config(annotation_file, chr1, start1, end1, chr2, start2, end2):
     """
     Create a synthetic gene track configuration for a chimeric chromosome by merging gene annotations
-    from two source regions.
+    from two source regions. Genes that overlap each region *partially* are also included (clipped).
     
     Parameters:
-      annotation_file (str): Path to the gene annotation file.
+      annotation_file (str): Path to the gene annotation file (TSV).
       chr1, start1, end1: Coordinates for the first region.
       chr2, start2, end2: Coordinates for the second region.
     
@@ -320,64 +337,79 @@ def prepare_chimeric_gene_track_config(annotation_file, chr1, start1, end1, chr2
             line = line.strip()
             if not line:
                 continue
+
             parts = line.split("\t")
             # Expecting at least 5 columns: gene, ensembl, "chr:start-end", strand, type
             if len(parts) < 5:
                 continue
-            gene_name = parts[0]
-            ensembl = parts[1]
-            coord_str = parts[2]
-            strand = parts[3]
-            gene_type = parts[4]
-            # Only consider protein-coding genes that do not start with a digit.
+
+            gene_name  = parts[0]
+            ensembl_id = parts[1]
+            coord_str  = parts[2]
+            strand     = parts[3]
+            gene_type  = parts[4]
+
+            # Only consider protein-coding genes that do not start with a digit in the name.
             if gene_type != "protein_coding" or gene_name[0].isdigit():
                 continue
+
             try:
                 chrom, coords = coord_str.split(":")
                 gene_start, gene_end = map(int, coords.split("-"))
-            except Exception as e:
+            except Exception:
                 continue
 
-            # For region 1 (chr1)
-            if chrom == chr1 and gene_start >= start1 and gene_end <= end1:
-                # Transform: shift so that region1 starts at 0.
+            # ------------------------------
+            # Handle Region 1 (chr1)
+            # Include genes that overlap region1 in any way:
+            #    gene_end >= start1 and gene_start <= end1
+            if chrom == chr1 and (gene_end >= start1) and (gene_start <= end1):
+                # Clip to region1 boundaries
+                clipped_start = max(gene_start, start1)
+                clipped_end   = min(gene_end,   end1)
+
                 new_gene = {
                     "gene": gene_name,
-                    "ensembl": ensembl,
+                    "ensembl": ensembl_id,
                     "chrom": "chrCHIM",  # synthetic chromosome name
-                    "start": gene_start - start1,
-                    "end": gene_end - start1,
+                    # shift so that region1 starts at 0
+                    "start": clipped_start - start1,
+                    "end":   clipped_end - start1,
                     "strand": strand,
                     "type": gene_type
                 }
                 genes_region1.append(new_gene)
 
-            # For region 2 (chr2)
-            if chrom == chr2 and gene_start >= start2 and gene_end <= end2:
-                # Compute an offset equal to the length of the first region.
-                offset = end1 - start1
+            # ------------------------------
+            # Handle Region 2 (chr2)
+            # Similarly, include partially overlapping genes:
+            if chrom == chr2 and (gene_end >= start2) and (gene_start <= end2):
+                clipped_start2 = max(gene_start, start2)
+                clipped_end2   = min(gene_end,   end2)
+                offset = end1 - start1  # length of region1 in bp
+
                 new_gene = {
                     "gene": gene_name,
-                    "ensembl": ensembl,
+                    "ensembl": ensembl_id,
                     "chrom": "chrCHIM",
-                    "start": (gene_start - start2) + offset,
-                    "end": (gene_end - start2) + offset,
+                    # shift so that region2 starts after region1
+                    "start": (clipped_start2 - start2) + offset,
+                    "end":   (clipped_end2 - start2)   + offset,
                     "strand": strand,
                     "type": gene_type
                 }
                 genes_region2.append(new_gene)
     
-    # Merge the two lists and sort by the new start coordinate.
+    # Merge the two lists and sort by the new start coordinate
     merged_genes = sorted(genes_region1 + genes_region2, key=lambda x: x["start"])
-    # Calculate total length of the synthetic chromosome.
+
+    # Calculate total length of the synthetic chromosome
     total_length = (end1 - start1) + (end2 - start2)
-    # Convert lengths to megabases for the xAxis domains.
     offset_mb = (end1 - start1) / 1e6
     total_length_mb = total_length / 1e6
 
     gene_track_config = {
-        # Here we pass the merged gene list directly.
-        "genes": merged_genes,
+        "genes": merged_genes,  # the actual gene entries
         "region": {"chr": "chrCHIM", "start": 0, "end": total_length},
         "chart": {"height": 50},
         "xAxis": {
