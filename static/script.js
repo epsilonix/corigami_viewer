@@ -613,6 +613,7 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
       uploadButton.textContent = 'Upload';
       uploadButton.classList.remove('loading');
     }
+    collectAndDisplayErrors();
   });
 }
 

@@ -49,39 +49,79 @@ def before_request():
 ###############################################################################
 # Standard Plot Config Preparation
 ###############################################################################
-def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_option,
-                         ctcf_bw_for_model, raw_atac_path, del_start=None, del_width=None,
-                         norm_atac=None, norm_ctcf=None):
+def prepare_plot_configs(
+    hi_c_matrix,
+    region_chr,
+    region_start,
+    region_end,
+    ds_option,
+    ctcf_bw_for_model,
+    raw_atac_path,
+    del_start=None,
+    del_width=None,
+    norm_atac=None,
+    norm_ctcf=None
+):
     """
     Renders the final charts for standard (non-chimeric) or single-chrom
     predictions, or simplified for 'chrCHIM'. `raw_atac_path` is used
     for the ATAC track, `ctcf_bw_for_model` for the CTCF track.
     """
+    import numpy as np
     from scipy.ndimage import rotate
 
-    x_start_mb = region_start / 1e6
-    x_end_mb   = region_end / 1e6
+    # 1) Remove rows and columns that are entirely zero BEFORE rotation
+    nonzero_row_mask = ~np.all(hi_c_matrix == 0, axis=1)
+    hi_c_matrix = hi_c_matrix[nonzero_row_mask, :]
+    nonzero_col_mask = ~np.all(hi_c_matrix == 0, axis=0)
+    hi_c_matrix = hi_c_matrix[:, nonzero_col_mask]
 
-    # Rotate the Hi-C matrix
-    hi_c_matrix = rotate(hi_c_matrix, angle=45, reshape=True)
-    mask = np.any(hi_c_matrix > 0, axis=1)
-    hi_c_matrix = hi_c_matrix[mask, :]
+    # 2) Rotate the Hi-C matrix by 45 degrees, filling with zeros
+    hi_c_matrix = rotate(
+        hi_c_matrix,
+        angle=45,
+        reshape=True,
+        mode='constant',  # constant fill
+        cval=0
+    )
+
+    # 3) Remove rows/columns that are "near-zero" after rotation
+    threshold = 1e-6
+    row_mask_after = ~np.all(hi_c_matrix < threshold, axis=1)
+    hi_c_matrix = hi_c_matrix[row_mask_after, :]
+    col_mask_after = ~np.all(hi_c_matrix < threshold, axis=0)
+    hi_c_matrix = hi_c_matrix[:, col_mask_after]
+
+    # 4) Keep only the "top" (array-index) half of the rotated matrix
     num_rows = hi_c_matrix.shape[0]
     hi_c_matrix = hi_c_matrix[: num_rows // 2, :]
-    n_rows, n_cols = hi_c_matrix.shape
 
+    # 5) Remove the first 22 rows (the "top" 22 pixels in array terms)
+    if (region_end - region_start) > WINDOW_WIDTH:
+        print(f'ACCORDING to prepare_plot_configs, region_end - region_start = {region_end - region_start} and WINDOW_WIDTH = {WINDOW_WIDTH}')
+        if hi_c_matrix.shape[0] > 30:
+            hi_c_matrix = hi_c_matrix[30:, :]
+
+    # Build the final data array for the Hi-C plot
+    n_rows, n_cols = hi_c_matrix.shape
     hi_c_data = []
     for i in range(n_rows):
         for j in range(n_cols):
             hi_c_data.append([j, i, float(hi_c_matrix[i, j])])
 
+    # Convert region to Mb
+    x_start_mb = region_start / 1e6
+    x_end_mb = region_end / 1e6
+
+    hi_c_height = 170 if (region_end - region_start) > WINDOW_WIDTH else 200
+    # Hi-C chart config
     hi_c_chart_config = {
-        "chart": {"height": 250},
+        "chart": {"height": hi_c_height},
         "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
         "yAxis": {"min": 0, "max": 100},
         "colorAxis": {
             "min": 0,
-            "max": float(np.nanmax(hi_c_matrix)),
+            "max": float(np.nanmax(hi_c_matrix)) if hi_c_matrix.size else 0.0,
         },
         "series": [{"name": "Hi-C Signal", "data": hi_c_data}],
         "n_cols": n_cols,
@@ -122,7 +162,7 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
     if ds_option == "deletion" and del_start is not None and del_width is not None:
         hi_c_chart_config["hideXAxis"] = True
         del_start_mb = del_start / 1e6
-        del_end_mb   = (del_start + del_width) / 1e6
+        del_end_mb = (del_start + del_width) / 1e6
 
         for chart in (ctcf_chart_config, atac_chart_config):
             chart["xAxis"] = {
@@ -133,6 +173,7 @@ def prepare_plot_configs(hi_c_matrix, region_chr, region_start, region_end, ds_o
             }
 
     return hi_c_chart_config, ctcf_chart_config, atac_chart_config, None, {}
+
 
 ###############################################################################
 # NEW HELPER: Unified "Prediction + Render" function
@@ -778,24 +819,3 @@ def list_uploads():
                 display_name = f.split("_", 1)[-1] if "_" in f else f
                 files.append({"value": full_path, "name": display_name})
     return jsonify(files)
-
-@main.route('/cancel_run', methods=['POST'])
-def cancel_run():
-    """
-    Cancels the current RQ job if one is stored in session['current_job_id'].
-    Returns JSON indicating success or error.
-    """
-    from app.tasks import q
-    print("=== DEBUG CANCEL RUN ===")
-    print("session_id =", session.get('session_id'))
-    print("current_job_id =", session.get('current_job_id'))
-    job_id = session.get('current_job_id')
-    if not job_id:
-        return jsonify({"error": "No job in progress"}), 400
-
-    job = q.fetch_job(job_id)
-    if not job:
-        return jsonify({"error": f"No job found for ID: {job_id}"}), 404
-
-    job.cancel()  # Mark the job as canceled
-    return jsonify({"message": "Current run has been canceled."})

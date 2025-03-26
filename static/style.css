@@ -232,7 +232,15 @@ div#gene_track_chart {
   -ms-overflow-style: none; /* IE 10+ */
   margin-bottom: 25px;
 } 
-
+div#custom_axis_atac, div#custom_axis_ctcf, div#custom_axis_screening {
+  margin-top: -45px;
+}
+div#gene-track-wrapper {
+  margin-top: -20px;
+}
+div#custom_axis_hic {
+  margin-top: -10px;
+}
 div#gene_track_chart::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }

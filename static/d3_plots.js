@@ -135,6 +135,8 @@ function drawHiCChart(containerSelector, config) {
     }
   }
 }
+
+
 function drawColumnChart(containerSelector, config) {
   console.log("=== drawColumnChart START ===");
   console.log("Container selector:", containerSelector);
@@ -625,22 +627,30 @@ function drawGeneTrackChart(selector, config) {
 
     // Draw gene labels
     g.selectAll("text.gene-label")
-     .data(genes)
-     .enter()
-     .append("text")
-     .attr("class", "gene-label")
-     .attr("x", function(d) {
-       const x1 = xScale(Math.max(d.start, regionStart));
-       const x2 = xScale(Math.min(d.end, regionEnd));
-       let center = (x1 + x2) / 2;
-       if (center < 5) center = 5;
-       if (center > fullWidth - 5) center = fullWidth - 5;
-       return center;
-     })
-     .attr("y", d => d.row * rowHeight + rowHeight / 2 + 3)
-     .attr("font-size", () => (Math.max(Math.min(rowHeight * 0.8, 16), 12) / 2) + 2)
-     .attr("text-anchor", "middle")
-     .text(d => d.gene);
+    .data(genes)
+    .enter()
+    .append("text")
+    .attr("class", "gene-label")
+    .attr("x", function(d) {
+      const x1 = xScale(Math.max(d.start, regionStart));
+      const x2 = xScale(Math.min(d.end, regionEnd));
+      let center = (x1 + x2) / 2;
+
+      // Nudge the label if it's too close to the left or right edge
+      const buffer = 16;              // how many pixels to pad from edges
+      if (center < buffer) {
+        center = x1 + buffer;
+      } else if (center > fullWidth - buffer) {
+        center = x2 - buffer;
+      }
+
+      return center;
+    })
+    .attr("y", d => d.row * rowHeight + rowHeight / 2 + 3)
+    .attr("font-size", () => (Math.max(Math.min(rowHeight * 0.8, 16), 12) / 2) + 2)
+    .attr("text-anchor", "middle")
+    .text(d => d.gene);
+
 
     // Collapse view if there are more than 5 rows.
     const maxVisibleRows = 5;
@@ -680,43 +690,28 @@ function drawGeneTrackChart(selector, config) {
 }
 
 
-// Example Chimeric axis logic
-if (config.xAxis.isChimeric) {
-  // These values are provided by your backend in config.xAxis:
-  // config.xAxis.region1StartMb, config.xAxis.region1LengthMb, etc.
-  config.xAxis.tickFormat = function(tick) {
-    if (tick < config.xAxis.region1LengthMb) {
-      // In the first synthetic segment, add region1StartMb
-      return (config.xAxis.region1StartMb + tick).toFixed(2) + ' Mb';
-    } else {
-      // In the second segment, subtract the synthetic offset and add region2StartMb
-      return (config.xAxis.region2StartMb + (tick - config.xAxis.region1LengthMb)).toFixed(2) + ' Mb';
-    }
-  };
-}
-
 /*************************************************************
 * Helper: createCanvas
 * Creates a canvas, sets the devicePixelRatio scaling,
 * and returns { ctx, canvasWidth, canvasHeight, ratio }.
 *************************************************************/
 function createCanvas(container, totalWidthPx, axisHeight, margin) {
- const canvasWidth  = totalWidthPx + margin.left + margin.right;
- const canvasHeight = axisHeight  + margin.top  + margin.bottom;
+  const canvasWidth  = totalWidthPx + margin.left + margin.right;
+  const canvasHeight = axisHeight  + margin.top  + margin.bottom;
 
- const canvas = document.createElement("canvas");
- canvas.style.width  = canvasWidth  + "px";
- canvas.style.height = canvasHeight + "px";
- container.appendChild(canvas);
+  const canvas = document.createElement("canvas");
+  canvas.style.width  = canvasWidth  + "px";
+  canvas.style.height = canvasHeight + "px";
+  container.appendChild(canvas);
 
- const ratio = window.devicePixelRatio || 1;
- canvas.width  = canvasWidth  * ratio;
- canvas.height = canvasHeight * ratio;
- const ctx = canvas.getContext("2d");
- ctx.scale(ratio, ratio);
- ctx.translate(margin.left, margin.top);
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width  = canvasWidth  * ratio;
+  canvas.height = canvasHeight * ratio;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(ratio, ratio);
+  ctx.translate(margin.left, margin.top);
 
- return { ctx, canvasWidth, canvasHeight, ratio };
+  return { ctx, canvasWidth, canvasHeight, ratio };
 }
 
 /*************************************************************
@@ -724,25 +719,25 @@ function createCanvas(container, totalWidthPx, axisHeight, margin) {
 * Draws a colored rectangle for a region, plus a label on it.
 *************************************************************/
 function drawPastelBar(ctx, x, widthPx, barHeight, color, chromLabel) {
- ctx.save();
- ctx.fillStyle = color;
+  ctx.save();
+  ctx.fillStyle = color;
 
- // Example: pick text color. You can refine if needed:
- let textColor = "#000";  // default is black
- if (color.toLowerCase() === "#779ecc" || color.toLowerCase() === "#87ceeb") {
-   textColor = "#fff";  // white if background is a darker pastel
- }
+  // Example: pick text color. You can refine if needed:
+  let textColor = "#000";  // default is black
+  if (color.toLowerCase() === "#779ecc" || color.toLowerCase() === "#87ceeb") {
+    textColor = "#fff";  // white if background is a darker pastel
+  }
 
- ctx.fillRect(x, -barHeight, widthPx, barHeight);
+  ctx.fillRect(x, -barHeight, widthPx, barHeight);
 
- // Label the chromosome (plus perhaps show direction if reversed)
- ctx.fillStyle = textColor;
- ctx.font = "12px sans-serif";
- ctx.textAlign = "left";
- ctx.textBaseline = "middle";
- ctx.fillText(chromLabel, x + 5, -barHeight / 2);
+  // Use the same 10px font size used for ticks:
+  ctx.fillStyle = textColor;
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText(chromLabel, x + 5, -barHeight / 2);
 
- ctx.restore();
+  ctx.restore();
 }
 
 /*************************************************************
@@ -750,11 +745,11 @@ function drawPastelBar(ctx, x, widthPx, barHeight, color, chromLabel) {
 * Simple line from xStart to xEnd at y=0
 *************************************************************/
 function drawBaseline(ctx, xStart, xEnd) {
- ctx.beginPath();
- ctx.moveTo(xStart, 0);
- ctx.lineTo(xEnd, 0);
- ctx.strokeStyle = "#000";
- ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(xStart, 0);
+  ctx.lineTo(xEnd, 0);
+  ctx.strokeStyle = "#000";
+  ctx.stroke();
 }
 
 /*************************************************************
@@ -762,18 +757,18 @@ function drawBaseline(ctx, xStart, xEnd) {
 * Generates an array of tick positions depending on reversed or not.
 *************************************************************/
 function buildTickVals(minMb, maxMb, stepMb, reversed=false) {
- const ticks = [];
- if (!reversed) {
-   for (let t = minMb; t <= maxMb + 1e-9; t += stepMb) {
-     // ensure numerical rounding issues don’t accumulate
-     ticks.push(parseFloat(t.toFixed(9)));
-   }
- } else {
-   for (let t = maxMb; t >= minMb - 1e-9; t -= stepMb) {
-     ticks.push(parseFloat(t.toFixed(9)));
-   }
- }
- return ticks;
+  const ticks = [];
+  if (!reversed) {
+    for (let t = minMb; t <= maxMb + 1e-9; t += stepMb) {
+      // ensure numerical rounding issues don’t accumulate
+      ticks.push(parseFloat(t.toFixed(9)));
+    }
+  } else {
+    for (let t = maxMb; t >= minMb - 1e-9; t -= stepMb) {
+      ticks.push(parseFloat(t.toFixed(9)));
+    }
+  }
+  return ticks;
 }
 
 /*************************************************************
@@ -782,24 +777,24 @@ function buildTickVals(minMb, maxMb, stepMb, reversed=false) {
 * with a 6px tick length and labels at y=8 below the line.
 *************************************************************/
 function drawTicksBelow(ctx, scale, tickVals, labelPrecision=1) {
- ctx.save();
- ctx.textAlign = "center";
- ctx.textBaseline = "top";
- ctx.font = "10px sans-serif";
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = "10px sans-serif";
 
- tickVals.forEach(t => {
-   const x = scale(t);
-   ctx.beginPath();
-   ctx.moveTo(x, 0);
-   ctx.lineTo(x, 6);
-   ctx.strokeStyle = "#000";
-   ctx.stroke();
+  tickVals.forEach(t => {
+    const x = scale(t);
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, 6);
+    ctx.strokeStyle = "#000";
+    ctx.stroke();
 
-   ctx.fillStyle = "#000";
-   ctx.fillText(t.toFixed(labelPrecision), x, 8);
- });
+    ctx.fillStyle = "#000";
+    ctx.fillText(t.toFixed(labelPrecision), x, 8);
+  });
 
- ctx.restore();
+  ctx.restore();
 }
 
 /*************************************************************
@@ -809,225 +804,224 @@ function drawTicksBelow(ctx, scale, tickVals, labelPrecision=1) {
 * now correctly handles isReversed = true.
 *************************************************************/
 function drawCustomAxis(containerSelector, config) {
- // Basic checks
- if (!config?.region1) {
-   console.warn("drawCustomAxis: missing config.region1");
-   return;
- }
+  // Basic checks
+  if (!config?.region1) {
+    console.warn("drawCustomAxis: missing config.region1");
+    return;
+  }
 
- const PX_PER_MB = 200;
- const margin = { top: 20, right: 30, bottom: 0, left: 50 };
- const axisHeight = 50; 
- const barHeight  = 15; 
- const tickStep   = 0.2; 
+  const PX_PER_MB = 200;
+  const margin = { top: 20, right: 30, bottom: 0, left: 50 };
+  const axisHeight = 50; 
 
- const container  = document.querySelector(containerSelector);
- if (!container) {
-   console.error("drawCustomAxis: container not found:", containerSelector);
-   return;
- }
- // Clear any old axis
- while (container.firstChild) container.removeChild(container.firstChild);
+  // Slightly reduce the pastel bar height
+  const barHeight  = 12; 
+  const tickStep   = 0.2; 
 
- // Region1
- const r1 = config.region1;
- // Possibly region2
- const r2 = config.region2 || null;
+  const container  = document.querySelector(containerSelector);
+  if (!container) {
+    console.error("drawCustomAxis: container not found:", containerSelector);
+    return;
+  }
+  // Clear any old axis
+  while (container.firstChild) container.removeChild(container.firstChild);
 
- // Deletion check
- const hasDeletion = (
-   !r2 &&
-   config.deletionStartMb != null &&
-   config.deletionEndMb   != null &&
-   config.deletionStartMb < config.deletionEndMb
- );
+  // Region1
+  const r1 = config.region1;
+  // Possibly region2
+  const r2 = config.region2 || null;
 
- /*****************************************************
-  * CASE 1) Chimeric => region1 + region2
-  *****************************************************/
- if (r2) {
-  console.log("custom x axis: chimeric with possibly reversed segments");
-  
-  // Region1 domain
-  const r1Domain = r1.isReversed
-    ? [r1.endMb, r1.startMb]
-    : [r1.startMb, r1.endMb];
-  const c1Mb = Math.abs(r1.endMb - r1.startMb);
+  // Deletion check
+  const hasDeletion = (
+    !r2 &&
+    config.deletionStartMb != null &&
+    config.deletionEndMb   != null &&
+    config.deletionStartMb < config.deletionEndMb
+  );
 
-  // Region2 domain
-  const r2Domain = r2.isReversed
-    ? [r2.endMb, r2.startMb]
-    : [r2.startMb, r2.endMb];
-  const c2Mb = Math.abs(r2.endMb - r2.startMb);
+  /*****************************************************
+   * CASE 1) Chimeric => region1 + region2
+   *****************************************************/
+  if (r2) {
+    console.log("custom x axis: chimeric with possibly reversed segments");
+    
+    // Region1 domain
+    const r1Domain = r1.isReversed
+      ? [r1.endMb, r1.startMb]
+      : [r1.startMb, r1.endMb];
+    const c1Mb = Math.abs(r1.endMb - r1.startMb);
 
-  // total length in Mb
-  const totalMb = c1Mb + c2Mb;
-  const totalWidthPx = totalMb * PX_PER_MB;
+    // Region2 domain
+    const r2Domain = r2.isReversed
+      ? [r2.endMb, r2.startMb]
+      : [r2.startMb, r2.endMb];
+    const c2Mb = Math.abs(r2.endMb - r2.startMb);
 
-  // create the canvas
+    // total length in Mb
+    const totalMb = c1Mb + c2Mb;
+    const totalWidthPx = totalMb * PX_PER_MB;
+
+    // create the canvas
+    const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
+
+    // chunk1 scale
+    const scale1 = d3.scaleLinear()
+      .domain(r1Domain)
+      .range([0, c1Mb * PX_PER_MB]);
+
+    // chunk2 scale
+    const scale2 = d3.scaleLinear()
+      .domain(r2Domain)
+      .range([0, c2Mb * PX_PER_MB]);
+
+    const chunk1WidthPx = c1Mb * PX_PER_MB;
+    const chunk2WidthPx = c2Mb * PX_PER_MB;
+    const chunk2Offset  = chunk1WidthPx;  // no gap between the two bars
+
+    // Draw chunk1 bar & baseline
+    drawPastelBar(ctx, 0, chunk1WidthPx, barHeight, "#F2C894", r1.chrom);
+    drawBaseline(ctx, 0, chunk1WidthPx);
+
+    // Build ticks for chunk1
+    const r1Start = Math.min(r1.startMb, r1.endMb);
+    const r1End   = Math.max(r1.startMb, r1.endMb);
+    let r1Ticks   = buildTickVals(r1Start, r1End, tickStep, r1.isReversed);
+    r1Ticks.pop(); // optional: sometimes you may want to pop the last tick
+
+    // Build ticks for chunk2
+    const r2Start = Math.min(r2.startMb, r2.endMb);
+    const r2End   = Math.max(r2.startMb, r2.endMb);
+    let r2Ticks   = buildTickVals(r2Start, r2End, tickStep, r2.isReversed);
+
+    console.log("r1Ticks:", r1Ticks);
+    console.log("is r1 reversed?", r1.isReversed);
+    drawTicksBelow(ctx, scale1, r1Ticks);
+
+    // chunk2 in separate transform
+    ctx.save();
+    ctx.translate(chunk2Offset, 0);
+
+    // chunk2 bar & baseline
+    drawPastelBar(ctx, 0, chunk2WidthPx, barHeight, "#9FC0DE", r2.chrom);
+    drawBaseline(ctx, 0, chunk2WidthPx);
+
+    console.log("r2Ticks:", r2Ticks);
+    console.log("is r2 reversed?", r2.isReversed);
+    drawTicksBelow(ctx, scale2, r2Ticks);
+
+    ctx.restore();
+    return;
+  }
+
+  /*****************************************************
+   * CASE 2) Deletion => single-chrom with break
+   *****************************************************/
+  if (hasDeletion) {
+    console.log("custom x axis: single-chrom + deletion break");
+    const startMb = r1.startMb;
+    const endMb   = r1.endMb;
+    const delStartMb = config.deletionStartMb;
+    const delEndMb   = config.deletionEndMb;
+    
+    // Is region reversed?
+    const reversed = !!r1.isReversed; 
+    // We'll treat chunk1 => [start..delStart], chunk2 => [delEnd..end]
+
+    // chunk1 domain
+    let c1Min = startMb, c1Max = delStartMb;
+    if (reversed) {
+      c1Min = delStartMb; 
+      c1Max = startMb;
+    }
+    const c1Mb = Math.abs(delStartMb - startMb);
+
+    // chunk2 domain
+    let c2Min = delEndMb, c2Max = endMb;
+    if (reversed) {
+      c2Min = endMb; 
+      c2Max = delEndMb;
+    }
+    const c2Mb = Math.abs(endMb - delEndMb);
+
+    const chunk1Width = c1Mb * PX_PER_MB;
+    const chunk2Width = c2Mb * PX_PER_MB;
+    const totalWidthPx = chunk1Width + chunk2Width;
+
+    const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
+
+    // chunk1 scale
+    const scale1 = d3.scaleLinear()
+      .domain([c1Min, c1Max])
+      .range([0, chunk1Width]);
+
+    // chunk2 scale
+    const scale2 = d3.scaleLinear()
+      .domain([c2Min, c2Max])
+      .range([0, chunk2Width]);
+
+    // 1) chunk1 bar, baseline, ticks
+    drawPastelBar(ctx, 0, chunk1Width, barHeight, "#F2C894", r1.chrom);
+    drawBaseline(ctx, 0, chunk1Width);
+
+    // build ticks for chunk1
+    const minMbC1 = Math.min(c1Min, c1Max);
+    const maxMbC1 = Math.max(c1Min, c1Max);
+    const t1Vals = buildTickVals(minMbC1, maxMbC1, tickStep, reversed);
+    drawTicksBelow(ctx, scale1, t1Vals);
+
+    // 2) The red vertical line at boundary
+    ctx.save();
+    ctx.strokeStyle = "red";
+    ctx.beginPath();
+    ctx.moveTo(chunk1Width, -barHeight);
+    ctx.lineTo(chunk1Width, 0);
+    ctx.stroke();
+    ctx.restore();
+
+    // 3) chunk2
+    ctx.save();
+    ctx.translate(chunk1Width, 0);
+    drawPastelBar(ctx, 0, chunk2Width, barHeight, "#F2C894", r1.chrom);
+    drawBaseline(ctx, 0, chunk2Width);
+
+    // Ticks for chunk2
+    const minMbC2 = Math.min(c2Min, c2Max);
+    const maxMbC2 = Math.max(c2Min, c2Max);
+    const t2Vals = buildTickVals(minMbC2, maxMbC2, tickStep, reversed);
+    drawTicksBelow(ctx, scale2, t2Vals);
+
+    ctx.restore();
+    return;
+  }
+
+  /*****************************************************
+   * CASE 3) Single-chrom, no break, no region2
+   *****************************************************/
+  console.log("custom x axis: single-chrom (no deletion), might be reversed");
+  const reversed = !!r1.isReversed;
+  const rawStart = r1.startMb;
+  const rawEnd   = r1.endMb;
+  const domain = reversed
+    ? [rawEnd, rawStart]
+    : [rawStart, rawEnd];
+  const c1Mb = Math.abs(rawEnd - rawStart);
+  const totalWidthPx = c1Mb * PX_PER_MB;
+
   const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
 
-  // chunk1 scale
-  const scale1 = d3.scaleLinear()
-    .domain(r1Domain)
+  // scale
+  const scale = d3.scaleLinear()
+    .domain(domain)
     .range([0, c1Mb * PX_PER_MB]);
 
-  // chunk2 scale
-  const scale2 = d3.scaleLinear()
-    .domain(r2Domain)
-    .range([0, c2Mb * PX_PER_MB]);
+  // bar
+  drawPastelBar(ctx, 0, c1Mb * PX_PER_MB, barHeight, "#F2C894", r1.chrom);
+  // baseline
+  drawBaseline(ctx, 0, c1Mb * PX_PER_MB);
 
-  const chunk1WidthPx = c1Mb * PX_PER_MB;
-  const chunk2WidthPx = c2Mb * PX_PER_MB;
-  const chunk2Offset  = chunk1WidthPx;  // no gap between the two bars
-
-  // Draw chunk1 bar & baseline
-  drawPastelBar(ctx, 0, chunk1WidthPx, barHeight, "#F2C894", r1.chrom);
-  drawBaseline(ctx, 0, chunk1WidthPx);
-
-  // Build ticks for chunk1
-  const r1Start = Math.min(r1.startMb, r1.endMb);
-  const r1End   = Math.max(r1.startMb, r1.endMb);
-  let r1Ticks   = buildTickVals(r1Start, r1End, tickStep, r1.isReversed);
-  r1Ticks.pop();
-
-  // Build ticks for chunk2 (we'll draw them later)
-  const r2Start = Math.min(r2.startMb, r2.endMb);
-  const r2End   = Math.max(r2.startMb, r2.endMb);
-  let r2Ticks   = buildTickVals(r2Start, r2End, tickStep, r2.isReversed);
-
-
-  console.log("r1Ticks:", r1Ticks);
-  console.log("is r1 reversed?", r1.isReversed);
-  drawTicksBelow(ctx, scale1, r1Ticks);
-
-  // chunk2 in separate transform
-  ctx.save();
-  ctx.translate(chunk2Offset, 0);
-
-  // chunk2 bar & baseline
-  drawPastelBar(ctx, 0, chunk2WidthPx, barHeight, "#9FC0DE", r2.chrom);
-  drawBaseline(ctx, 0, chunk2WidthPx);
-
-  console.log("r2Ticks:", r2Ticks);
-  console.log("is r2 reversed?", r2.isReversed);
-  drawTicksBelow(ctx, scale2, r2Ticks);
-
-  ctx.restore();
-  return;
-}
-
- /*****************************************************
-  * CASE 2) Deletion => single-chrom with break
-  *****************************************************/
- if (hasDeletion) {
-   console.log("custom x axis: single-chrom + deletion break");
-   const startMb = r1.startMb;
-   const endMb   = r1.endMb;
-   const delStartMb = config.deletionStartMb;
-   const delEndMb   = config.deletionEndMb;
-   
-   // Is region reversed? (unusual for a single region w/deletion, but let's handle it)
-   const reversed = !!r1.isReversed; 
-   // We'll treat chunk1 => [start..delStart], chunk2 => [delEnd..end], 
-   // but if reversed, flip these accordingly.
-
-   // chunk1 domain
-   let c1Min = startMb, c1Max = delStartMb;
-   if (reversed) {
-     c1Min = delStartMb; 
-     c1Max = startMb;
-   }
-   const c1Mb = Math.abs(delStartMb - startMb);
-
-   // chunk2 domain
-   let c2Min = delEndMb, c2Max = endMb;
-   if (reversed) {
-     c2Min = endMb; 
-     c2Max = delEndMb;
-   }
-   const c2Mb = Math.abs(endMb - delEndMb);
-
-   const chunk1Width = c1Mb * PX_PER_MB;
-   const chunk2Width = c2Mb * PX_PER_MB;
-   const totalWidthPx = chunk1Width + chunk2Width;
-
-   const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
-
-   // chunk1 scale
-   const scale1 = d3.scaleLinear()
-     .domain([c1Min, c1Max])
-     .range([0, chunk1Width]);
-
-   // chunk2 scale
-   const scale2 = d3.scaleLinear()
-     .domain([c2Min, c2Max])
-     .range([0, chunk2Width]);
-
-   // 1) chunk1 bar, baseline, ticks
-   drawPastelBar(ctx, 0, chunk1Width, barHeight, "#F2C894", r1.chrom);
-   drawBaseline(ctx, 0, chunk1Width);
-
-   // build ticks for chunk1
-   const minMbC1 = Math.min(c1Min, c1Max);
-   const maxMbC1 = Math.max(c1Min, c1Max);
-   const t1Reversed = (c1Min > c1Max); // or simply reversed
-   const t1Vals = buildTickVals(minMbC1, maxMbC1, tickStep, reversed);
-   drawTicksBelow(ctx, scale1, t1Vals);
-
-   // 2) The red vertical line at boundary
-   ctx.save();
-   ctx.strokeStyle = "red";
-   ctx.beginPath();
-   ctx.moveTo(chunk1Width, -barHeight);
-   ctx.lineTo(chunk1Width, 0);
-   ctx.stroke();
-   ctx.restore();
-
-   // 3) chunk2
-   ctx.save();
-   ctx.translate(chunk1Width, 0);
-   drawPastelBar(ctx, 0, chunk2Width, barHeight, "#F2C894", r1.chrom);
-   drawBaseline(ctx, 0, chunk2Width);
-
-   // Ticks for chunk2
-   const minMbC2 = Math.min(c2Min, c2Max);
-   const maxMbC2 = Math.max(c2Min, c2Max);
-   const t2Vals = buildTickVals(minMbC2, maxMbC2, tickStep, reversed);
-   drawTicksBelow(ctx, scale2, t2Vals);
-
-   ctx.restore();
-   return;
- }
-
- /*****************************************************
-  * CASE 3) Single-chrom, no break, no region2
-  *****************************************************/
- console.log("custom x axis: single-chrom (no deletion), might be reversed");
- const reversed = !!r1.isReversed;
- const rawStart = r1.startMb;
- const rawEnd   = r1.endMb;
- const domain = reversed
-   ? [rawEnd, rawStart]
-   : [rawStart, rawEnd];
- const c1Mb = Math.abs(rawEnd - rawStart);
- const totalWidthPx = c1Mb * PX_PER_MB;
-
- const { ctx } = createCanvas(container, totalWidthPx, axisHeight, margin);
-
- // scale
- const scale = d3.scaleLinear()
-   .domain(domain)
-   .range([0, c1Mb * PX_PER_MB]);
-
- // bar
- drawPastelBar(ctx, 0, c1Mb*PX_PER_MB, barHeight, "#F2C894", r1.chrom);
- // baseline
- drawBaseline(ctx, 0, c1Mb*PX_PER_MB);
-
- // build ticks
- const minMb = Math.min(rawStart, rawEnd);
- const maxMb = Math.max(rawStart, rawEnd);
- const ticks = buildTickVals(minMb, maxMb, tickStep, reversed);
- drawTicksBelow(ctx, scale, ticks);
+  // build ticks
+  const minMb = Math.min(rawStart, rawEnd);
+  const maxMb = Math.max(rawStart, rawEnd);
+  const ticks = buildTickVals(minMb, maxMb, tickStep, reversed);
+  drawTicksBelow(ctx, scale, ticks);
 }

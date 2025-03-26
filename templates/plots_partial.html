@@ -5,10 +5,8 @@
 
 
   <div id="hi_c_chart"></div>
-  <div id="custom_axis"></div>
-    <div id="gene-track-wrapper" style="overflow-y: hidden;"> 
-    <div id="gene_track_chart"></div>
-  </div>
+  <div id="custom_axis_hic"></div>
+
   <div class="atac_title_container">
     <div class="atac_title">
       <span class="atac-square"></span>
@@ -16,7 +14,8 @@
     </div>
   </div>
   <div id="atac_chart"></div>
-
+  <div id="custom_axis_atac"></div>
+  
   <div class="ctcf_title_container">
     <div class="ctcf_title">
       <span class="ctcf-square"></span>
@@ -24,7 +23,7 @@
     </div>
   </div>
   <div id="ctcf_chart"></div>
-
+  <div id="custom_axis_ctcf"></div>
   {% if screening_mode %}
     <div class="screening_title_container">
       <div class="screening_title">
@@ -32,8 +31,11 @@
       </div>
     </div>
     <div id="screening_chart"></div>
+    <div id="custom_axis_screening"></div>
   {% endif %}
-  <div id="custom_axis_bottom"></div>
+  <div id="gene-track-wrapper" style="overflow-y: hidden;"> 
+    <div id="gene_track_chart"></div>
+  </div>
 </div>
 
 <!-- Ensure D3.js and d3_plots.js are loaded -->
@@ -51,12 +53,14 @@
   drawColumnChart('#ctcf_chart', ctcfConfig);
   drawColumnChart('#atac_chart', atacConfig);
   drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
-  drawCustomAxis('#custom_axis', customAxisConfig);
-  drawCustomAxis('#custom_axis_bottom', customAxisConfig);
+  drawCustomAxis('#custom_axis_hic', customAxisConfig);
+  drawCustomAxis('#custom_axis_atac', customAxisConfig);
+  drawCustomAxis('#custom_axis_ctcf', customAxisConfig);
   // If we have a screening config, draw it
   {% if screening_mode and screening_config %}
     var screeningConfig = {{ screening_config|safe }};
     drawColumnChart('#screening_chart', screeningConfig);
+    drawCustomAxis('#custom_axis_screening', customAxisConfig);
   {% endif %}
 
 

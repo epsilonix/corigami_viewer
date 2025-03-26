@@ -323,7 +323,7 @@ def prepare_chimeric_gene_track_config(annotation_file, chr1, start1, end1, chr2
       annotation_file (str): Path to the gene annotation file (TSV).
       chr1, start1, end1: Coordinates for the first region.
       chr2, start2, end2: Coordinates for the second region.
-    
+
     Returns:
       dict: Gene track configuration containing a merged gene list and synthetic region info.
     """
