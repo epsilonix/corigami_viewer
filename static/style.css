@@ -10,6 +10,63 @@
     box-shadow: 0 0 5px rgba(0, 150, 255, 0.5);
   }
 }
+.checkbox-container {
+  /* Make the label act like a clickable card */
+  position: relative;
+  display: inline-flex;        /* horizontal layout of [checkbox + text] */
+  align-items: center;
+  cursor: pointer;
+  border: 1px solid #779ECC;
+  border-radius: 5px;
+  padding: 8px 10px;
+  margin-bottom: 5px;
+  transition: background-color 0.2s ease;
+  font-size: 0.8em;
+  width:100%;
+  color: #779ECC;
+}
+
+.checkbox-container:hover {
+  background-color: #fcfdff;   /* slightly different color on hover */
+}
+
+/* Add a custom 'check' indicator to the left side */
+.checkbox-container::before {
+  content: "";
+  /* The little box on the left that acts like our "checkbox" */
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  margin-right: 10px;
+
+  background-color: white;
+  border: 1px solid #779ECC;
+  border-radius: 3px;   /* optional if you want a rounded look */
+  box-sizing: border-box;
+}
+
+.checkbox-container::after {
+  content: "";
+  display: none;  /* show only when .checked */
+  position: absolute;
+  top: 10px;
+  left: 16px;
+  width: 6px;
+  height: 11px;
+  /* This forms the “check” by combining a right border & bottom border at 45° */
+  border-right: 2px solid #779ECC;
+  border-bottom: 2px solid #779ECC;
+  transform: rotate(45deg);
+}
+.checkbox-container.checked::after {
+  display: block;  /* reveal checkmark */
+}
+
+/* Entire label background turns lightblue if 'checked' */
+.checkbox-container.checked {
+  background-color: #e6f3fe;
+  font-weight:500;
+}
 
 div#gene-track-wrapper {
   overflow-y: hidden;
@@ -20,11 +77,11 @@ div#gene-track-wrapper {
 
 /* Custom column width classes */
 .col-20 {
-  flex: 0 0 26%;
+  flex: 0 0 22%;
   padding: 0 10px;
 }
 .col-40 {
-  flex: 0 0 37%;
+  flex: 0 0 39%;
   padding: 0 10px;
 }
 
@@ -76,6 +133,8 @@ span.toggle-plus-label {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.3em;
+  border: 1px solid lightgrey;
+  border-radius: 5px;
 }
 .yesNo > legend {
   font-size: 0.7em;
@@ -221,9 +280,12 @@ body {
 }
 div#peaks_file_container {
   margin-top: 20px;
+} 
+div#screening-fields-2 {
+  margin: 15px 0 0 0;
 }
 div#deletion-fields {
-  margin-top: 20px;
+  margin: 20px 0 0 0;
 }
 div#gene_track_chart {
   position: relative;
@@ -342,7 +404,7 @@ input[type="number"] {
   line-height: 24px;
 }
 .upload-button:hover {
-  background-color: #9FC0DE;
+  background-color: #FFB347;
 }
 
 /* Toggle Switches */
@@ -374,48 +436,8 @@ input[type="number"] {
 .switch-input:checked + .switch-label {
   color: #fff;
 }
-.norm-toggle {
-  width: 100%;
-  height: 28px;
-}
-.norm-toggle .switch-selector {
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  left: 0;
-  /* For 3-option toggles */
-  width: 33.33%;
-  height: 28px;
-  border-radius: 32px;
-  background-color: #FFB347;
-  transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-}
 
-/* Training Normalization Toggle (two options, each 50% width) */
-#training-norm-container .norm-toggle .switch-label {
-  width: 50%;
-}
-#training-norm-container .norm-toggle .switch-selector {
-  width: 50%;
-}
-/* When enabled, slide the selector to 0% for log, and 100% for minmax */
-#training-log:checked ~ .switch-selector {
-  transform: translateX(0%);
-}
-#training-minmax:checked ~ .switch-selector {
-  transform: translateX(100%);
-}
-/* When disabled, force the checked toggle to use background #333 and white text,
-   while non-checked remain with font color #676a6c */
-#training-norm-container.disabled-toggle .switch-input:checked + .switch-label {
-  color: #fff !important;
-}
-#training-norm-container.disabled-toggle .switch-input:not(:checked) + .switch-label {
-  color: #676a6c !important;
-}
-#training-norm-container.disabled-toggle .switch-selector {
-  background-color: #333 !important;
-}
+
 div#global-error-module {
   font-size: 0.8rem;
   margin: 0 10px 20px 10px;
@@ -424,16 +446,26 @@ div#global-error-module {
   padding: 0 20px;
   color: #555;
 }
+.model-requirements-box {
+  font-size: 0.8rem;
+  margin: 0 10px 20px 10px;
+  border: 1px solid #779ECC;
+  border-radius: 5px;
+  padding: 0 20px;
+  color: #779ECC;
+  background-color: #e6f3fe;
+  line-height:1.3
+}
 
 /* Optional: remove default bullet style */
-ul.global-error-list, ul.global-warning-list{
+ul.global-error-list, ul.global-warning-list, ul.model-requirements-list {
   list-style-type: none; /* or whatever spacing you prefer */
   margin: 1rem 0;
   padding:0;
 }
 
 /* The magic: Each LI gets a background icon. We can do it via ::before pseudo-element. */
-ul.global-error-list li, ul.global-warning-list li {
+ul.global-error-list li, ul.global-warning-list li, ul.model-requirements-list li {
   position: relative;
   margin-left: 0; /* if you want a flush left edge */
   margin-bottom: 0.5rem; /* spacing between lines */
@@ -441,7 +473,7 @@ ul.global-error-list li, ul.global-warning-list li {
 }
 
 /* Insert the warning.svg as a pseudo-element before the actual text */
-ul.global-error-list li::before, ul.global-warning-list li::before {
+ul.global-error-list li::before, ul.global-warning-list li::before, ul.model-requirements-list li::before {
   content: "";
   position: absolute;
   left: 0; 
@@ -455,32 +487,11 @@ ul.global-error-list li::before, ul.global-warning-list li::before {
 ul.global-error-list li::before {
   background: url("/static/warning.svg") no-repeat center center;
 }
-ul.global-warning-list li::before {
+ul.global-warning-list li::before, ul.model-requirements-list li::before {
   background: url("/static/green-circle.svg") no-repeat center center;
 }
-/* CTCF selector */
-#ctcf-switch.disabled-toggle .switch-input:checked + .switch-label {
-  color: #676a6c !important;
-}
-#ctcf-switch.disabled-toggle .switch-input:not(:checked) + .switch-label {
-  color: #676a6c !important;
-}
-#ctcf-switch.disabled-toggle .switch-selector {
-  background-color:#d7d7d7 !important
-}
-/* ATAC/CTCF Normalization Toggle */
-#atac-no-norm:checked ~ .switch-selector,
-#ctcf-no-norm:checked ~ .switch-selector {
-  transform: translateX(0%);
-}
-#atac-log:checked ~ .switch-selector,
-#ctcf-log:checked ~ .switch-selector {
-  transform: translateX(100%);
-}
-#atac-minmax:checked ~ .switch-selector,
-#ctcf-minmax:checked ~ .switch-selector {
-  transform: translateX(200%);
-}
+
+
 
 /* Deletion/Screening Toggle */
 .ds-toggle {
@@ -507,7 +518,9 @@ ul.global-warning-list li::before {
 #ds_screening:checked ~ .switch-selector {
   transform: translateX(200%);
 }
-
+#predict_ctcf_row, #ctcf_norm_row {
+  margin-bottom:0 !important;
+}
 /* Submit Button */
 .submit-button {
   display: block;
@@ -520,10 +533,10 @@ ul.global-warning-list li::before {
   font-size: 0.8em;
   transition: background-color 0.3s ease;
   width:100%;
-  margin:25px auto 10px;
+  margin-top:20px;
 }
 .submit-button:hover {
-  background-color: #9FC0DE;
+  background-color: #FFB347;
 }
 
 /* Modal and Instructions */

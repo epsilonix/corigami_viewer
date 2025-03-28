@@ -185,56 +185,81 @@ def save_uploaded_file(file_storage, default_filename, folder):
         return filepath
     return None
 
-def normalize_file(input_bw, chrom, start, end, method, output_folder, prefix):
+# New functions added for standardized generation and normalizatio
+def normalize_bigwig(
+    input_bw: str,
+    chrom: str,
+    start: int,
+    end: int,
+    method: str,
+    output_folder: str,
+    prefix: str = "normalized"
+) -> str:
+    """
+    Applies one of three normalization methods to the specified region of a BigWig file:
+      - 'none':    Return the original input path
+      - 'log':     norm_arr = ln(value + 1)
+      - 'minmax':  norm_arr = (value - min) / (max - min)
+
+    Creates a new BigWig from [chrom, start, end). 
+    If the user wants the entire chromosome, pass the full range.
+    
+    Returns the path to the newly created normalized BigWig (unless method='none', 
+    in which case the original input path is returned).
+    """
+    if method == "none":
+        return input_bw
+
     try:
         bw_in = pyBigWig.open(input_bw, "r")
-        values = bw_in.values(chrom, start, end)
-        chrom_lengths = bw_in.chroms()
-        bw_in.close()
     except Exception as e:
         raise Exception(f"Error opening file {input_bw}: {e}")
+
+    if chrom not in bw_in.chroms():
+        raise Exception(f"Chrom {chrom} not found in BigWig {input_bw}")
+
+    chrom_length = bw_in.chroms()[chrom]
+    region_len = end - start
+    if region_len <= 0:
+        raise Exception(f"Invalid region: start={start}, end={end}")
+
+    values = bw_in.values(chrom, start, end)
+    bw_in.close()
+
     arr = np.array(values, dtype=np.float64)
-    arr = np.nan_to_num(arr, nan=0)
+    arr = np.nan_to_num(arr, nan=0.0)
+
     if method == "log":
-        norm_arr = np.log(arr + 1)
+        norm_arr = np.log(arr + 1.0)
     elif method == "minmax":
-        arr_min, arr_max = np.min(arr), np.max(arr)
-        norm_arr = (arr - arr_min) / (arr_max - arr_min if arr_max != arr_min else 1)
+        min_val, max_val = np.min(arr), np.max(arr)
+        if max_val > min_val:
+            norm_arr = (arr - min_val) / (max_val - min_val)
+        else:
+            norm_arr = np.zeros_like(arr)
     else:
-        norm_arr = arr
-    chr_length = chrom_lengths.get(chrom, end)
+        raise ValueError(f"Unknown normalization method: {method}")
+
+    os.makedirs(output_folder, exist_ok=True)
     output_path = os.path.join(output_folder, f"{prefix}_{method}.bw")
+
     try:
         bw_out = pyBigWig.open(output_path, "w")
-        bw_out.addHeader([(chrom, chr_length)])
-        bw_out.addEntries(chrom, start, values=norm_arr.tolist(), span=1, step=1)
+        bw_out.addHeader([(chrom, chrom_length)])
+        bw_out.addEntries(
+            chrom,
+            start,
+            ends=end,
+            values=norm_arr.tolist(),
+            span=1,
+            step=1
+        )
         bw_out.close()
     except Exception as e:
-        raise Exception(f"Error writing normalized file: {e}")
-    print(f"Normalization ({method}) completed for {prefix}. Normalized file: {output_path}")
+        raise Exception(f"Error writing normalized BigWig {output_path}: {e}")
+
+    print(f"Normalization ({method}) done. Output: {output_path}")
     return output_path
-
-# New functions added for standardized generation and normalization
-
-def normalize_atac(input_bw, chrom, start, end, method, output_folder):
-    """
-    Normalize an ATAC-seq bigWig file using the given method.
-    method: one of 'log', 'minmax', or 'none'.
-    If method is 'none', the original file is returned.
-    """
-    if method == "none":
-        return input_bw
-    return normalize_file(input_bw, chrom, start, end, method, output_folder, "normalized_atac")
-
-def normalize_ctcf(input_bw, chrom, start, end, method, output_folder):
-    """
-    Normalize a CTCF bigWig file using the given method.
-    method: one of 'log', 'minmax', or 'none'.
-    If method is 'none', the original file is returned.
-    """
-    if method == "none":
-        return input_bw
-    return normalize_file(input_bw, chrom, start, end, method, output_folder, "normalized_ctcf")
 
 def predict_ctcf(atac_bw, chrom, start, end, output_folder):
     """
@@ -437,17 +462,36 @@ def extract_bigwig_region_array(
     """
     Extract raw bigwig values as a 1D numpy array from [start..end).
     If `do_reverse=True`, reverse the array.
-    (No 'do_flip' for bigWig signals; that concept is removed.)
+    Raises an Exception if the file isn't recognized by pyBigWig,
+    or if it lacks the .bw/.bigwig extension.
     """
+    import pyBigWig
+    import numpy as np
+
+    # (A) Basic extension check
+    bw_path_lower = bw_path.lower()
+    if not (bw_path_lower.endswith(".bw") or bw_path_lower.endswith(".bigwig")):
+        raise Exception(
+            f"[extract_bigwig_region_array] File '{bw_path}' does not have a .bw or .bigwig extension."
+        )
+
     length = end - start
     if length <= 0:
         return np.zeros(0, dtype=np.float32)
 
+    # (B) Attempt to open with pyBigWig
     try:
         bw = pyBigWig.open(bw_path, "r")
+        if bw is None or bw.chroms() is None:
+            bw.close()
+            raise Exception(
+                f"[extract_bigwig_region_array] '{bw_path}' cannot be opened as a valid bigWig."
+            )
     except Exception as e:
-        print(f"Error opening bigwig {bw_path}: {e}")
-        return np.zeros(length, dtype=np.float32)
+        raise Exception(
+            f"[extract_bigwig_region_array] Error opening '{bw_path}' with pyBigWig: {e}. "
+            "Likely not a valid bigWig file."
+        )
 
     if chrom not in bw.chroms():
         print(f"[extract_bigwig_region_array] Chrom {chrom} not found in {bw_path}")

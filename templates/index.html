@@ -106,13 +106,13 @@
         <!-- Combined Model & Genome Row -->
         <div class="row">
           <div class="col-half">
-            <label for="model_select" class="small-label">Model*:</label>
+            <label for="model_select" class="small-label">Pretrained model*:</label>
             <select id="model_select" name="model_select" required>
-              <option value="V1" {% if request.form.model_select == 'V1' %}selected{% endif %}>
-                IMR-90 (log normalized)
+              <option value="IMR90" {% if request.form.model_select == 'IMR90' %}selected{% endif %}>
+                IMR-90
               </option>
-              <option value="V4" {% if request.form.model_select == 'V4' %}selected{% endif %}>
-                B-ALL (observed/expected, minmax normalized)
+              <option value="BALL" {% if request.form.model_select == 'BALL' %}selected{% endif %}>
+                B-ALL
               </option>
             </select>
           </div>
@@ -123,6 +123,11 @@
               <option value="mm10" {% if request.form.genome_select == 'mm10' %}selected{% endif %}>mm10</option>
             </select>
           </div>
+        </div>
+
+        <div id="model-requirements" class="model-requirements-box">
+          <ul class="model-requirements-list" id="model-requirements-list">
+          </ul>
         </div>
 
         <!-- Region Row with 20/40/40 width distribution -->
@@ -219,15 +224,12 @@
         <!-- ATAC File Normalization -->
         <div class="row">
           <div class="col-full">
-            <div class="switch norm-toggle" id="atac-switch">
-              <input id="atac-no-norm" name="norm_atac" type="radio" value="none" class="switch-input" {% if request.form.norm_atac == 'none' or not request.form.norm_atac %}checked{% endif %}>
-              <label for="atac-no-norm" class="switch-label">raw</label>
-              <input id="atac-log" name="norm_atac" type="radio" value="log" class="switch-input" {% if request.form.norm_atac == 'log' %}checked{% endif %}>
-              <label for="atac-log" class="switch-label">log</label>
-              <input id="atac-minmax" name="norm_atac" type="radio" value="minmax" class="switch-input" {% if request.form.norm_atac == 'minmax' %}checked{% endif %}>
-              <label for="atac-minmax" class="switch-label">minmax</label>
-              <span class="switch-selector"></span>
-            </div>
+            <label for="apply_atac_norm" class="checkbox-container" id="apply_atac_norm_wrapper">
+              <input type="checkbox" id="apply_atac_norm" name="apply_atac_norm" value="true" style="display: none;" />
+              <span id="apply_atac_norm_label">
+                Apply norm to my raw ATAC file
+              </span>
+            </label>
           </div>
         </div>
         <!-- CTCF BigWig File -->
@@ -236,8 +238,8 @@
             <label for="ctcf_bw_path" class="small-label">CTCF BigWig File:</label>
             <div class="file-upload-group">
               <select id="ctcf_bw_path" name="ctcf_bw_path">
-                <option value="none" selected>None</option>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw">IMR-90 Preset (log normalized)</option>
+                <option value="none" selected>None (auto-generate)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw">IMR-90 Preset (log2fc normalized)</option>
                 <option value="./corigami_data/data/hg38/ball/MCG023_CTCF_merged_maxatac_predict.bw">B-ALL Preset (minmax normalized)</option>
               </select>
               <label class="upload-button" for="ctcf_bw_file">Upload</label>
@@ -245,34 +247,27 @@
             <input type="file" id="ctcf_bw_file" name="ctcf_bw_file">
           </div>
         </div>
+        <div class="row" id="predict_ctcf_row">
+          <div class="col-full">
+            <label for="predict_ctcf" class="checkbox-container" id="predict_ctcf_wrapper">
+              <input type="checkbox" id="predict_ctcf" name="predict_ctcf" value="true" style="display: none;" />
+              <span id="predict_ctcf_label">
+                Automatically generate my CTCF file
+              </span>
+            </label>
+          </div>
+        </div>
         <!-- CTCF File Normalization -->
-        <div class="row">
+        <div class="row" id="ctcf_norm_row">
           <div class="col-full">
-            <div class="switch norm-toggle" id="ctcf-switch">
-              <input id="ctcf-no-norm" name="norm_ctcf" type="radio" value="none" class="switch-input" checked>
-              <label for="ctcf-no-norm" class="switch-label">raw</label>
-              <input id="ctcf-log" name="norm_ctcf" type="radio" value="log" class="switch-input" {% if request.form.norm_ctcf == 'log' %}checked{% endif %}>
-              <label for="ctcf-log" class="switch-label">log</label>
-              <input id="ctcf-minmax" name="norm_ctcf" type="radio" value="minmax" class="switch-input" {% if request.form.norm_ctcf == 'minmax' %}checked{% endif %}>
-              <label for="ctcf-minmax" class="switch-label">minmax</label>
-              <span class="switch-selector"></span>
-            </div>
+            <label for="apply_ctcf_norm" class="checkbox-container" id="apply_ctcf_norm_wrapper">
+              <input type="checkbox" id="apply_ctcf_norm" name="apply_ctcf_norm" value="true" style="display: none;" />
+              <span id="apply_ctcf_norm_label">
+                Apply norm to my raw CTCF file
+              </span>
+            </label>
           </div>
         </div>
-        <!-- Training Normalization -->
-        <div class="row" id="training-norm-container">
-          <div class="col-full">
-            <label class="small-label">Select normalization method for training*:</label>
-            <div class="switch norm-toggle" id="training-norm-switch">
-              <input id="training-log" name="training_norm" type="radio" value="log" class="switch-input">
-              <label for="training-log" class="switch-label">log</label>
-              <input id="training-minmax" name="training_norm" type="radio" value="minmax" class="switch-input" checked>
-              <label for="training-minmax" class="switch-label">minmax</label>
-              <span class="switch-selector"></span>
-            </div>
-          </div>
-        </div>
-        <hr class="separator">
         <!-- Deletion Parameters -->
         <div id="deletion-fields" class="optional-row" style="display: none;">
           <div class="row">
@@ -292,7 +287,7 @@
             <label for="peaks_file_path" class="small-label">Peaks File (MACS2 narrowPeak):</label>
             <div class="file-upload-group">
               <select id="peaks_file_path" name="peaks_file_path">
-                <option value="none" selected>None</option>
+                <option value="none" selected>None (auto-generate)</option>
                 <option value="./corigami_data/data/hg38/imr90/genomic_features/MACS2_peaks.narrowPeak.txt">
                   IMR-90 Preset
                 </option>
@@ -315,7 +310,11 @@
             </div>
           </div>
         </div>
-        <input type="submit" value="Generate plots" class="submit-button">
+        <div class="row">
+          <div class="col-full">
+            <input type="submit" value="Generate plots" class="submit-button">
+          </div>
+        </div>
       </form>
       <div id="screening_message" style="color:red;"></div>
     </div>
@@ -330,18 +329,5 @@
     </div>
   </div>
   <script src="{{ url_for('static', filename='script.js') }}"></script>
-  <script>
-    // Render D3 plots using configuration objects passed from the server
-    var hiCConfig = {{ hi_c_config|safe }};
-    var ctcfConfig = {{ ctcf_config|safe }};
-    var atacConfig = {{ atac_config|safe }};
-    drawHiCChart('#hi_c_chart', hiCConfig);
-    drawLineChart('#ctcf_chart', ctcfConfig);
-    drawLineChart('#atac_chart', atacConfig);
-    {% if screening_mode and screening_config %}
-      var screeningConfig = {{ screening_config|safe }};
-      drawColumnChart('#screening_chart', screeningConfig);
-    {% endif %}
-  </script>
 </body>
 </html>

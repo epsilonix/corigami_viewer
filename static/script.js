@@ -46,11 +46,6 @@ function storeFormFields() {
     if (elem) localStorage.setItem(field, elem.value);
   });
 
-  const normAtacRadio = document.querySelector('input[name="norm_atac"]:checked');
-  if (normAtacRadio) localStorage.setItem("norm_atac", normAtacRadio.value);
-
-  const normCtcfRadio = document.querySelector('input[name="norm_ctcf"]:checked');
-  if (normCtcfRadio) localStorage.setItem("norm_ctcf", normCtcfRadio.value);
 
   const dsRadios = document.getElementsByName("ds_option");
   for (let radio of dsRadios) {
@@ -108,18 +103,6 @@ function restoreFormFields() {
     }
   });
 
-  // Norm fields
-  const normAtac = localStorage.getItem("norm_atac");
-  if (normAtac) {
-    const radio = document.querySelector(`input[name="norm_atac"][value="${normAtac}"]`);
-    if (radio) radio.checked = true;
-  }
-  const normCtcf = localStorage.getItem("norm_ctcf");
-  if (normCtcf) {
-    const radio = document.querySelector(`input[name="norm_ctcf"][value="${normCtcf}"]`);
-    if (radio) radio.checked = true;
-  }
-
   // DS option
   const dsOption = localStorage.getItem("ds_option");
   if (dsOption) {
@@ -132,8 +115,6 @@ function restoreFormFields() {
  * Form Behavior Helpers
  *************************************************************/
 function populateChromosomeDropdown() {
-  // This now *only* populates chromosomes and returns the promise,
-  // no calls to restoreFormFields() or collectAndDisplayErrors().
   const genomeSelect = document.getElementById("genome_select");
   let genome = genomeSelect ? genomeSelect.value : "hg38";
   let url = (genome === "mm10") ? "static/mm10_chr_lengths.json" : "static/hg38_chr_lengths.json";
@@ -149,10 +130,11 @@ function populateChromosomeDropdown() {
         if (!select) return;
         select.innerHTML = "";
         for (const chr in data) {
+          // Remove the length display from the label
           let cleanChr = chr.replace(/^chr/i, "");
           let option = document.createElement("option");
-          option.value = chr; // e.g. "chr1"
-          option.text = `${cleanChr} (${data[chr]})`;
+          option.value = chr;        // e.g. "chr1"
+          option.text = cleanChr;    // e.g. "1", "2", "X", etc.
           select.appendChild(option);
         }
       });
@@ -162,6 +144,7 @@ function populateChromosomeDropdown() {
       console.error("Error fetching chromosome lengths:", error);
     });
 }
+
 
 function updateEndPosition() {
   // Region 1
@@ -201,60 +184,98 @@ function updateEndPosition() {
 /*************************************************************
  * Validation Helpers
  *************************************************************/
+
+
 function validateRegion1Bounds() {
   const chrSelect = document.getElementById("region_chr1");
   const startElem = document.getElementById("region_start1");
   const endElem   = document.getElementById("region_end1");
 
+  // If something’s not loaded, just bail out
   if (!chrSelect || !window.chromosomeLengths) return null;
 
   const selectedChr = chrSelect.value;
-  const maxLength = window.chromosomeLengths[selectedChr];
+  const maxLength   = window.chromosomeLengths[selectedChr];
+
+  // If chromosome lengths not found for some reason
   if (typeof maxLength === "undefined") return null;
 
-  const start = parseInt(startElem.value);
-  const end   = endElem.value ? parseInt(endElem.value) : start + WINDOW_WIDTH;
+  const start = parseInt(startElem.value, 10);
+  // If user left region_end1 blank, default to 2 Mb from start
+  let end = parseInt(endElem.value, 10);
+  if (isNaN(end)) {
+    end = start + WINDOW_WIDTH;
+  }
 
+  // -------------------------
+  // NEW OUT-OF-BOUNDS CHECKS
+  // -------------------------
+  if (start < 0 || start > maxLength) {
+    return `Region 1: Start position (${start}) is out of bounds for ${selectedChr}, which has length ${maxLength}.`;
+  }
+  if (end < 0 || end > maxLength) {
+    return `Region 1: End position (${end}) is out of bounds for ${selectedChr}, which has length ${maxLength}.`;
+  }
+
+  // ------------------------------------
+  // EXISTING CHECKS (start < end, etc.)
+  // ------------------------------------
   if (end < start) {
     return "Region 1: Chromosome start position cannot be greater than end";
-  }
-  if (start < 0 || end < 0 || start > maxLength || end > maxLength) {
-    return `Region 1: ${selectedChr} must be between 0 and ${maxLength}`;
   }
   if (end - start > WINDOW_WIDTH * 10) {
     return "Region 1: window must be under 20 Mb in length";
   }
-  return null;
+
+  return null; // No error
 }
 
 function validateRegion2Bounds() {
+  // Only validate if the second region is visible
   const secondChrDiv = document.getElementById("second_chr_fields");
   if (!secondChrDiv || secondChrDiv.style.display === "none") {
     return null;
   }
-  const chrSelect2  = document.getElementById("region_chr2");
-  const startElem2  = document.getElementById("region_start2");
-  const endElem2    = document.getElementById("region_end2");
+
+  const chrSelect2 = document.getElementById("region_chr2");
+  const startElem2 = document.getElementById("region_start2");
+  const endElem2   = document.getElementById("region_end2");
+
   if (!chrSelect2 || !window.chromosomeLengths) return null;
 
   const selectedChr2 = chrSelect2.value;
   const maxLength2   = window.chromosomeLengths[selectedChr2];
   if (typeof maxLength2 === "undefined") return null;
 
-  const start2 = parseInt(startElem2.value);
-  const end2   = endElem2.value ? parseInt(endElem2.value) : start2 + WINDOW_WIDTH;
+  const start2 = parseInt(startElem2.value, 10);
+  let end2     = parseInt(endElem2.value, 10);
+  if (isNaN(end2)) {
+    end2 = start2 + WINDOW_WIDTH;
+  }
 
+  // -------------------------
+  // NEW OUT-OF-BOUNDS CHECKS
+  // -------------------------
+  if (start2 < 0 || start2 > maxLength2) {
+    return `Region 2: Start position (${start2}) is out of bounds for ${selectedChr2}, which has length ${maxLength2}.`;
+  }
+  if (end2 < 0 || end2 > maxLength2) {
+    return `Region 2: End position (${end2}) is out of bounds for ${selectedChr2}, which has length ${maxLength2}.`;
+  }
+
+  // ------------------------------------
+  // EXISTING CHECKS (start < end, etc.)
+  // ------------------------------------
   if (end2 < start2) {
     return "Region 2: Chromosome start position cannot be greater than end";
-  }
-  if (start2 < 0 || end2 < 0 || start2 > maxLength2 || end2 > maxLength2) {
-    return `Region 2: ${selectedChr2} must be between 0 and ${maxLength2}`;
   }
   if (end2 - start2 > WINDOW_WIDTH * 10) {
     return "Region 2: window must be under 20 Mb in length";
   }
-  return null;
+
+  return null; // No error
 }
+
 
 function validateDeletionAreaErrors() {
   const dsOption = document.querySelector('input[name="ds_option"]:checked');
@@ -279,28 +300,7 @@ function validateDeletionAreaErrors() {
   return null;
 }
 
-function checkCtcfAtacRequirements() {
-  const ctcfFile = document.getElementById("ctcf_bw_path").value;
-  const atacState = document.querySelector('input[name="norm_atac"]:checked').value;
-  if (ctcfFile === "none" && (atacState === "log" || atacState === "minmax")) {
-    return "Raw ATAC BigWig is needed when CTCF is not provided.";
-  }
-  return null;
-}
 
-function checkNormalizationMismatch() {
-  const atacState = document.querySelector('input[name="norm_atac"]:checked').value;
-  const ctcfState = document.querySelector('input[name="norm_ctcf"]:checked').value;
-  const ctcfFile  = document.getElementById("ctcf_bw_path").value;
-
-  if (ctcfFile !== "none" &&
-      atacState !== "none" &&
-      ctcfState !== "none" &&
-      atacState !== ctcfState) {
-    return "ATAC & CTCF files cannot already have two different normalization methods.";
-  }
-  return null;
-}
 
 /**
  * Additional check for combined Region 1 + Region 2 total <= 20 Mb
@@ -354,11 +354,6 @@ function collectAndDisplayErrors() {
   const eDel = validateDeletionAreaErrors();
   if (eDel) errors.push(eDel);
 
-  const eCtcf = checkCtcfAtacRequirements();
-  if (eCtcf) errors.push(eCtcf);
-
-  const eNormMismatch = checkNormalizationMismatch();
-  if (eNormMismatch) errors.push(eNormMismatch);
 
   const eTotal = validateTotalRegionSize();
   if (eTotal) errors.push(eTotal);
@@ -572,7 +567,37 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
     console.log("No file selected for", fileType);
     return;
   }
+
   const file = fileInput.files[0];
+
+  // 1) Enforce maximum file size of 5 GB
+  const maxSizeBytes = 5 * 1024 * 1024 * 1024; // 5 GB
+  if (file.size > maxSizeBytes) {
+    alert("File is too large! Must be under 5 GB.");
+    fileInput.value = ""; // Clear the file input to force re-selection
+    return;
+  }
+
+  // 2) Enforce correct file extension based on fileType
+  const ext = file.name.toLowerCase().split('.').pop(); // e.g. "bw", "bigwig", "bed", etc.
+  
+  if (fileType === "atac" || fileType === "ctcf") {
+    // BigWig check
+    if (ext !== "bw" && ext !== "bigwig") {
+      alert("File extension not recognized as .bw or .bigWig. Please upload a bigWig file.");
+      fileInput.value = ""; // Clear invalid file
+      return;
+    }
+  } else if (fileType === "peaks") {
+    // Peak file check
+    const validPeaksExt = ["bed", "narrowpeak", "broadpeak"];
+    if (!validPeaksExt.includes(ext)) {
+      alert("Please upload a peaks file (.bed, .narrowPeak, or .broadPeak).");
+      fileInput.value = ""; // Clear invalid file
+      return;
+    }
+  }
+
   console.log("Selected file for " + fileType + ":", file.name);
 
   const uploadButton = document.querySelector("label[for='" + fileInputId + "']");
@@ -581,41 +606,48 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
     uploadButton.classList.add('loading');
   }
 
+  // Construct FormData for POST
   const formData = new FormData();
   if (fileType === "peaks") {
     formData.append("peaks_file", file);
   } else {
     formData.append(fileType + "_bw_file", file);
   }
-  
+
   fetch("/upload_file?file_type=" + encodeURIComponent(fileType), {
     method: "POST",
     body: formData
   })
-  .then(response => response.json())
-  .then(data => {
-    if (data.error) {
-      console.error("Upload error for " + fileType + ":", data.error);
-    } else {
-      console.log("Upload successful for " + fileType + ":", data);
-      const dropdown = document.getElementById(dropdownId);
-      const newOption = document.createElement("option");
-      newOption.value = data.saved_path;
-      newOption.text = data.display_name;
-      dropdown.appendChild(newOption);
-      dropdown.value = data.saved_path;
-      localStorage.setItem(dropdownId, data.saved_path);
-    }
-  })
-  .catch(error => console.error("Error uploading file for " + fileType + ":", error))
-  .finally(() => {
-    if (uploadButton) {
-      uploadButton.textContent = 'Upload';
-      uploadButton.classList.remove('loading');
-    }
-    collectAndDisplayErrors();
-  });
+    .then(response => response.json())
+    .then(data => {
+      if (data.error) {
+        console.error("Upload error for " + fileType + ":", data.error);
+        alert("Error uploading file: " + data.error);
+      } else {
+        console.log("Upload successful for " + fileType + ":", data);
+        // Append new file to the relevant dropdown
+        const dropdown = document.getElementById(dropdownId);
+        const newOption = document.createElement("option");
+        newOption.value = data.saved_path;
+        newOption.text  = data.display_name;
+        dropdown.appendChild(newOption);
+        dropdown.value = data.saved_path;
+        localStorage.setItem(dropdownId, data.saved_path);
+      }
+    })
+    .catch(error => {
+      console.error("Error uploading file for " + fileType + ":", error);
+      alert("Error uploading file. Check console for details.");
+    })
+    .finally(() => {
+      if (uploadButton) {
+        uploadButton.textContent = 'Upload';
+        uploadButton.classList.remove('loading');
+      }
+      collectAndDisplayErrors(); // re-validate after upload
+    });
 }
+
 
 /*************************************************************
  * Helper to Execute Inline Scripts After AJAX Update
@@ -637,7 +669,7 @@ function executeScripts(container) {
 }
 
 /*************************************************************
- * Screening and Normalization Helpers
+ * Screening Helpers
  *************************************************************/
 function runScreening() {
   console.log("runScreening() is called");
@@ -700,62 +732,6 @@ function runScreening() {
   xhr.send();
 }
 
-function updateCtcfNormalization() {
-  const ctcfSelect = document.getElementById('ctcf_bw_path');
-  const ctcfSwitch = document.getElementById('ctcf-switch');
-  const ctcfNoNorm = document.getElementById('ctcf-no-norm');
-  const ctcfLog    = document.getElementById('ctcf-log');
-  const ctcfMinmax = document.getElementById('ctcf-minmax');
-
-  if (ctcfSelect.value === 'none') {
-    ctcfNoNorm.disabled = true;
-    ctcfLog.disabled    = true;
-    ctcfMinmax.disabled = true;
-    ctcfSwitch.classList.add('disabled-toggle');
-  } else {
-    ctcfNoNorm.disabled = false;
-    ctcfLog.disabled    = false;
-    ctcfMinmax.disabled = false;
-    ctcfSwitch.classList.remove('disabled-toggle');
-  }
-}
-
-function updateTrainingNormField() {
-  const ctcfFile   = document.getElementById("ctcf_bw_path").value;
-  const atacState  = document.querySelector('input[name="norm_atac"]:checked').value;
-  const ctcfState  = document.querySelector('input[name="norm_ctcf"]:checked').value;
-  const trainingContainer = document.getElementById("training-norm-container");
-
-  if (ctcfFile === "none") {
-    document.getElementById("training-minmax").checked = true;
-    document.getElementById("training-log").disabled   = true;
-    trainingContainer.classList.add("disabled-toggle");
-  } else if (atacState !== "none") {
-    if (atacState === "log") {
-      document.getElementById("training-log").checked = true;
-    } else {
-      document.getElementById("training-minmax").checked = true;
-    }
-    document.getElementById("training-log").disabled   = true;
-    document.getElementById("training-minmax").disabled= true;
-    trainingContainer.classList.add("disabled-toggle");
-  } else if (ctcfState !== "none") {
-    if (ctcfState === "log") {
-      document.getElementById("training-log").checked = true;
-    } else {
-      document.getElementById("training-minmax").checked = true;
-    }
-    document.getElementById("training-log").disabled   = true;
-    document.getElementById("training-minmax").disabled= true;
-    trainingContainer.classList.add("disabled-toggle");
-  } else {
-    document.getElementById("training-log").disabled    = false;
-    document.getElementById("training-minmax").disabled = false;
-    trainingContainer.classList.remove('disabled-toggle');
-  }
-
-  collectAndDisplayErrors();
-}
 
 /*************************************************************
  * Checking Required Fields
@@ -818,9 +794,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
       // Only now do we do final init:
       restoreFormFields();
+      updateNormalizationLabels();
       toggleOptionalFields();
-      updateCtcfNormalization();
-      updateTrainingNormField();
       updateEndPosition();
 
       // Mark init complete & validate
@@ -890,13 +865,14 @@ document.addEventListener('DOMContentLoaded', function() {
     collectAndDisplayErrors();
   });
 
+  updateNormalizationLabels();
   // Screening fields
   document.getElementById("perturb_width").addEventListener("input", storeFormFields);
   document.getElementById("step_size").addEventListener("input", storeFormFields);
 
   // Model changes
   document.getElementById("model_select").addEventListener("change", storeFormFields);
-
+  document.getElementById("model_select").addEventListener("change", updateNormalizationLabels);
   // DS option toggles
   const dsRadios = document.getElementsByName("ds_option");
   dsRadios.forEach(radio => {
@@ -914,28 +890,6 @@ document.addEventListener('DOMContentLoaded', function() {
   } else {
     console.error("Element with id 'toggle-second-chr-container' not found");
   }
-
-  // CTCF selection & normalization
-  const ctcfSelectElem = document.getElementById("ctcf_bw_path");
-  ctcfSelectElem.addEventListener("change", () => {
-    storeFormFields();
-    updateCtcfNormalization();
-    updateTrainingNormField();
-  });
-
-  // ATAC & CTCF norm radios
-  document.getElementsByName("norm_atac").forEach(radio => {
-    radio.addEventListener("change", () => {
-      storeFormFields();
-      updateTrainingNormField();
-    });
-  });
-  document.getElementsByName("norm_ctcf").forEach(radio => {
-    radio.addEventListener("change", () => {
-      storeFormFields();
-      updateTrainingNormField();
-    });
-  });
 
   // File uploads
   document.getElementById("atac_bw_file").addEventListener("change", () => {
@@ -968,27 +922,75 @@ document.addEventListener('DOMContentLoaded', function() {
       modal.style.display = "none";
     }
   };
-
-  /*************************************************************
-   * Handle "Cancel" run logic
-   *************************************************************/
   let runInProgress = false;
   const submitBtn = document.querySelector('input[type="submit"].submit-button');
   const formElem  = document.getElementById("corigami-form");
 
-  // function cancelCurrentRun() {
-  //   fetch("/cancel_run", {
-  //     method: "POST",
-  //     credentials: "same-origin"
-  //   })
-  //     .then(res => res.json())
-  //     .then(data => {
-  //       console.log("Cancel run response:", data);
-  //       runInProgress = false;
-  //       if (submitBtn) submitBtn.value = "Generate plots";
-  //     })
-  //     .catch(err => console.error("Error canceling run:", err));
-  // }
+  // ATAC/CTCF normalization labels
+  const atacCheckbox = document.getElementById("apply_atac_norm");
+  const atacLabel    = document.getElementById("apply_atac_norm_wrapper");
+  const ctcfCheckbox = document.getElementById("apply_ctcf_norm");
+  const ctcfLabel    = document.getElementById("apply_ctcf_norm_wrapper");
+  const predictCtcfCheckbox = document.getElementById("predict_ctcf");
+  const predictCtcfWrapper  = document.getElementById("predict_ctcf_wrapper");
+  const ctcfDropdown = document.getElementById("ctcf_bw_path");
+
+  // On load: set label class if it's already checked
+  if (atacCheckbox.checked) {
+    atacLabel.classList.add("checked");
+  }
+
+  // On change: toggle the "checked" class
+  atacCheckbox.addEventListener("change", function() {
+    if (this.checked) {
+      atacLabel.classList.add("checked");
+    } else {
+      atacLabel.classList.remove("checked");
+    }
+  });
+
+  if (ctcfCheckbox.checked) {
+    ctcfLabel.classList.add("checked");
+  }
+
+  ctcfCheckbox.addEventListener("change", function() {
+    if (this.checked) { 
+      ctcfLabel.classList.add("checked");
+    } else {
+      ctcfLabel.classList.remove("checked");
+    }
+  });
+
+  // 1) Dropdown => checkbox
+  ctcfDropdown.addEventListener("change", function() {
+    if (this.value === "none") {
+      predictCtcfCheckbox.checked = true;
+      predictCtcfWrapper.classList.add("checked");
+      // Also check the apply norm box
+      ctcfCheckbox.checked = true;
+      ctcfLabel.classList.add("checked");
+    } else {
+      predictCtcfCheckbox.checked = false;
+      predictCtcfWrapper.classList.remove("checked");
+    }
+    storeFormFields();
+    collectAndDisplayErrors();
+  });
+
+  // 2) Checkbox => dropdown
+  predictCtcfCheckbox.addEventListener("change", function() {
+    if (this.checked) {
+      ctcfDropdown.value = "none";
+      predictCtcfWrapper.classList.add("checked");
+      ctcfCheckbox.checked = true;
+      ctcfLabel.classList.add("checked");
+    } else {
+      predictCtcfWrapper.classList.remove("checked");
+    }
+    storeFormFields();
+    collectAndDisplayErrors();
+  });
+
 
   formElem.addEventListener("submit", function(e) {
     if (runInProgress) {
@@ -1115,4 +1117,50 @@ function checkMinimumRegionSize() {
     }
   }
   return null;
+}
+
+function updateNormalizationLabels() {
+  const modelVal   = document.getElementById("model_select").value;
+  const atacLabel  = document.getElementById("apply_atac_norm_label");
+  const ctcfLabel  = document.getElementById("apply_ctcf_norm_label");
+  const ctcfRow    = document.getElementById("ctcf_norm_row");
+  const reqDiv     = document.getElementById("model-requirements-list");
+  
+  // Suppose we have a checkbox or row for "Generate my CTCF"
+  const predictCtcfRow = document.getElementById("predict_ctcf_row");
+
+  // Basic guard
+  if (!atacLabel || !ctcfLabel || !ctcfRow || !reqDiv || !predictCtcfRow) return;
+
+  if (modelVal === "IMR90") {
+    // Hide the entire "Apply CTCF norm" row
+    ctcfRow.style.display = "none"; 
+
+    // Hide the "generate CTCF" row for IMR90
+    predictCtcfRow.style.display = "none";
+
+    // Update the ATAC label and the requirements text
+    atacLabel.innerHTML = "Apply <strong>log norm</strong> to my raw ATAC file";
+    reqDiv.innerHTML = "This model requires a <strong>log norm</strong> ATAC file and a <strong>log2FC norm</strong> CTCF file.";
+  } 
+  else if (modelVal === "BALL") {
+    // Show the "Apply CTCF norm" row
+    ctcfRow.style.display = "";
+
+    // Also show the "generate CTCF" row for B-ALL
+    predictCtcfRow.style.display = "";
+
+    // Update text
+    atacLabel.innerHTML = "Apply <strong>minmax norm</strong> to my raw ATAC file";
+    ctcfLabel.innerHTML = "Apply <strong>minmax norm</strong> to my raw CTCF file";
+    reqDiv.innerHTML = "This model requires <strong>minmax normalized</strong> ATAC and CTCF files.";
+  } 
+  else {
+    // Fallback for any other model
+    ctcfRow.style.display = "";
+    predictCtcfRow.style.display = "";
+    atacLabel.innerHTML = "Apply normalization to my raw ATAC file";
+    ctcfLabel.innerHTML = "Apply normalization to my raw CTCF file";
+    reqDiv.innerHTML  = "";
+  }
 }

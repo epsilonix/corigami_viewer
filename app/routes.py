@@ -19,8 +19,7 @@ from app.utils import (
     generate_peaks_from_bigwig_macs2,
     get_bigwig_signal,
     save_uploaded_file,
-    normalize_atac,
-    normalize_ctcf,
+    normalize_bigwig,
     predict_ctcf,
     predict_peaks,
     prepare_chimeric_gene_track_config,
@@ -58,9 +57,7 @@ def prepare_plot_configs(
     ctcf_bw_for_model,
     raw_atac_path,
     del_start=None,
-    del_width=None,
-    norm_atac=None,
-    norm_ctcf=None
+    del_width=None
 ):
     """
     Renders the final charts for standard (non-chimeric) or single-chrom
@@ -133,7 +130,6 @@ def prepare_plot_configs(
     ctcf_positions_mb = [p / 1e6 for p in ctcf_positions]
     ctcf_chart_config = {
         "chart": {"height": 100},
-        "normMethod": norm_ctcf,
         "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
         "yAxis": {},
         "series": [{
@@ -148,7 +144,6 @@ def prepare_plot_configs(
     atac_positions_mb = [p / 1e6 for p in atac_positions]
     atac_chart_config = {
         "chart": {"height": 100},
-        "normMethod": norm_atac,
         "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
         "yAxis": {},
         "series": [{
@@ -193,8 +188,6 @@ def run_prediction_and_render(
     output_folder,
     del_start=None,
     del_width=None,
-    norm_atac=None,
-    norm_ctcf=None,
     screening_requested=False # for chimeric mode to pass chrCHIM.fa.gz folder
 ):
     """
@@ -295,9 +288,7 @@ def run_prediction_and_render(
         ctcf_bw_for_model,
         raw_atac_path,
         del_start,
-        del_width,
-        norm_atac,
-        norm_ctcf
+        del_width
     )
 
     # 4) Build gene track config
@@ -341,7 +332,7 @@ def index():
         return render_template("index.html", screening_mode=False, output_folder=output_folder)
 
     # Check chimeric / deletion / screening settings 
-    chimeric_active = (request.form.get('region_chr2', '').strip() != '')
+    chimeric_active = (request.form.get('region_start2', '').strip() != '')
     if chimeric_active:
         session['chimeric_active'] = True
     ds_option = request.form.get('ds_option', 'none')
@@ -351,15 +342,18 @@ def index():
     os.makedirs(output_folder, exist_ok=True)
 
     # Get model path
-    region_model = request.form.get('model_select', 'V4')
-    if region_model == 'V1':
+    region_model = request.form.get('model_select')
+    if region_model == 'IMR90':
         model_path = "corigami_data/model_weights/v1_jimin.ckpt"
-    elif region_model == 'V2':
-        model_path = "corigami_data/model_weights/v2_javier.ckpt"
-    elif region_model == 'V3':
-        model_path = "corigami_data/model_weights/v3_romane.ckpt"
-    elif region_model == 'V4':
+        required_atac_norm = 'log'
+        required_ctcf_norm = 'log2fc'
+    elif region_model == 'BALL':
         model_path = "corigami_data/model_weights/v4_javier.ckpt"
+        required_atac_norm = 'minmax'
+        required_ctcf_norm = 'minmax'
+
+    apply_atac_norm = (request.form.get('apply_atac_norm') == 'true')
+    apply_ctcf_norm = (request.form.get('apply_ctcf_norm') == 'true')
 
     session['model_path'] = model_path
 
@@ -402,6 +396,9 @@ def index():
     raw_atac_path = request.form.get('atac_bw_path','').strip()
     raw_ctcf_path = request.form.get('ctcf_bw_path','').strip()
 
+
+    prenorm_atac_path = raw_atac_path   # ensures variable is in scope
+
     # 1) ATAC array assembly
     if chimeric_active:
         a1 = extract_bigwig_region_array(raw_atac_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
@@ -411,10 +408,10 @@ def index():
         atac_arr = extract_bigwig_region_array(raw_atac_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
 
     # 2) CTCF path or array
-    final_ctcf_path = raw_ctcf_path if raw_ctcf_path and raw_ctcf_path.lower() != 'none' else None
+    prenorm_ctcf_path = raw_ctcf_path if raw_ctcf_path and raw_ctcf_path.lower() != 'none' else None
     ctcf_arr = None
 
-    if not final_ctcf_path:  # => predict
+    if not prenorm_ctcf_path:  # => predict
         if chimeric_active:
             p1 = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, output_folder)
             p2 = predict_ctcf(raw_atac_path, region_chr2, region_start2, region_end2, output_folder)
@@ -422,7 +419,7 @@ def index():
             r2 = extract_bigwig_region_array(p2, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
             ctcf_arr = np.concatenate([r1, r2])
         else:
-            final_ctcf_path = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, output_folder)
+            prenorm_ctcf_path = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, output_folder)
 
     # 3) Write final bigWigs if chimeric
     if chimeric_active:
@@ -432,13 +429,9 @@ def index():
             r2 = extract_bigwig_region_array(raw_ctcf_path, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
             ctcf_arr = np.concatenate([r1, r2])
         atac_bw, ctcf_bw = write_chimeric_bigwig(atac_arr, ctcf_arr, output_folder, chim_len, "chrCHIM")
-        final_atac_path, final_ctcf_path = atac_bw, ctcf_bw
-    else:
-        # Non-chimeric
-        final_atac_path = raw_atac_path
-        # If final_ctcf_path wasn't set (predicted above), it's a path from predict_ctcf
-    print("ATAC:", final_atac_path)
-    print("CTCF:", final_ctcf_path)
+        prenorm_atac_path, prenorm_ctcf_path = atac_bw, ctcf_bw
+    print("ATAC:", prenorm_atac_path)
+    print("CTCF:", prenorm_ctcf_path)
 
     # 5a) FASTA
     if chimeric_active:
@@ -466,18 +459,7 @@ def index():
 
     session['seq_dir'] = seq_dir
     
-    #Get Peaks file
-
-
-
-    # 6) Normalization if requested (chimeric mode) -- updated to mimic standard mode normalization logic
-    print("Normalization requested")
-    norm_atac_method = request.form.get('norm_atac')
-    print("norm_atac_method =>", norm_atac_method)
-    norm_ctcf_method = request.form.get('norm_ctcf')
-    print("norm_ctcf_method =>", norm_ctcf_method)
-    training_norm = request.form.get('training_norm')
-    print("training_norm =>", training_norm)
+    #mode
 
     if chimeric_active:
         chrom, start, end = "chrCHIM", 0, chim_len
@@ -485,9 +467,6 @@ def index():
         chrom = region_chr1
         start = region_start1
         end   = region_end1
-
-    norm_atac_path = None
-    norm_ctcf_path = None
 
     ## Screening logic
     if screening_requested:
@@ -500,7 +479,7 @@ def index():
             # If user didn’t select one in the form, or you want to handle the fallback
             # If you want to force the user to pick a peaks file, you can raise an error instead.
             peaks_file, temp_bedgraph = generate_peaks_from_bigwig_macs2(
-                bw_path=final_atac_path,
+                bw_path=prenorm_atac_path,
                 chrom=chrom,
                 start=start,
                 end=end,
@@ -510,48 +489,25 @@ def index():
 
         session['peaks_file'] = peaks_file
 
-    if (norm_atac_method in [None, "none"]) and (norm_ctcf_method in [None, "none"]):
-        print("Route 1: norm_atac_method and norm_ctcf_method are none")
-        if not training_norm:
-            print("training_norm is none, setting to minmax")
-            training_norm = 'minmax'
-        print(f"training_norm is {training_norm}")
-        norm_atac_path = normalize_atac(final_atac_path, chrom, start, end, training_norm, output_folder)
-        print(f'normalizing atac with parameters: {training_norm}, {chrom}, {start}, {end}, saving to: {norm_atac_path}')
-        norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, training_norm, output_folder)
-        print(f'normalizing ctcf with parameters: {training_norm}, {chrom}, {start}, {end}, saving to: {norm_ctcf_path}')
-
-    elif (norm_atac_method not in [None, "none"]) and (norm_ctcf_method in [None, "none"]):
-        print("Route 2: norm_atac_method is not none and norm_ctcf_method is none")
-        # If only ATAC's norm is provided => use that for both
-        norm_atac_path = final_atac_path
-        norm_ctcf_path = normalize_ctcf(final_ctcf_path, chrom, start, end, norm_atac_method, output_folder)
-        print(f'normalizing ctcf with parameters: {norm_atac_method}, {chrom}, {start}, {end}, saving to: {norm_ctcf_path}')
-
-    elif (norm_atac_method in [None, "none"]) and (norm_ctcf_method not in [None, "none"]):
-        print("Route 3: norm_atac_method is none and norm_ctcf_method is not none")
-        # If only CTCF's norm is provided => use that for both
-        norm_ctcf_path = final_ctcf_path
-        norm_atac_path = normalize_atac(final_atac_path, chrom, start, end, norm_ctcf_method, output_folder)
-        print(f'normalizing atac with parameters: {norm_ctcf_method}, {chrom}, {start}, {end}, saving to: {norm_atac_path}')
-
+    if apply_atac_norm:
+        final_atac_path = normalize_bigwig(
+            prenorm_atac_path, 
+            chrom, start, end,
+            required_atac_norm,
+            output_folder
+        )
     else:
-        print("both files already normalized")
-        # If both are provided, they must match
-        if norm_atac_method != norm_ctcf_method:
-            return "ATAC/CTCF must share the same norm method."
-        norm_atac_path = final_atac_path
-        norm_ctcf_path = final_ctcf_path
+        final_atac_path = prenorm_atac_path
 
-    print("Normalization complete.")
-    print("ATAC =>", norm_atac_path)
-    print("CTCF =>", norm_ctcf_path)
-
-    if norm_atac_method == "none":
-        final_atac_path = norm_atac_path  # actually use the new normalized file
-
-    if norm_ctcf_method == "none":
-        final_ctcf_path = norm_ctcf_path
+    if apply_ctcf_norm:
+        final_ctcf_path = normalize_bigwig(
+            prenorm_ctcf_path, 
+            chrom, start, end,
+            required_ctcf_norm,
+            output_folder
+        )
+    else:
+        final_ctcf_path = prenorm_ctcf_path
 
     # Decide if standard or chimeric
     if chimeric_active:
@@ -567,8 +523,6 @@ def index():
             "ctcf_bw_for_model": final_ctcf_path,
             "raw_atac_path": final_atac_path,
             "output_folder": output_folder,
-            "norm_atac": norm_atac_method,
-            "norm_ctcf": norm_ctcf_method,
             "screening_requested": screening_requested,
             "seq_dir": seq_dir
         }
@@ -624,8 +578,6 @@ def index():
             "output_folder": output_folder,
             "del_start": del_start,
             "del_width": del_width,
-            "norm_atac": norm_atac_method,
-            "norm_ctcf": norm_ctcf_method,
             "screening_requested": screening_requested,
             "seq_dir": seq_dir
         }
@@ -672,8 +624,6 @@ def index():
         screening_config=configs["screening_config"],
         screening_mode=screening_requested,
         screening_params="{}",
-        norm_atac=norm_atac_method,
-        norm_ctcf=norm_ctcf_method,
         gene_track_config=json.dumps(gene_track_cfg),
         user_output_folder=output_folder,
         custom_axis_config=json.dumps(custom_axis_config)
