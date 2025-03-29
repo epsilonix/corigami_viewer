@@ -81,33 +81,6 @@
     );
   </script>
 
-  <!-- If you want the front-end to auto-run screening on load: -->
-  <script>
-    // If you want to override region_chr / region_start / region_end with chimeric values:
-    {% if "chrCHIM" in hi_c_config or "chrCHIM" in atacConfig or "chrCHIM" in ctcfConfig %}
-      // In a real scenario, you'd pass `chim_name` and `chim_len` from the server.
-      // For example:
-      var chimName = "chrCHIM"; 
-      var chimLen  = 3145728;  // or from your context
-      // Overwrite the form fields so runScreening() picks them up:
-      let regionChrElem   = document.getElementById("region_chr");
-      let regionStartElem = document.getElementById("region_start");
-      let regionEndElem   = document.getElementById("region_end");
-      if (regionChrElem && regionStartElem && regionEndElem) {
-        regionChrElem.value = chimName;
-        regionStartElem.value = 0;
-        regionEndElem.value   = chimLen;
-      }
-      // Optionally also store in screening_params:
-      window.screening_params.region_chr   = chimName;
-      window.screening_params.region_start = 0;
-      window.screening_params.region_end   = chimLen;
-    {% endif %}
-
-    // Finally, call runScreening() if we want immediate screening
-    runScreening();
-  </script>
-
 {% else %}
   <script>
     window.screening_mode = false;

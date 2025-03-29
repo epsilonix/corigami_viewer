@@ -115,7 +115,7 @@ def run_prediction_task(prediction_script, region_chr, region_start, region_end,
 ###############################################################################
 def run_screening_task(screening_script, region_chr, screen_start, screen_end,
                        model_path, seq_dir, atac_bw_path, ctcf_bw_path, 
-                       peaks_file, output_dir, perturb_width, step_size,
+                       peaks_file, output_dir, perturb_width,
                        env=None):
     """
     Runs the screening.py script. Now requires:
@@ -139,7 +139,6 @@ def run_screening_task(screening_script, region_chr, screen_start, screen_end,
         "--atac", atac_bw_path,
         "--out", output_dir,
         "--perturb-width", str(perturb_width),
-        "--step-size", str(step_size),
         "--plot-impact-score",
         "--save-pred",
         "--save-perturbation",

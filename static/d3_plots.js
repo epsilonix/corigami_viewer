@@ -137,68 +137,52 @@ function drawHiCChart(containerSelector, config) {
 }
 
 
+/**
+ * Draws a column (bar) chart using the given config.
+ * - If config.xAxis.axisBreak is not true, it does the standard single-domain approach.
+ * - If config.xAxis.axisBreak === true, and leftDomain/rightDomain are provided,
+ *   it uses a two-scale approach to skip the middle region (like a real axis break).
+ *
+ * The rest of the code is your original logic for binning, screening shading, Y-axis, etc.
+ */
 function drawColumnChart(containerSelector, config) {
   console.log("=== drawColumnChart START ===");
   console.log("Container selector:", containerSelector);
   console.log("Chart config:", config);
 
-  // Used for domain-based alignment
+  // -----------------------------------------------------------------
+  // Constants & defaults (unchanged)
+  // -----------------------------------------------------------------
   const PX_PER_MB = 200;
-
-  // Guarantee 30 bars per Mb in NON-screening mode
   const MIN_BARS_PER_MB = 30;
-
-  // No X-axis ticks at all:
   const HIDE_X_AXIS_LABELS = true;
-
-  // Standard margins
   const margin = { top: 20, right: 20, bottom: 40, left: 50 };
 
-  // 1) Validate xAxis
+  // -----------------------------------------------------------------
+  // 1) Basic validation
+  // -----------------------------------------------------------------
   if (!config.xAxis || typeof config.xAxis.min !== "number" || typeof config.xAxis.max !== "number") {
     console.warn("Missing or invalid xAxis.min/max in config.xAxis:", config.xAxis);
     return;
   }
   const xMin = config.xAxis.min;
   const xMax = config.xAxis.max;
-  const domainSpanMb = xMax - xMin;  // in Mb
-  const domainSpan = xMax - xMin;    // also in Mb (assuming xMin..xMax are in Mb)
+  const domainSpanMb = xMax - xMin;
 
-  // 2) Compute total chart width in px
-  let fullWidth = domainSpanMb * PX_PER_MB;
-  console.log("xMin:", xMin, "xMax:", xMax,
-              "domainSpanMb:", domainSpanMb,
-              "=> fullWidth(px):", fullWidth);
+  // We'll store these in a closure so we can detect axisBreak
+  const hasBreak   = !!config.xAxis.axisBreak;           // NEW
+  const leftDomain = config.xAxis.leftDomain || [];       // e.g. [xMin, delStartMb]
+  const rightDomain= config.xAxis.rightDomain || [];      // e.g. [delEndMb, xMax]
 
-  const height = config.chart.height || 150;
-  const canvasWidth  = fullWidth + margin.left + margin.right;
-  const canvasHeight = height    + margin.top  + margin.bottom;
-
-  console.log("Canvas width:", canvasWidth,
-              "Canvas height:", canvasHeight);
-
-  // 3) Create hi-res canvas
-  const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
-  if (!ctx) {
-    console.error("No 2D context returned; createHiResCanvas might have failed?");
-    return;
-  }
-  ctx.translate(margin.left, margin.top);
-
-  // 4) Grab data
-  const series = config.series && config.series[0];
-  if (!series) {
-    console.error("No series data => no plotting possible.");
-    return;
-  }
-  let originalData = series.data || [];
+  // -----------------------------------------------------------------
+  // 2) Prepare data array (binning/screening) EXACTLY as before
+  // -----------------------------------------------------------------
+  let originalData = (config.series && config.series[0] && config.series[0].data) || [];
   console.log("Data length:", originalData.length);
-
-  if (originalData.length === 0) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = "14px sans-serif";
-    ctx.fillText("No data available", fullWidth / 2, height / 2);
+  if (!originalData.length) {
+    // Show "No data" message
+    const fallback = document.querySelector(containerSelector);
+    if (fallback) fallback.innerHTML = "<p style='color:red;'>No data available.</p>";
     console.warn("Column chart: data array is empty.");
     return;
   }
@@ -207,36 +191,26 @@ function drawColumnChart(containerSelector, config) {
   originalData.sort((a, b) => a[0] - b[0]);
   console.log("Sorted data (first few points):", originalData.slice(0, 5));
 
-  // 5) If screening => just use original data.
-  //    If non-screening => ensure min 30 bars per Mb => bin or upsample
+  // Screening or binning
   let data = [];
   if (config.screening) {
     data = originalData;
   } else {
-    // We want at least 30 bars per Mb
     const minBars = Math.round(domainSpanMb * MIN_BARS_PER_MB);
-    console.log("minBars needed =", minBars,
-                "domainSpanMb:", domainSpanMb);
-
+    console.log("minBars needed =", minBars, "domainSpanMb:", domainSpanMb);
     if (originalData.length >= minBars) {
-      // We already have enough data => just use it
       data = originalData;
     } else {
-      // We have fewer data points => create a binned array with minBars bins
-
       console.log("Binning to produce", minBars, "bars");
       data = binAndUpsampleData(originalData, xMin, xMax, minBars);
     }
   }
+
   console.log("Final data length after binning or screening mode:", data.length);
 
-  // 6) Build X scale
-  //   We interpret xMin..xMax as Mb domain
-  const xScale = d3.scaleLinear()
-    .domain([xMin, xMax])
-    .range([0, fullWidth]);
-
-  // 7) Y domain logic
+  // -----------------------------------------------------------------
+  // 3) Y-domain logic (same as before)
+  // -----------------------------------------------------------------
   const rawYMin = d3.min(data, d => d[1]);
   const rawYMax = d3.max(data, d => d[1]);
   let yMin = (typeof rawYMin === "number") ? rawYMin : 0;
@@ -244,12 +218,12 @@ function drawColumnChart(containerSelector, config) {
 
   let domainMin, domainMax, axisValue;
   if (yMax < 0) {
-    // entirely negative
-    domainMin = yMin;
+    // entire negative
+    domainMin = yMin; 
     domainMax = yMax;
-    axisValue = yMin; 
+    axisValue = yMin;
   } else if (yMin > 0) {
-    // entirely positive
+    // entire positive
     domainMin = 0;
     domainMax = yMax;
     axisValue = 0;
@@ -260,36 +234,210 @@ function drawColumnChart(containerSelector, config) {
     axisValue = 0;
   }
 
+  // We'll define yScale later inside each approach
+  // but let's figure out the chart height
+  const height = config.chart.height || 150;
+
+  // -----------------------------------------------------------------
+  // 4) Check if axisBreak => do the "two-scale" approach
+  // -----------------------------------------------------------------
+  if (hasBreak && leftDomain.length === 2 && rightDomain.length === 2) {
+    // =========== NEW: Two-scale approach =============
+    // 4a) Calculate spans
+    const leftSpan  = leftDomain[1]  - leftDomain[0];
+    const rightSpan = rightDomain[1] - rightDomain[0];
+    const totalSpan = leftSpan + rightSpan;
+    const gapPx     = 0; // If you want a small gap, e.g. 20
+    // Convert to px
+    const leftWidthPx  = leftSpan  * PX_PER_MB;
+    const rightWidthPx = rightSpan * PX_PER_MB;
+    const totalWidthPx = leftWidthPx + rightWidthPx + gapPx;
+
+    // 4b) Create hi-res canvas
+    const canvasWidth  = totalWidthPx + margin.left + margin.right;
+    const canvasHeight = height       + margin.top  + margin.bottom;
+    const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
+    if (!ctx) {
+      console.error("No 2D context for 2-scale approach");
+      return;
+    }
+    ctx.translate(margin.left, margin.top);
+
+    // 4c) Build 2 x‐scales
+    const scaleLeft = d3.scaleLinear()
+      .domain([ leftDomain[0],  leftDomain[1] ])
+      .range([0, leftWidthPx]);
+    const scaleRight = d3.scaleLinear()
+      .domain([ rightDomain[0], rightDomain[1] ])
+      .range([0, rightWidthPx]);
+
+    // 4d) Filter data into left portion / right portion
+    const leftData  = data.filter(d => d[0] >= leftDomain[0]  && d[0] <= leftDomain[1]);
+    const rightData = data.filter(d => d[0] >= rightDomain[0] && d[0] <= rightDomain[1]);
+
+    // 4e) Y scale (common for both)
+    const yScale = d3.scaleLinear()
+      .domain([domainMin, domainMax])
+      .nice()
+      .range([height, 0]);
+    const axisPx = yScale(axisValue);
+
+    // 4f) If screening => shading
+    if (config.screening) {
+      // We'll do the shading for "skip region" or anything you want
+      // But we have 2 separate scales for left & right
+      // If you want the same shading logic as normal, you'd have to replicate it
+      // We'll do a minimal example:
+      ctx.save();
+      ctx.fillStyle = "rgba(200, 200, 200, 0.4)";
+      // Suppose you want to shade first 1 Mb on the left chunk
+      const xBreakMb = 1.0; 
+      if (leftSpan >= xBreakMb) {
+        const w = scaleLeft(leftDomain[0] + xBreakMb);
+        ctx.fillRect(0, 0, w, height);
+      }
+      // etc. Or replicate your old logic
+      ctx.restore();
+    }
+
+    // 4g) Decide bar spacing on left side
+    let leftCount = leftData.length;
+    let leftSpacing = (leftCount > 1) ? (leftWidthPx / (leftCount - 1)) : leftWidthPx;
+    let barMultiplier = config.screening ? 0.02 : 0.05;
+    let leftBarWidth = leftSpacing * barMultiplier;
+    leftBarWidth = Math.min(Math.max(leftBarWidth, 1), 20);
+
+    // 4h) Draw left bars
+    leftData.forEach(d => {
+      const xVal = d[0], yVal = d[1];
+      const xPx = scaleLeft(xVal) - leftBarWidth/2;
+      const yValPx = yScale(yVal);
+      const top = Math.min(yValPx, axisPx);
+      const bottom = Math.max(yValPx, axisPx);
+      const h = bottom - top;
+      ctx.fillStyle = (config.series[0].color || "#9FC0DE");
+      ctx.fillRect(xPx, top, leftBarWidth, h);
+    });
+
+    // Baseline for left chunk
+    ctx.beginPath();
+    ctx.moveTo(0, axisPx);
+    ctx.lineTo(leftWidthPx, axisPx);
+    ctx.strokeStyle = "#000";
+    ctx.stroke();
+
+    // 4i) Right chunk
+    // Move over
+    ctx.save();
+    ctx.translate(leftWidthPx + gapPx, 0);
+
+    let rightCount = rightData.length;
+    let rightSpacing= (rightCount > 1) ? (rightWidthPx / (rightCount - 1)) : rightWidthPx;
+    let rightBarWidth = rightSpacing * barMultiplier;
+    rightBarWidth = Math.min(Math.max(rightBarWidth,1), 20);
+
+    rightData.forEach(d => {
+      const xVal = d[0], yVal = d[1];
+      const xPx = scaleRight(xVal) - rightBarWidth/2;
+      const yValPx = yScale(yVal);
+      const top = Math.min(yValPx, axisPx);
+      const bottom = Math.max(yValPx, axisPx);
+      const h = bottom - top;
+      ctx.fillStyle = (config.series[0].color || "#9FC0DE");
+      ctx.fillRect(xPx, top, rightBarWidth, h);
+    });
+
+    // Baseline for right chunk
+    ctx.beginPath();
+    ctx.moveTo(0, axisPx);
+    ctx.lineTo(rightWidthPx, axisPx);
+    ctx.stroke();
+
+    ctx.restore(); // end right chunk
+
+    // 4j) Y-axis line & ticks (on far left)
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(0, height);
+    ctx.strokeStyle = "#000";
+    ctx.stroke();
+    // y ticks
+    ctx.save();
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.font = "10px sans-serif";
+    yScale.ticks(5).forEach(t => {
+      const yPos = yScale(t);
+      ctx.beginPath();
+      ctx.moveTo(0, yPos);
+      ctx.lineTo(-5, yPos);
+      ctx.stroke();
+      ctx.fillText(t, -7, yPos);
+    });
+    ctx.restore();
+
+    // 4k) (Optional) Zigzag break line
+    if (!HIDE_X_AXIS_LABELS) {
+      ctx.save();
+      ctx.translate(leftWidthPx, axisPx);
+      ctx.beginPath();
+      ctx.moveTo(-3, 0);
+      ctx.lineTo(0, 6);
+      ctx.lineTo(3, 0);
+      ctx.strokeStyle = "#000";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 4l) X-axis label & chart title if you want them
+    if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
+      ctx.textAlign = "center";
+      ctx.textBaseline = "bottom";
+      ctx.font = "12px sans-serif";
+      ctx.fillText(config.xAxis.title, totalWidthPx/2, height + margin.bottom - 5);
+    }
+    if (config.title && config.title.text) {
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      ctx.font = "13px sans-serif";
+      ctx.fillText(config.title.text, totalWidthPx/2, -margin.top/2);
+    }
+
+    console.log("=== drawColumnChart END (two-scale) ===");
+    return;  // Done with the axisBreak case
+  }
+
+  // -----------------------------------------------------------------
+  // 5) Otherwise => Single-scale approach (original code EXACTLY)
+  // -----------------------------------------------------------------
+
+  // 5a) Compute fullWidth from domainSpanMb
+  let fullWidth = domainSpanMb * PX_PER_MB;
+  const canvasWidth  = fullWidth + margin.left + margin.right;
+  const canvasHeight = height    + margin.top  + margin.bottom;
+
+  // Create hi-res canvas
+  const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
+  if (!ctx) {
+    console.error("No 2D context returned; createHiResCanvas might have failed?");
+    return;
+  }
+  ctx.translate(margin.left, margin.top);
+
+  // 5b) Build the single xScale
+  const xScale = d3.scaleLinear()
+    .domain([xMin, xMax])
+    .range([0, fullWidth]);
+
+  // 5c) Build the yScale & axisPx
   const yScale = d3.scaleLinear()
     .domain([domainMin, domainMax])
     .nice()
     .range([height, 0]);
   const axisPx = yScale(axisValue);
 
-  console.log("yMin:", yMin, "yMax:", yMax,
-              "=> domainMin:", domainMin, "domainMax:", domainMax,
-              "axisValue:", axisValue, "axisPx:", axisPx);
-
-  // 8) Decide bar spacing => we do a naive approach:
-  //    spacing = fullWidth/(data.length-1), barWidth = spacing * fraction
-  let dataCount = data.length;
-  let spacingPixels = (dataCount > 1) ? (fullWidth / (dataCount - 1)) : fullWidth;
-  let barMultiplier;
-  if (config.screening) {
-    barMultiplier = 0.02; 
-  } else {
-    barMultiplier = 0.05; 
-  }
-  let barWidth = spacingPixels * barMultiplier;
-  const maxBarWidthClamp = 20;
-  barWidth = Math.min(barWidth, maxBarWidthClamp);
-  barWidth = Math.max(barWidth, 1);
-
-  console.log("spacingPixels:", spacingPixels,
-              "barMultiplier:", barMultiplier,
-              "barWidth:", barWidth);
-
-  // 9) If screening => shading skip region
+  // 5d) If screening => shading skip region (unchanged logic)
   if (config.screening) {
     ctx.save();
     ctx.fillStyle = "rgba(200, 200, 200, 0.4)";
@@ -310,7 +458,7 @@ function drawColumnChart(containerSelector, config) {
       const regionChrElem = document.getElementById("region_chr1");
       if (regionChrElem && window.chromosomeLengths) {
         let regionChr = regionChrElem.value;
-        let bpLen  = window.chromosomeLengths[regionChr];
+        let bpLen = window.chromosomeLengths[regionChr];
         if (bpLen) {
           chromEndMb = bpLen / 1e6;
         }
@@ -330,41 +478,40 @@ function drawColumnChart(containerSelector, config) {
     ctx.restore();
   }
 
-  // 10) Draw bars
-  data.forEach(d => {
-    const xVal = d[0];
-    const yVal = d[1];
+  // 5e) Decide bar spacing
+  let dataCount = data.length;
+  let spacingPixels = (dataCount > 1) ? (fullWidth / (dataCount - 1)) : fullWidth;
+  let barMultiplier = config.screening ? 0.02 : 0.05;
+  let barWidth = spacingPixels * barMultiplier;
+  barWidth = Math.min(barWidth, 20);
+  barWidth = Math.max(barWidth, 1);
 
+  // 5f) Draw bars
+  data.forEach(d => {
+    const xVal = d[0], yVal = d[1];
     const xPx = xScale(xVal) - barWidth/2;
     const yValPx = yScale(yVal);
-
     const top    = Math.min(yValPx, axisPx);
     const bottom = Math.max(yValPx, axisPx);
     const h      = bottom - top;
-
-    ctx.fillStyle = series.color || "#9FC0DE";
+    ctx.fillStyle = config.series[0].color || "#9FC0DE";
     ctx.fillRect(xPx, top, barWidth, h);
   });
 
-  // 11) horizontal axis
+  // 5g) Horizontal axis line
   ctx.beginPath();
   ctx.moveTo(0, axisPx);
   ctx.lineTo(fullWidth, axisPx);
   ctx.strokeStyle = "#000";
   ctx.stroke();
 
-  // 12) Hide X-axis ticks entirely (since you said so)
-  // => Do nothing here for x-axis ticks
-
-  // 13) Y-axis line
+  // 5h) Y-axis line & ticks
   ctx.save();
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(0, height);
   ctx.strokeStyle = "#000";
   ctx.stroke();
-
-  // We'll show Y ticks anyway so you can see signal scale
   ctx.textAlign = "right";
   ctx.textBaseline = "middle";
   ctx.font = "10px sans-serif";
@@ -378,8 +525,8 @@ function drawColumnChart(containerSelector, config) {
   });
   ctx.restore();
 
-  // X-axis label (if you want it)
-  if (config.xAxis.title) {
+  // 5i) X-axis label & chart title
+  if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
     ctx.textAlign = "center";
     ctx.textBaseline = "bottom";
     ctx.font = "12px sans-serif";
@@ -388,20 +535,6 @@ function drawColumnChart(containerSelector, config) {
       : (config.xAxis.title.text || "");
     ctx.fillText(titleText, fullWidth / 2, height + margin.bottom - 5);
   }
-
-  // Y-axis label
-  if (config.yAxis && config.yAxis.title) {
-    ctx.save();
-    ctx.translate(-margin.left, height / 2);
-    ctx.rotate(-Math.PI / 2);
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.font = "12px sans-serif";
-    ctx.fillText(config.yAxis.title, 0, 0);
-    ctx.restore();
-  }
-
-  // Chart title
   if (config.title && config.title.text) {
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
@@ -409,20 +542,11 @@ function drawColumnChart(containerSelector, config) {
     ctx.fillText(config.title.text, fullWidth / 2, -margin.top / 2);
   }
 
-  console.log("=== drawColumnChart END ===");
+  console.log("=== drawColumnChart END (single scale) ===");
 }
 
-/**
- * binAndUpsampleData(originalData, xMin, xMax, desiredBins)
- * 
- * Creates an array of `desiredBins` points from [xMin..xMax].
- * Each bin is an interval: binWidth = (xMax - xMin)/desiredBins.
- * We gather the originalData points that fall into that bin 
- * (by x coordinate), average their y-values, 
- * or if no points => set 0 or carry forward last known value.
- *
- * For a truly minimal example, let's do a simple average approach:
- */
+
+
 function binAndUpsampleData(originalData, xMin, xMax, desiredBins) {
   let binned = [];
   const binWidth = (xMax - xMin) / desiredBins;

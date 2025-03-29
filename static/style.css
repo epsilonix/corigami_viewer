@@ -78,13 +78,15 @@ div#gene-track-wrapper {
 /* Custom column width classes */
 .col-20 {
   flex: 0 0 22%;
-  padding: 0 10px;
+  padding: 0 0px 0 10px;
 }
 .col-40 {
   flex: 0 0 39%;
-  padding: 0 10px;
+  padding: 0 0 0 10px;
 }
-
+.col-40:last-of-type {
+  padding-right: 10px;
+}
 /* Container for full-width rows */
 .col-full {
   flex: 0 0 100%;
@@ -106,11 +108,10 @@ span.toggle-plus-label {
   font-size: 0.80em;
   line-height: 0;
   margin: auto 0;
-  color:#888;
+  color: #779ECC
 }
 .toggle-plus {
   font-size: 2em;
-  color: #888;
   cursor: pointer;
   transition: transform 0.3s ease, color 0.3s ease;
   display: inline-block;
@@ -120,10 +121,11 @@ span.toggle-plus-label {
   text-align: center;
   vertical-align: middle;
   transform-origin: center center;
+  color: #779ECC;
 }
 .toggle-plus.active {
   transform: rotate(45deg);
-  color: #555;
+  color: #FFB347;
 }
 
 /* Reverse/Flip Toggle Styling (Using provided yesNo style) */
@@ -410,7 +412,7 @@ input[type="number"] {
 /* Toggle Switches */
 .switch {
   position: relative;
-  background: #D7D7D7;
+  background: #eceaea;
   border-radius: 32px;
   overflow: hidden;
   margin-top: 5px;
@@ -462,6 +464,7 @@ ul.global-error-list, ul.global-warning-list, ul.model-requirements-list {
   list-style-type: none; /* or whatever spacing you prefer */
   margin: 1rem 0;
   padding:0;
+  line-height:1.3;
 }
 
 /* The magic: Each LI gets a background icon. We can do it via ::before pseudo-element. */

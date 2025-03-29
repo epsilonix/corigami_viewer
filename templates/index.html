@@ -62,15 +62,16 @@
             </li>
             <li>
               <strong>Provide an ATAC and CTCF file.</strong> 
-              Make sure to specify the normalization method <strong>currently</strong> applied to each BigWig file. 
+              You may select a pre-normalized file that adheres with the model's requirements, or upload a raw file and check the box to perform normalization.
               If no CTCF file is provided, one will be automatically generated using maxATAC 
-              (but this requires a <em>non-normalized ATAC</em> file).
+              (this requires a <em>raw</em> ATAC file).
             </li>
             <li>
               <strong>Deletion route</strong>: Select a deletion start and width within the bounds of your chosen chromosome window.
             </li>
             <li>
-              <strong>Screening route</strong>: Choose a perturbation width and step size to systematically alter peaks. 
+              <strong>Screening route</strong>: Choose a perturbation width to systematically alter peaks. You may provide an optional peaks file, or generate one automatically. If the latter option is selected, the ATAC bigwig file is first used to generate a bedGraph using UCSC’s bigwigtobedgraph, then MACS2 bdgpeakcall is used to call peaks above a cutoff threshold of 0.5.
+
               <em>Note: </em> when providing two regions, the screening will be skipped for the first and last 1 Mb of the combined region.
             </li>
             <li>
@@ -213,8 +214,8 @@
             <label for="atac_bw_path" class="small-label">ATAC‑seq BigWig File*:</label>
             <div class="file-upload-group">
               <select id="atac_bw_path" name="atac_bw_path" required>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/atac.bw" selected>IMR-90 Preset (raw)</option>
-                <option value="./corigami_data/data/hg38/ball/MCG023_ATAC_merged_IS_slop20_RP20M_minmax01.bw">B-ALL Preset (minmax normalized)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/atac.bw" selected data-model="IMR90">IMR-90 Preset (raw)</option>
+                <option value="./corigami_data/data/hg38/ball/MCG023_ATAC_merged_IS_slop20_RP20M_minmax01.bw" data-model="BALL">B-ALL Preset (minmax normalized)</option>
               </select>
               <label class="upload-button" for="atac_bw_file">Upload</label>
             </div>
@@ -239,8 +240,8 @@
             <div class="file-upload-group">
               <select id="ctcf_bw_path" name="ctcf_bw_path">
                 <option value="none" selected>None (auto-generate)</option>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw">IMR-90 Preset (log2fc normalized)</option>
-                <option value="./corigami_data/data/hg38/ball/MCG023_CTCF_merged_maxatac_predict.bw">B-ALL Preset (minmax normalized)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw" data-model="IMR90">IMR-90 Preset (log2fc normalized)</option>
+                <option value="./corigami_data/data/hg38/ball/MCG023_CTCF_merged_maxatac_predict.bw" data-model="BALL">B-ALL Preset (minmax normalized)</option>
               </select>
               <label class="upload-button" for="ctcf_bw_file">Upload</label>
             </div>
@@ -288,7 +289,7 @@
             <div class="file-upload-group">
               <select id="peaks_file_path" name="peaks_file_path">
                 <option value="none" selected>None (auto-generate)</option>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/MACS2_peaks.narrowPeak.txt">
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/MACS2_peaks.narrowPeak.txt" data-model="IMR90">
                   IMR-90 Preset
                 </option>
               </select>
@@ -300,13 +301,9 @@
         <!-- Screening Fields -->
         <div id="screening-fields-2" class="optional-row" style="display: none;">
           <div class="row">
-            <div class="col-half">
-              <label for="perturb_width" class="small-label">Perturb Width (bp):*</label>
+            <div class="col-full">
+              <label for="perturb_width" class="small-label">Perturbation Width (bp):*</label>
               <input type="number" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}">
-            </div>
-            <div class="col-half">
-              <label for="step_size" class="small-label">Step Size (bp):*</label>
-              <input type="number" id="step_size" name="step_size" value="{{ request.form.step_size or '1000' }}">
             </div>
           </div>
         </div>

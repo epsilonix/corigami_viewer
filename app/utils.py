@@ -261,30 +261,38 @@ def normalize_bigwig(
     print(f"Normalization ({method}) done. Output: {output_path}")
     return output_path
 
-def predict_ctcf(atac_bw, chrom, start, end, output_folder):
+def predict_ctcf(atac_bw, chrom, start, end, ctcf_out_path):
     """
     Generate a synthetic (predicted) CTCF bigWig file from an ATAC bigWig using maxATAC.
     The prediction is normalized using minmax normalization.
     Returns the path to the normalized predicted CTCF file.
     """
-    roi_file = os.path.join(output_folder, "temp_roi.bed")
+    roi_file = ctcf_out_path + ".temp.bed"
     with open(roi_file, "w") as f:
         f.write(f"{chrom}\t{start}\t{end}\n")
-    ctcf_generated = os.path.join(output_folder, "predicted_ctcf.bw")
+    
+    out_dir  = os.path.dirname(ctcf_out_path)
+    # e.g. 'predicted_ctcf_region1'
+    base_name = os.path.splitext(os.path.basename(ctcf_out_path))[0]
+
+    # maxatac will produce base_name.CTCF.bw
     generate_cmd = [
-        "maxatac", "predict", "--tf", "CTCF",
+        "maxatac", "predict",
+        "--tf", "CTCF",
         "--signal", atac_bw,
         "--bed", roi_file,
-        "--out", output_folder,
-        "--name", "predicted_ctcf"
+        "--out", out_dir,
+        "--name", base_name
     ]
-    print("Running CTCF prediction command:", " ".join(generate_cmd))
-    subprocess.run(generate_cmd, check=True, env=os.environ, capture_output=True, text=True)
-    # Normalize the predicted CTCF file (using minmax as default for predicted files)
+    print("Running:", " ".join(generate_cmd))
+    result = subprocess.run(generate_cmd, capture_output=True, text=True, check=True)
+    print("maxatac STDOUT:", result.stdout)
+    print("maxatac STDERR:", result.stderr)
 
     if os.path.exists(roi_file):
         os.remove(roi_file)
-    return ctcf_generated
+
+    return ctcf_out_path
 
 def predict_peaks(bw_path, chrom, start, end, outdir):
     """

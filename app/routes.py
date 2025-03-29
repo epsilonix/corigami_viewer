@@ -96,8 +96,8 @@ def prepare_plot_configs(
     # 5) Remove the first 22 rows (the "top" 22 pixels in array terms)
     if (region_end - region_start) > WINDOW_WIDTH:
         print(f'ACCORDING to prepare_plot_configs, region_end - region_start = {region_end - region_start} and WINDOW_WIDTH = {WINDOW_WIDTH}')
-        if hi_c_matrix.shape[0] > 30:
-            hi_c_matrix = hi_c_matrix[30:, :]
+        if hi_c_matrix.shape[0] > 28:
+            hi_c_matrix = hi_c_matrix[28:, :]
 
     # Build the final data array for the Hi-C plot
     n_rows, n_cols = hi_c_matrix.shape
@@ -162,6 +162,8 @@ def prepare_plot_configs(
         for chart in (ctcf_chart_config, atac_chart_config):
             chart["xAxis"] = {
                 "axisBreak": True,
+                "min": x_start_mb,
+                "max": x_end_mb,
                 "leftDomain": [x_start_mb, del_start_mb],
                 "rightDomain": [del_end_mb, x_end_mb],
                 "title": ""
@@ -413,13 +415,16 @@ def index():
 
     if not prenorm_ctcf_path:  # => predict
         if chimeric_active:
-            p1 = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, output_folder)
-            p2 = predict_ctcf(raw_atac_path, region_chr2, region_start2, region_end2, output_folder)
+            p1_path = os.path.join(output_folder, "predicted_ctcf_region1.bw")
+            p2_path = os.path.join(output_folder, "predicted_ctcf_region2.bw")
+            p1 = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, p1_path)
+            p2 = predict_ctcf(raw_atac_path, region_chr2, region_start2, region_end2, p2_path)
             r1 = extract_bigwig_region_array(p1, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
             r2 = extract_bigwig_region_array(p2, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
             ctcf_arr = np.concatenate([r1, r2])
         else:
-            prenorm_ctcf_path = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, output_folder)
+            single_ctcf_out = os.path.join(output_folder, "predicted_ctcf.bw")
+            prenorm_ctcf_path = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, single_ctcf_out)
 
     # 3) Write final bigWigs if chimeric
     if chimeric_active:
@@ -471,7 +476,6 @@ def index():
     ## Screening logic
     if screening_requested:
         session['perturb_width'] = request.form.get('perturb_width')
-        session['step_size'] = request.form.get('step_size')
 
         peaks_file = request.form.get('peaks_file_path', '').strip()
 
@@ -648,7 +652,6 @@ def run_screening_endpoint():
     region_end     = session.get('final_region_end')
     seq_dir        = session.get('seq_dir')
     perturb_width  = session.get('perturb_width')
-    step_size      = session.get('step_size')
     model_path     = session.get('model_path')
     peaks_file     = session.get('peaks_file')
     print(f'screening starting with seq_dir: {seq_dir}')
@@ -658,7 +661,7 @@ def run_screening_endpoint():
         return jsonify({"error": "No existing data from main run. Please run prediction first."}), 400
 
     # 2) Extract additional parameters for how to run the screening
-    # e.g. perturb_width, step_size, model selection
+    # e.g. perturb_width, model selection
     output_dir    = get_user_output_folder()
 
 
@@ -682,7 +685,6 @@ def run_screening_endpoint():
         peaks_file,    # 9th
         output_dir,    # 10th
         perturb_width,
-        step_size,
         env=env,
         job_timeout=2000
     )

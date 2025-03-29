@@ -55,8 +55,8 @@ def main():
                         help='Ending point for screening.', required=True)
     parser.add_argument('--perturb-width', dest='perturb_width', type=int,
                         help='Width of perturbation used for screening.', required=True)
-    parser.add_argument('--step-size', dest='step_size', type=int,
-                        help='Step size of perturbations in screening.', required=True)
+    # parser.add_argument('--step-size', dest='step_size', type=int,
+    #                     help='Step size of perturbations in screening.', required=True)
 
     # Saving related parameters
     parser.add_argument('--plot-impact-score', dest='plot_impact_score', action='store_true',
@@ -86,7 +86,7 @@ def main():
     
     if args.no_server:
         screening(args.output_path, args.celltype, args.chr_name, args.screen_start, 
-                  args.screen_end, args.perturb_width, args.step_size,
+                  args.screen_end, args.perturb_width, #args.step_size,
                   args.model_path, args.seq_path, args.ctcf_path, args.atac_path,
                   args.use_find_peaks, args.peak_height, args.peak_distance, args.peak_prominence,
                   args.save_pred, args.save_perturbation, args.save_diff,
@@ -100,12 +100,13 @@ def main():
             return "C.Origami Screening Module"
         app.run(debug=True, use_reloader=False)
 
-def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb_width, step_size,
+def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb_width,
               model_path, seq_path, ctcf_path, atac_path,
               use_find_peaks, peak_height, peak_distance, peak_prominence,
               save_pred=False, save_perturbation=False, save_diff=True, save_impact_score=True,
               save_bedgraph=True, plot_impact_score=True, plot_frames=False, peaks_file=None):
     # Load data and model.
+    step_size = 1000
     print(f'screening: {screen_start}, {screen_end}, {perturb_width}, {step_size}', flush=True)
     print(f'screening peaks_file: {peaks_file}', flush=True)
     seq, ctcf, atac = infer.load_data_default(chr_name, seq_path, ctcf_path, atac_path)

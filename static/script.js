@@ -14,7 +14,7 @@ function storeFormFields() {
     "region_chr1", "region_start1", 
     /* remove region_end1 from this list! */
     "del_start", "del_width", 
-    "perturb_width", "step_size", 
+    "perturb_width", 
     "model_select", "atac_bw_path", 
     "ctcf_bw_path", "peaks_file_path"
   ];
@@ -61,7 +61,7 @@ function restoreFormFields() {
   const fields = [
     "region_chr1", "region_start1",
     "del_start", "del_width", 
-    "perturb_width", "step_size", 
+    "perturb_width", 
     "model_select", "atac_bw_path", 
     "ctcf_bw_path", "peaks_file_path", 
     "genome_select"
@@ -473,32 +473,58 @@ function hideSecondChr() {
 }
 
 function toggleOptionalFields() {
-  const dsOption        = document.querySelector('input[name="ds_option"]:checked');
-  const delFields       = document.getElementById("deletion-fields");
-  const scrFields       = document.getElementById("screening-fields-2");
-  const peaksContainer  = document.getElementById("peaks_file_container");
+  const dsOption = document.querySelector('input[name="ds_option"]:checked');
+  const delFields = document.getElementById("deletion-fields");
+  const scrFields = document.getElementById("screening-fields-2");
+  const peaksContainer = document.getElementById("peaks_file_container");
   const togglePlusElemContainer = document.getElementById("toggle-second-chr-container");
+  const endField1 = document.getElementById("region_end1");
 
   if (!dsOption) return;
 
   if (dsOption.value === "deletion") {
+    // show/hide relevant sections
     if (delFields) delFields.style.display = "block";
     if (scrFields) scrFields.style.display = "none";
     if (peaksContainer) peaksContainer.style.display = "none";
-    hideSecondChr(); // always hide in deletion
+    hideSecondChr(); // always hide second region in deletion mode
     if (togglePlusElemContainer) togglePlusElemContainer.style.display = "none";
+
+    // Disable region_end1 so user can’t edit it
+    if (endField1) {
+      endField1.disabled = true;
+      endField1.classList.add("disabled-field");
+      // But we do not clear endField1.value. It retains the computed default. 
+    }
+
   } else if (dsOption.value === "screening") {
+    // show/hide relevant sections
     if (scrFields) scrFields.style.display = "block";
     if (delFields) delFields.style.display = "none";
     if (peaksContainer) peaksContainer.style.display = "block";
     if (togglePlusElemContainer) togglePlusElemContainer.style.display = "block";
+
+    // Re-enable region_end1
+    if (endField1) {
+      endField1.disabled = false;
+      endField1.classList.remove("disabled-field");
+    }
+
   } else {
+    // fallback for any other ds_option
     if (delFields) delFields.style.display = "none";
     if (scrFields) scrFields.style.display = "none";
     if (peaksContainer) peaksContainer.style.display = "none";
     if (togglePlusElemContainer) togglePlusElemContainer.style.display = "block";
+
+    // Re-enable region_end1
+    if (endField1) {
+      endField1.disabled = false;
+      endField1.classList.remove("disabled-field");
+    }
   }
 }
+
 
 function toggleSecondChr() {
   const dsOption = document.querySelector('input[name="ds_option"]:checked');
@@ -526,8 +552,7 @@ function checkFormRequirements() {
       return false;
     }
   } else if (dsOption.value === "screening") {
-    if (!document.getElementById("perturb_width").value.trim() || 
-        !document.getElementById("step_size").value.trim()) {
+    if (!document.getElementById("perturb_width").value.trim()) {
       alert("Please provide both Perturb Width and Step Size for Screening mode.");
       return false;
     }
@@ -694,7 +719,6 @@ function runScreening() {
     region_start: regionStartVal,
     region_end:   regionEndVal,
     perturb_width: document.getElementById("perturb_width").value,
-    step_size:     document.getElementById("step_size").value,
     ctcf_bw_path:  document.getElementById("ctcf_bw_path").value,
     atac_bw_path:  document.getElementById("atac_bw_path").value,
     output_dir:    document.getElementById("output_dir").value,
@@ -755,7 +779,7 @@ function checkRequiredFieldsFilled() {
   if (dsOption.value === "deletion") {
     reqIds.push("del_start", "del_width");
   } else if (dsOption.value === "screening") {
-    reqIds.push("perturb_width", "step_size");
+    reqIds.push("perturb_width");
   }
 
   for (let id of reqIds) {
@@ -868,7 +892,6 @@ document.addEventListener('DOMContentLoaded', function() {
   updateNormalizationLabels();
   // Screening fields
   document.getElementById("perturb_width").addEventListener("input", storeFormFields);
-  document.getElementById("step_size").addEventListener("input", storeFormFields);
 
   // Model changes
   document.getElementById("model_select").addEventListener("change", storeFormFields);
@@ -1120,47 +1143,62 @@ function checkMinimumRegionSize() {
 }
 
 function updateNormalizationLabels() {
-  const modelVal   = document.getElementById("model_select").value;
-  const atacLabel  = document.getElementById("apply_atac_norm_label");
-  const ctcfLabel  = document.getElementById("apply_ctcf_norm_label");
-  const ctcfRow    = document.getElementById("ctcf_norm_row");
-  const reqDiv     = document.getElementById("model-requirements-list");
-  
-  // Suppose we have a checkbox or row for "Generate my CTCF"
-  const predictCtcfRow = document.getElementById("predict_ctcf_row");
+  const modelVal=document.getElementById("model_select").value,
+    atacLabel=document.getElementById("apply_atac_norm_label"),
+    ctcfLabel=document.getElementById("apply_ctcf_norm_label"),
+    ctcfRow=document.getElementById("ctcf_norm_row"),
+    reqDiv=document.getElementById("model-requirements-list"),
+    predictCtcfRow=document.getElementById("predict_ctcf_row"),
+    ctcfDropdown=document.getElementById("ctcf_bw_path"),
+    noneOption=ctcfDropdown?ctcfDropdown.querySelector('option[value="none"]'):null;
+  if(!atacLabel||!ctcfLabel||!ctcfRow||!reqDiv||!predictCtcfRow||!ctcfDropdown||!noneOption)return;
 
-  // Basic guard
-  if (!atacLabel || !ctcfLabel || !ctcfRow || !reqDiv || !predictCtcfRow) return;
-
-  if (modelVal === "IMR90") {
-    // Hide the entire "Apply CTCF norm" row
-    ctcfRow.style.display = "none"; 
-
-    // Hide the "generate CTCF" row for IMR90
-    predictCtcfRow.style.display = "none";
-
-    // Update the ATAC label and the requirements text
-    atacLabel.innerHTML = "Apply <strong>log norm</strong> to my raw ATAC file";
-    reqDiv.innerHTML = "This model requires a <strong>log norm</strong> ATAC file and a <strong>log2FC norm</strong> CTCF file.";
-  } 
-  else if (modelVal === "BALL") {
-    // Show the "Apply CTCF norm" row
-    ctcfRow.style.display = "";
-
-    // Also show the "generate CTCF" row for B-ALL
-    predictCtcfRow.style.display = "";
-
-    // Update text
-    atacLabel.innerHTML = "Apply <strong>minmax norm</strong> to my raw ATAC file";
-    ctcfLabel.innerHTML = "Apply <strong>minmax norm</strong> to my raw CTCF file";
-    reqDiv.innerHTML = "This model requires <strong>minmax normalized</strong> ATAC and CTCF files.";
-  } 
-  else {
-    // Fallback for any other model
-    ctcfRow.style.display = "";
-    predictCtcfRow.style.display = "";
-    atacLabel.innerHTML = "Apply normalization to my raw ATAC file";
-    ctcfLabel.innerHTML = "Apply normalization to my raw CTCF file";
-    reqDiv.innerHTML  = "";
+  // Basic label/row toggles
+  if(modelVal==="IMR90"){
+    ctcfRow.style.display="none";predictCtcfRow.style.display="none";
+    atacLabel.innerHTML="Apply <strong>log norm</strong> to my raw ATAC file";
+    reqDiv.innerHTML="This model requires a <strong>log norm</strong> ATAC file and a <strong>log2FC norm</strong> CTCF file.";
+    noneOption.style.display="none";
+    if(ctcfDropdown.value==="none"){
+      ctcfDropdown.value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw";
+    }
+  }else if(modelVal==="BALL"){
+    ctcfRow.style.display="";predictCtcfRow.style.display="";
+    atacLabel.innerHTML="Apply <strong>minmax norm</strong> to my raw ATAC file";
+    ctcfLabel.innerHTML="Apply <strong>minmax norm</strong> to my raw CTCF file";
+    reqDiv.innerHTML="This model is trained on expected/observed data and requires <strong>minmax normalized</strong> ATAC and CTCF files.";
+    noneOption.style.display="";
+  }else{
+    ctcfRow.style.display="";predictCtcfRow.style.display="";
+    atacLabel.innerHTML="Apply normalization to my raw ATAC file";
+    ctcfLabel.innerHTML="Apply normalization to my raw CTCF file";
+    reqDiv.innerHTML="";noneOption.style.display="";
   }
+
+  // Helper: pick the first option that has data-model = modelVal
+  function fallbackToMatchingPreset(dropdown,modelVal) {
+    const matching=Array.from(dropdown.options).find(o=>o.getAttribute("data-model") && o.getAttribute("data-model").toLowerCase()===modelVal.toLowerCase());
+    if(matching){matching.style.display="";dropdown.value=matching.value;}else{dropdown.value="none";}
+  }
+
+  // Hide unrelated preset options in ATAC, CTCF, and peaks
+  const atacDropdown=document.getElementById("atac_bw_path"),peaksDropdown=document.getElementById("peaks_file_path");
+  [atacDropdown,ctcfDropdown,peaksDropdown].forEach(dd=>{
+    if(!dd)return;
+    const opts=Array.from(dd.options);
+    opts.forEach(opt=>{
+      const dm=opt.getAttribute("data-model");
+      if(!dm){opt.style.display="";} // universal
+      else if(dm.toLowerCase()===modelVal.toLowerCase()){opt.style.display="";}
+      else{
+        opt.style.display="none";
+        if(dd.value===opt.value){
+          // fallback to the first matching preset or "none"
+          fallbackToMatchingPreset(dd,modelVal);
+        }
+      }
+    });
+  });
 }
+
+
