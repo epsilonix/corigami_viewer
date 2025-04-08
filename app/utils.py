@@ -323,7 +323,7 @@ def prepare_gene_track_config(genome, region_chr, region_start, region_end,
 
     gene_track_config = {
         "annotationFile": annotation_file,
-        "region": {"chr": region_chr, "start": region_start, "end": region_end},
+        "region1": {"chr": region_chr, "start": region_start, "end": region_end},
         "chart": {"height": 50},
         "xAxis": {
             "min": region_start / 1e6,
@@ -443,7 +443,7 @@ def prepare_chimeric_gene_track_config(annotation_file, chr1, start1, end1, chr2
 
     gene_track_config = {
         "genes": merged_genes,  # the actual gene entries
-        "region": {"chr": "chrCHIM", "start": 0, "end": total_length},
+        "region1": {"chr": "chrCHIM", "start": 0, "end": total_length},
         "chart": {"height": 50},
         "xAxis": {
             "axisBreak": True,

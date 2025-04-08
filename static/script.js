@@ -734,7 +734,7 @@ function runScreening() {
         console.log("Screening request successful. Response:", xhr.responseText);
         const response = JSON.parse(xhr.responseText);
         if (response.screening_config) {
-          const screeningConfig = JSON.parse(response.screening_config);
+          const screeningConfig = response.screening_config;
           if (screeningContainerElem) {
             screeningContainerElem.innerHTML = "";
             drawColumnChart('#screening_chart', screeningConfig);

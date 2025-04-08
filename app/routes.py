@@ -68,10 +68,10 @@ def prepare_plot_configs(
     from scipy.ndimage import rotate
 
     # 1) Remove rows and columns that are entirely zero BEFORE rotation
-    nonzero_row_mask = ~np.all(hi_c_matrix == 0, axis=1)
-    hi_c_matrix = hi_c_matrix[nonzero_row_mask, :]
-    nonzero_col_mask = ~np.all(hi_c_matrix == 0, axis=0)
-    hi_c_matrix = hi_c_matrix[:, nonzero_col_mask]
+    # nonzero_row_mask = ~np.all(hi_c_matrix == 0, axis=1)
+    # hi_c_matrix = hi_c_matrix[nonzero_row_mask, :]
+    # nonzero_col_mask = ~np.all(hi_c_matrix == 0, axis=0)
+    # hi_c_matrix = hi_c_matrix[:, nonzero_col_mask]
 
     # 2) Rotate the Hi-C matrix by 45 degrees, filling with zeros
     hi_c_matrix = rotate(
@@ -306,14 +306,12 @@ def run_prediction_and_render(
 
     # 5) Screening config (placeholder)
     screening_config_json = None
-    if screening_requested:
-        screening_config_json = json.dumps({"placeholder": "screening would happen"})
 
     return {
-        "hi_c_config":       json.dumps(hi_c_config),
-        "ctcf_config":       json.dumps(ctcf_config),
-        "atac_config":       json.dumps(atac_config),
-        "gene_track_config": json.dumps(gene_track_config),
+        "hi_c_config": hi_c_config,  # (a Python dict, not a string!)
+        "ctcf_config": ctcf_config,
+        "atac_config": atac_config,
+        "gene_track_config": gene_track_config,
         "screening_config":  screening_config_json
     }
 
@@ -335,8 +333,11 @@ def index():
 
     # Check chimeric / deletion / screening settings 
     chimeric_active = (request.form.get('region_start2', '').strip() != '')
+    print("CHIMERIC_ACTIVE =>", chimeric_active)
     if chimeric_active:
         session['chimeric_active'] = True
+    else:
+        session['chimeric_active'] = False
     ds_option = request.form.get('ds_option', 'none')
     screening_requested = (ds_option == 'screening')
 
@@ -628,9 +629,9 @@ def index():
         screening_config=configs["screening_config"],
         screening_mode=screening_requested,
         screening_params="{}",
-        gene_track_config=json.dumps(gene_track_cfg),
+        gene_track_config=gene_track_cfg,
         user_output_folder=output_folder,
-        custom_axis_config=json.dumps(custom_axis_config)
+        custom_axis_config=custom_axis_config
     )
 
 ###############################################################################
@@ -719,10 +720,14 @@ def run_screening_endpoint():
           "color": "#9FC0DE"
       }]
     }
-    if session.get('chimeric_active'):  
+    if session.get('chimeric_active'):
+        print("screening route thinks chimeric is active")
         screening_chart["isChimeric"] = True
+    else:
+        print("screening route thinks chimeric is not active")
+        screening_chart["isChimeric"] = False
 
-    results["screening_config"] = json.dumps(screening_chart)
+    results["screening_config"] = screening_chart
     
     return jsonify(results)
 

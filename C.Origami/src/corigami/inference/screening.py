@@ -174,9 +174,10 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
         region_end = pred_start + MODEL_BASE_SIZE + perturb_width  # same as 'end' in predict_difference
 
         # If region_start or region_end is outside [screen_start, screen_end], skip
-        if region_start < screen_start or region_end > screen_end:
-            skipped_windows += 1
-            continue  # skip this window entirely
+        if chr_name == "chrCHIM":
+            if region_start < screen_start or region_end > screen_end:
+                skipped_windows += 1
+                continue  # skip this window entirely
 
         # Otherwise, we can safely process it
         processed_windows += 1

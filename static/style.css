@@ -299,11 +299,11 @@ div#gene_track_chart {
 div#custom_axis_atac, div#custom_axis_ctcf, div#custom_axis_screening {
   margin-top: -45px;
 }
-div#gene-track-wrapper {
-  margin-top: -20px;
-}
 div#custom_axis_hic {
   margin-top: -10px;
+}
+div#screening_chart {
+  min-height: 110px;
 }
 div#gene_track_chart::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */

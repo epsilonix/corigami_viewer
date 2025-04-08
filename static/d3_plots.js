@@ -284,22 +284,71 @@ function drawColumnChart(containerSelector, config) {
 
     // 4f) If screening => shading
     if (config.screening) {
-      // We'll do the shading for "skip region" or anything you want
-      // But we have 2 separate scales for left & right
-      // If you want the same shading logic as normal, you'd have to replicate it
-      // We'll do a minimal example:
       ctx.save();
       ctx.fillStyle = "rgba(200, 200, 200, 0.4)";
-      // Suppose you want to shade first 1 Mb on the left chunk
-      const xBreakMb = 1.0; 
-      if (leftSpan >= xBreakMb) {
-        const w = scaleLeft(leftDomain[0] + xBreakMb);
-        ctx.fillRect(0, 0, w, height);
+    
+      // We'll figure out if/where we shade the left side (start) and the right side (end).
+      // 'xMin' and 'xMax' are in Mb, from config.xAxis.min and config.xAxis.max
+      // 'chromEndMb' is the entire chromosome length in Mb (if known).
+      let chromEndMb = null;
+      if (window.chromosomeLengths && config.chromName) {
+        let bpLen = window.chromosomeLengths[config.chromName];
+        if (bpLen) {
+          chromEndMb = bpLen / 1e6; // convert to Mb
+        }
       }
-      // etc. Or replicate your old logic
+    
+      // We’ll define two booleans and numeric boundaries:
+      let doLeftShading  = false;
+      let doRightShading = false;
+      let leftLimitMb    = xMin;  // up to where we shade on the left
+      let rightLimitMb   = xMax;  // from where we shade on the right
+    
+
+      console.log("screening?", config.screening);
+      console.log("isChimeric?", config.isChimeric);
+      console.log("xMin, xMax:", xMin, xMax);
+      console.log("chromName:", config.chromName);
+      console.log("chromEndMb computed:", chromEndMb);
+      
+      // 1) Always shade first & last 1Mb if chimeric:
+      if (config.isChimeric) {
+        doLeftShading  = true;
+        doRightShading = true;
+        leftLimitMb    = xMin + 1.0;     // shade from xMin => (xMin + 1Mb)
+        rightLimitMb   = xMax - 1.0;     // shade from (xMax - 1Mb) => xMax
+      }
+      // 2) If NOT chimeric, see if xMin < 1 => that means we’re actually near the chromosome start
+      //    so we shade from xMin => 1.0
+      //    Similarly, if xMax > chromEndMb - 1 => shade that portion
+      else if (chromEndMb) {
+        if (xMin < 1.0) {
+          doLeftShading = true;
+          leftLimitMb   = Math.min(xMax, 1.0); // never exceed xMax
+        }
+        if (xMax > (chromEndMb - 1.0)) {
+          doRightShading = true;
+          rightLimitMb   = Math.max(xMin, chromEndMb - 1.0);
+        }
+      }
+    
+      // Now do the actual shading, converting Mb => pixels
+      if (doLeftShading) {
+        const shadeEndPx = xScale(leftLimitMb);
+        if (shadeEndPx > 0) {
+          ctx.fillRect(0, 0, shadeEndPx, height);
+        }
+      }
+      if (doRightShading) {
+        const shadeStartPx = xScale(rightLimitMb);
+        if (shadeStartPx < fullWidth) {
+          ctx.fillRect(shadeStartPx, 0, fullWidth - shadeStartPx, height);
+        }
+      }
+    
       ctx.restore();
     }
-
+    
     // 4g) Decide bar spacing on left side
     let leftCount = leftData.length;
     let leftSpacing = (leftCount > 1) ? (leftWidthPx / (leftCount - 1)) : leftWidthPx;
@@ -604,8 +653,8 @@ function drawGeneTrackChart(selector, config) {
   console.log("Drawing gene track with config:", config);
 
   // Parse region boundaries
-  const regionStart = parseInt(config.region.start, 10);
-  const regionEnd = parseInt(config.region.end, 10);
+  const regionStart = parseInt(config.region1.start, 10);
+  const regionEnd = parseInt(config.region1.end, 10);
   const regionSpan = regionEnd - regionStart;
   console.log("drawGeneTrackChart: regionStart, regionEnd, regionSpan:", regionStart, regionEnd, regionSpan);
 
@@ -674,7 +723,7 @@ function drawGeneTrackChart(selector, config) {
   genesPromise.then(function(genes) {
     // Filter genes for the current region and protein-coding ones
     genes = genes.filter(function(d) {
-      return d.chrom === config.region.chr &&
+      return d.chrom === config.region1.chr &&
              d.end >= regionStart &&
              d.start <= regionEnd &&
              d.type === "protein_coding" &&

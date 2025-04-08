@@ -1,8 +1,5 @@
-<div id="plots-container"
-     data-screening="{{ 'true' if screening_mode else 'false' }}"
-     style="width: 100%; overflow-x: auto;">
-  
-
+<!-- plots_partial.html -->
+<div id="plots-container" style="width: 100%; overflow-x: auto;">
 
   <div id="hi_c_chart"></div>
   <div id="custom_axis_hic"></div>
@@ -24,6 +21,7 @@
   </div>
   <div id="ctcf_chart"></div>
   <div id="custom_axis_ctcf"></div>
+
   {% if screening_mode %}
     <div class="screening_title_container">
       <div class="screening_title">
@@ -33,56 +31,63 @@
     <div id="screening_chart"></div>
     <div id="custom_axis_screening"></div>
   {% endif %}
+
   <div id="gene-track-wrapper" style="overflow-y: hidden;"> 
     <div id="gene_track_chart"></div>
   </div>
+
 </div>
 
-<!-- Ensure D3.js and d3_plots.js are loaded -->
-<script src="https://d3js.org/d3.v7.min.js"></script>
-<script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
-
 <script>
-  // Render the main charts using the configs from the Flask context
-  var hiCConfig = {{ hi_c_config|safe }};
-  var ctcfConfig = {{ ctcf_config|safe }};
-  var atacConfig = {{ atac_config|safe }};
-  var geneTrackConfig = {{ gene_track_config|safe }};
-  var customAxisConfig = {{ custom_axis_config|safe }};
-  drawHiCChart('#hi_c_chart', hiCConfig);
-  drawColumnChart('#ctcf_chart', ctcfConfig);
-  drawColumnChart('#atac_chart', atacConfig);
-  drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
-  drawCustomAxis('#custom_axis_hic', customAxisConfig);
-  drawCustomAxis('#custom_axis_atac', customAxisConfig);
-  drawCustomAxis('#custom_axis_ctcf', customAxisConfig);
-  // If we have a screening config, draw it
-  {% if screening_mode and screening_config %}
-    var screeningConfig = {{ screening_config|safe }};
-    drawColumnChart('#screening_chart', screeningConfig);
-    drawCustomAxis('#custom_axis_screening', customAxisConfig);
-  {% endif %}
+  /* 
+   * Use the 'tojson' filter so Python None => JS null,
+   * and any dict => valid JSON string. 
+   * 'screening_mode' is a boolean, so we can handle that with an if/else or
+   * just pass it as is. 
+   */
+  var hiCConfig        = {{ hi_c_config|tojson }};
+  var ctcfConfig       = {{ ctcf_config|tojson }};
+  var atacConfig       = {{ atac_config|tojson }};
+  var geneTrackConfig  = {{ gene_track_config|tojson }};
+  var customAxisConfig = {{ custom_axis_config|tojson }};
 
+  // If the Python code sets screening_mode=True, we'll get JS "true", else "false".
+  var screeningMode = {{ 'true' if screening_mode else 'false' }};
 
+  // screening_config might be None => becomes null in JS
+  var screeningConfig = {{ screening_config|tojson }};
+
+  // Expose globally if needed outside this script
+  window.screening_mode = screeningMode;
+
+  // 1) Draw standard charts if they exist
+  if (hiCConfig) {
+    drawHiCChart('#hi_c_chart', hiCConfig);
+    drawCustomAxis('#custom_axis_hic', customAxisConfig);
+  }
+  if (ctcfConfig) {
+    drawColumnChart('#ctcf_chart', ctcfConfig);
+    drawCustomAxis('#custom_axis_ctcf', customAxisConfig);
+  }
+  if (atacConfig) {
+    drawColumnChart('#atac_chart', atacConfig);
+    drawCustomAxis('#custom_axis_atac', customAxisConfig);
+  }
+  if (geneTrackConfig) {
+    drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
+  }
+
+  // 2) If screening_mode == true, either use the config or call runScreening()
+  if (screeningMode) {
+    if (screeningConfig) {
+      // One-step approach: server gave us screening config
+      drawColumnChart('#screening_chart', screeningConfig);
+      drawCustomAxis('#custom_axis_screening', customAxisConfig);
+    } else {
+      // Two-step approach: run /run_screening endpoint now
+      runScreening();
+    }
+  } else {
+    console.log("No screening mode active.");
+  }
 </script>
-
-
-{% if screening_mode %}
-  <!-- Hidden div carrying the screening parameters from the server -->
-  <div id="screening-params"
-       data-screening='{{ screening_params|safe }}'
-       style="display:none;">
-  </div>
-
-  <script>
-    window.screening_mode = true;
-    window.screening_params = JSON.parse(
-      document.getElementById('screening-params').getAttribute('data-screening')
-    );
-  </script>
-
-{% else %}
-  <script>
-    window.screening_mode = false;
-  </script>
-{% endif %}
