@@ -1,6 +1,8 @@
 # utils.py
 
 import os
+import shutil
+from subprocess import CalledProcessError
 import time
 import uuid
 import numpy as np
@@ -17,6 +19,9 @@ WINDOW_WIDTH = 2097152  # 2 Mb window
 SESSION_BASE_FOLDER = os.path.join(os.getcwd(), 'user_data')
 os.makedirs(SESSION_BASE_FOLDER, exist_ok=True)
 MAX_SESSION_AGE = 86400  # 24 hours
+
+_CLEANUP_INTERVAL = 24 * 3600      # run at most once every 24 h
+_last_cleanup_ts  = 0              # updated after each sweep
 
 def get_user_folder():
     """
@@ -61,48 +66,77 @@ def get_user_output_folder():
     return output_folder
 
 def cleanup_session_folders():
+    """
+    Remove session folders older than MAX_SESSION_AGE (24 h by default).
+    • Runs at most once per _CLEANUP_INTERVAL (also 24 h here).
+    • Ignores race‑conditions (FileNotFoundError).
+    """
+    global _last_cleanup_ts
     now = time.time()
-    for session_dir in os.listdir(SESSION_BASE_FOLDER):
-        session_path = os.path.join(SESSION_BASE_FOLDER, session_dir)
-        if os.path.isdir(session_path):
-            age = now - os.path.getmtime(session_path)
-            if age > MAX_SESSION_AGE:
-                try:
-                    for root, dirs, files in os.walk(session_path, topdown=False):
-                        for f in files:
-                            os.remove(os.path.join(root, f))
-                        for d in dirs:
-                            os.rmdir(os.path.join(root, d))
-                    os.rmdir(session_path)
-                    print(f"Removed old session folder: {session_path}")
-                except Exception as e:
-                    print(f"Error removing session folder {session_path}: {e}")
+    if now - _last_cleanup_ts < _CLEANUP_INTERVAL:
+        return            # too soon – skip this request entirely
+
+    _last_cleanup_ts = now
+    cutoff = now - MAX_SESSION_AGE
+
+    for entry in os.scandir(SESSION_BASE_FOLDER):
+        if not entry.is_dir():
+            continue
+        try:
+            if entry.stat().st_mtime > cutoff:
+                continue  # still fresh
+        except FileNotFoundError:
+            continue      # vanished meanwhile
+
+        shutil.rmtree(entry.path, ignore_errors=True)
 
 def generate_peaks_from_bigwig_macs2(bw_path, chrom, start, end, outdir):
     temp_bedgraph = os.path.join(outdir, "temp_region.bedGraph")
-    auto_peaks = os.path.join(outdir, "auto_peaks.narrowPeak")
+    auto_peaks    = os.path.join(outdir, "auto_peaks.narrowPeak")
+
+    # 1) Debug: print where the binary lives and what your PATH is
+    print("🔍 bigWigToBedGraph on PATH →", shutil.which("bigWigToBedGraph"))
+    print("🔍 $PATH =", os.environ.get("PATH"))
+
     convert_cmd = [
-        "bigWigToBedGraph",
-        bw_path,
-        temp_bedgraph,
-        f"-chrom={chrom}",
-        f"-start={start}",
-        f"-end={end}"
+        "bigWigToBedGraph", bw_path, temp_bedgraph,
+        f"-chrom={chrom}", f"-start={start}", f"-end={end}"
     ]
-    print("Running:", " ".join(convert_cmd))
-    result_convert = subprocess.run(convert_cmd, check=True, capture_output=True, text=True)
-    print("bigWigToBedGraph stdout:", result_convert.stdout)
-    print("bigWigToBedGraph stderr:", result_convert.stderr)
-    macs2_cmd = [
-        "macs2", "bdgpeakcall",
-        "-i", temp_bedgraph,
-        "-o", auto_peaks,
-        "--cutoff", "0.5"
-    ]
-    print("Running:", " ".join(macs2_cmd))
-    result_macs2 = subprocess.run(macs2_cmd, check=True, capture_output=True, text=True)
-    print("macs2 bdgpeakcall stdout:", result_macs2.stdout)
-    print("macs2 bdgpeakcall stderr:", result_macs2.stderr)
+    print("📦 running:", " ".join(convert_cmd))
+    try:
+        result = subprocess.run(
+            convert_cmd,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        print("bigWigToBedGraph stdout:", result.stdout)
+        print("bigWigToBedGraph stderr:", result.stderr)
+    except CalledProcessError as e:
+        # 2) Log the exact error output
+        print("❌ bigWigToBedGraph FAILED:", e)
+        print("    stdout:", e.stdout)
+        print("    stderr:", e.stderr)
+        raise
+
+    macs2_cmd = ["macs2", "bdgpeakcall", "-i", temp_bedgraph,
+                 "-o", auto_peaks, "--cutoff", "0.5"]
+    print("📦 running:", " ".join(macs2_cmd))
+    try:
+        result = subprocess.run(
+            macs2_cmd,
+            check=True,
+            capture_output=True,
+            text=True
+        )
+        print("macs2 stdout:", result.stdout)
+        print("macs2 stderr:", result.stderr)
+    except CalledProcessError as e:
+        print("❌ macs2 FAILED:", e)
+        print("    stdout:", e.stdout)
+        print("    stderr:", e.stderr)
+        raise
+
     return auto_peaks, temp_bedgraph
 
 def get_bigwig_signal(
@@ -209,6 +243,10 @@ def normalize_bigwig(
     """
     if method == "none":
         return input_bw
+    
+    if method == "log2fc":
+        # assume the input is already in log₂‑fold‑change units
+        return input_bw
 
     try:
         bw_in = pyBigWig.open(input_bw, "r")
@@ -261,38 +299,88 @@ def normalize_bigwig(
     print(f"Normalization ({method}) done. Output: {output_path}")
     return output_path
 
-def predict_ctcf(atac_bw, chrom, start, end, ctcf_out_path):
+def predict_ctcf(atac_bw: str,
+                 chrom: str,
+                 start: int,
+                 end: int,
+                 ctcf_out_path: str) -> str:
     """
-    Generate a synthetic (predicted) CTCF bigWig file from an ATAC bigWig using maxATAC.
-    The prediction is normalized using minmax normalization.
-    Returns the path to the normalized predicted CTCF file.
+    Run maxATAC predict after seeding ***all*** reference files it
+    hard‑codes internally (sizes, genome 2bit, blacklist) into
+    <DATA_PATH>/hg38/.  Works both locally and inside the Docker image.
     """
-    roi_file = ctcf_out_path + ".temp.bed"
-    with open(roi_file, "w") as f:
+    import os, subprocess, pathlib, shutil, logging
+
+    # ------------------------------------------------------------------ #
+    # 0. baked‑in assets
+    # ------------------------------------------------------------------ #
+    root   = pathlib.Path(__file__).resolve().parents[1]        # repo root
+    static = root / "static"
+
+    model_h5   = static / "CTCF_binary_revcomp99_fullModel_RR0_95.h5"
+    sizes_src  = static / "hg38.chrom.sizes"
+    twob_src   = static / "hg38.2bit"
+    bl_src     = static / "hg38_maxatac_blacklist.bed"   #  ← **add this file**
+
+    # ------------------------------------------------------------------ #
+    # 1. ensure <DATA_PATH>/hg38/ has the three files
+    # ------------------------------------------------------------------ #
+    data_path  = pathlib.Path(os.getenv("MAXATAC_DATA_PATH",
+                                        pathlib.Path.home() / "opt" / "maxatac" / "data"))
+    hg38_dir   = data_path / "hg38"
+    hg38_dir.mkdir(parents=True, exist_ok=True)
+
+    for src, dest in (
+        (sizes_src, hg38_dir / "hg38.chrom.sizes"),
+        (twob_src,  hg38_dir / "hg38.2bit"),
+        (bl_src,    hg38_dir / "hg38_maxatac_blacklist.bed"),
+    ):
+        if not dest.exists():
+            shutil.copy(src, dest)      # copy ≈ tiny; use .link_to for hard‑link
+
+    # ------------------------------------------------------------------ #
+    # 2. one‑line ROI BED
+    # ------------------------------------------------------------------ #
+    roi_bed = f"{ctcf_out_path}.tmp.bed"
+    with open(roi_bed, "w") as f:
         f.write(f"{chrom}\t{start}\t{end}\n")
-    
-    out_dir  = os.path.dirname(ctcf_out_path)
-    # e.g. 'predicted_ctcf_region1'
-    base_name = os.path.splitext(os.path.basename(ctcf_out_path))[0]
 
-    # maxatac will produce base_name.CTCF.bw
-    generate_cmd = [
+    # ------------------------------------------------------------------ #
+    # 3. build & run command
+    # ------------------------------------------------------------------ #
+    out_dir   = os.path.dirname(ctcf_out_path)
+    base_name = pathlib.Path(ctcf_out_path).stem
+    cmd = [
         "maxatac", "predict",
-        "--tf", "CTCF",
-        "--signal", atac_bw,
-        "--bed", roi_file,
-        "--out", out_dir,
-        "--name", base_name
+        "--signal",     atac_bw,
+        "--bed",        roi_bed,
+        "--out",        out_dir,
+        "--name",       base_name,
+        "--model",      str(model_h5),
+        "--DATA_PATH",  str(data_path)      # now contains all refs
     ]
-    print("Running:", " ".join(generate_cmd))
-    result = subprocess.run(generate_cmd, capture_output=True, text=True, check=True)
-    print("maxatac STDOUT:", result.stdout)
-    print("maxatac STDERR:", result.stderr)
 
-    if os.path.exists(roi_file):
-        os.remove(roi_file)
+    logging.info("maxatac cmd: %s", " ".join(cmd))
+
+    try:
+        proc = subprocess.run(cmd, check=True, text=True,
+                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        logging.debug("maxatac stdout:\n%s", proc.stdout)
+        logging.debug("maxatac stderr:\n%s", proc.stderr)
+    except subprocess.CalledProcessError as e:
+        logging.error("maxatac FAILED (exit %s)\nstdout:\n%s\nstderr:\n%s",
+                      e.returncode, e.stdout, e.stderr)
+        raise
+    finally:
+        try:
+            os.remove(roi_bed)
+        except FileNotFoundError:
+            pass
 
     return ctcf_out_path
+
+
+
 
 def predict_peaks(bw_path, chrom, start, end, outdir):
     """

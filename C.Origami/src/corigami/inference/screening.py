@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import os
 import sys
-sys.path.insert(0, "/Users/everett/corigami_viewer/C.Origami/src")
+sys.path.insert(0, "/Users/everett/corigami_viewer_conda/C.Origami/src")
 import argparse
 import json
 import numpy as np
@@ -105,52 +105,62 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
               use_find_peaks, peak_height, peak_distance, peak_prominence,
               save_pred=False, save_perturbation=False, save_diff=True, save_impact_score=True,
               save_bedgraph=True, plot_impact_score=True, plot_frames=False, peaks_file=None):
-    # Load data and model.
-    step_size = 1000
-    print(f'screening: {screen_start}, {screen_end}, {perturb_width}, {step_size}', flush=True)
-    print(f'screening peaks_file: {peaks_file}', flush=True)
+    print('entering NEW screening')
+    # ───────────────────── constants & counters ─────────────────────
+    MODEL_BASE_SIZE  = 2_097_152              # full model window (2 Mb)
+    HALF_MODEL       = MODEL_BASE_SIZE // 2   # 1 048 576
+    EDGE_BUFFER      = 1_048_576              # skip first / last 1 Mb
+    step_size        = 1_000
+    skipped_windows  = 0
+    processed_windows = 0
+
+    print(f"screening: {screen_start}, {screen_end}, {perturb_width}, {step_size}")
+    print(f"screening peaks_file: {peaks_file}")
+
+    # ───────────────────── load data & model ────────────────────────
     seq, ctcf, atac = infer.load_data_default(chr_name, seq_path, ctcf_path, atac_path)
     model = model_utils.load_default(model_path)
-    
-    # Determine screening windows. (Same logic you already have.)
+
+    # determine chromosome length (using the CTCF BigWig header)
+    import pyBigWig, os
+    with pyBigWig.open(ctcf_path) as bw_hdr:
+        chrom_len = bw_hdr.chroms()[chr_name]
+
+    # ───────────────────── build candidate centres ──────────────────
     if peaks_file:
-        # If the peaks file comes from auto-generation, skip one header row.
         skip_rows = 1 if "auto_peaks.narrowPeak" in peaks_file else 0
-        peaks_df = pd.read_csv(peaks_file, sep='\t', header=None, skiprows=skip_rows)
-        # Filter to the selected chromosome.
-        peaks_df = peaks_df[peaks_df[0] == chr_name]
-        # Compute the midpoint for each peak (using columns 1 and 2)
-        peaks_df['mid'] = peaks_df[[1, 2]].mean(axis=1).astype(int)
-        # Filter peaks within [screen_start, screen_end]
-        peaks_df = peaks_df[(peaks_df['mid'] >= screen_start) & (peaks_df['mid'] <= screen_end)]
-        
-        # Determine number of peaks to select.
-        num_peaks = int((screen_end - screen_start) // 200000)
-        print("Selecting top {} peaks by score from {} available peaks".format(num_peaks, len(peaks_df)))
-        
-        # Sort peaks by score (column index 4) in descending order and take the top num_peaks.
-        peaks_df = peaks_df.sort_values(by=4, ascending=False).head(num_peaks)
-        windows = peaks_df['mid'].tolist()
-        print("Total windows based on peaks file (after selection): {}".format(len(windows)))
+        peaks_df  = pd.read_csv(peaks_file, sep="\t", header=None, skiprows=skip_rows)
+        peaks_df  = peaks_df[peaks_df[0] == chr_name]
+        peaks_df["mid"] = peaks_df[[1, 2]].mean(axis=1).astype(int)
+        peaks_df  = peaks_df[(peaks_df["mid"] >= screen_start) & (peaks_df["mid"] <= screen_end)]
+        num_peaks = int((screen_end - screen_start) // 200_000)
+        print(f"Selecting top {num_peaks} peaks by score from {len(peaks_df)} available peaks")
+        peaks_df  = peaks_df.sort_values(by=4, ascending=False).head(num_peaks)
+        windows   = peaks_df["mid"].tolist()
+        print(f"Total windows based on peaks file (after selection): {len(windows)}")
     else:
-        windows = [w * step_size + screen_start for w in range(int((screen_end - screen_start) / step_size))]
-        print("Total windows (uniform): {}".format(len(windows)))
+        windows = [w * step_size + screen_start
+                   for w in range(int((screen_end - screen_start) / step_size))]
+        print(f"Total windows (uniform): {len(windows)}")
 
-    # Prepare arrays for storing results.
-    preds = np.empty((0, 256, 256))
-    preds_deletion = np.empty((0, 256, 256))
-    diff_maps = np.empty((0, 256, 256))
-    perturb_starts = []
-    perturb_ends = []
+    # ───────────────────── edge filter (±1 Mb) ──────────────────────
+    EDGE_BUFFER = 1_048_576            # 1 Mb in bp
 
-    processed_windows = 0
-    skipped_windows = 0
-    print('Screening...')
+    valid = [w for w in windows
+            if (w >= screen_start + EDGE_BUFFER) and (w <= chrom_len - EDGE_BUFFER)]
 
-    # The total width the model needs is 2,097,152 plus the deletion width.
-    # (Because `predict_difference` calls `end = start + 2_097_152 + deletion_width`.)
-    # We'll call that "MODEL_WINDOW_SIZE".
-    MODEL_BASE_SIZE = 2_097_152
+    skipped_windows += len(windows) - len(valid)
+    windows = valid
+    print(f"Windows after ±1 Mb centre filter: {len(windows)}  (skipped {skipped_windows})")
+        # ───────────────────── result containers ────────────────────────────
+    preds            = np.empty((0, 256, 256))
+    preds_deletion   = np.empty((0, 256, 256))
+    diff_maps        = np.empty((0, 256, 256))
+    perturb_starts   = []
+    perturb_ends     = []
+
+    print("Screening...")
+
 
     for center in tqdm(windows):
         # Define the perturbation window around 'center'.

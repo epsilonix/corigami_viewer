@@ -1035,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     const formData = new FormData(formElem);
-    fetch("/", {
+    fetch(formElem.action, {
       method: "POST",
       body: formData,
       headers: { "X-Requested-With": "XMLHttpRequest" }
@@ -1060,6 +1060,110 @@ document.addEventListener('DOMContentLoaded', function() {
   if (typeof screening_mode !== "undefined" && screening_mode === true) {
     runScreening();
   }
+
+ // ───────── AWS “Connect to server” button logic ─────────
+  if (awsEnabled) {
+    const btn = document.getElementById("worker-btn");
+    const BOOT_TIMEOUT_MS = 10 * 60 * 1000;  // 10 minutes
+    let startInitiatedAt = null;
+
+    async function poll(delay = 10000) {
+      try {
+        const res = await fetch("/api/worker-status");
+        const { running, starting } = await res.json();
+        const now = Date.now();
+
+        if (running) {
+          // fully up → green
+          startInitiatedAt = null;
+          btn.textContent = "Server on";
+          btn.classList.remove("status-red", "status-orange", "status-green");
+          btn.classList.add("status-green");
+          btn.disabled = true;
+          delay = 60000;
+
+        } else if (starting) {
+          // AWS reports pending → orange, record start time if new
+          startInitiatedAt = startInitiatedAt || now;
+          btn.textContent = "Server starting…";
+          btn.classList.remove("status-red", "status-orange", "status-green");
+          btn.classList.add("status-orange");
+          btn.disabled = true;
+          delay = 5000;
+
+        } else if (startInitiatedAt && now - startInitiatedAt < BOOT_TIMEOUT_MS) {
+          // still within 10 min after click → keep orange
+          btn.textContent = "Server starting…";
+          btn.classList.remove("status-red", "status-orange", "status-green");
+          btn.classList.add("status-orange");
+          btn.disabled = true;
+          delay = 5000;
+
+        } else if (startInitiatedAt && now - startInitiatedAt >= BOOT_TIMEOUT_MS) {
+          // timed out → show retry error
+          startInitiatedAt = null;
+          btn.textContent = "Connection error. Retry?";
+          btn.classList.replace("status-orange", "status-red");
+          btn.classList.remove("status-green");
+          btn.disabled = false;
+          delay = 10000;
+
+        } else {
+          // idle → red “Connect to server”
+          btn.textContent = "Connect to server";
+          btn.classList.replace("status-green", "status-red");
+          btn.classList.remove("status-orange");
+          btn.disabled = false;
+          delay = 10000;
+        }
+
+      } catch (e) {
+        console.error("status poll failed", e);
+        btn.textContent = "Status error";
+        btn.classList.replace("status-green", "status-red");
+        btn.classList.remove("status-orange");
+        btn.disabled = false;
+        delay = 10000;
+
+      } finally {
+        setTimeout(() => poll(delay), delay);
+      }
+    }
+
+    // start polling
+    poll();
+
+    btn.addEventListener("click", async () => {
+      if (btn.disabled) return;
+
+      // mark boot window start
+      startInitiatedAt = Date.now();
+
+      btn.textContent = "Server starting…";
+      btn.classList.replace("status-red", "status-orange");
+      btn.classList.remove("status-green");
+      btn.disabled = true;
+
+      try {
+        const resp = await fetch("/api/start-worker", { method: "POST" });
+        if (![200, 202].includes(resp.status)) {
+          throw new Error(`status ${resp.status}`);
+        }
+        // next poll will handle starting/running
+      } catch (e) {
+        console.error("start-worker failed", e);
+        startInitiatedAt = null;
+        btn.textContent = "Start failed";
+        btn.classList.replace("status-orange", "status-red");
+        btn.disabled = false;
+      }
+    });
+
+  } else {
+    document.getElementById("worker-btn").style.display = "none";
+  }
+
+
 });
 
 /*************************************************************

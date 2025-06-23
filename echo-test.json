@@ -1,0 +1,30 @@
+{
+    "family": "corigami-echo-test",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"],
+    "cpu": "256",
+    "memory": "512",
+    "executionRoleArn": "arn:aws:iam::128589604246:role/ecsTaskExecutionRole",
+    "taskRoleArn": "arn:aws:iam::128589604246:role/corigami-ecs-task-role",
+    "containerDefinitions": [
+      {
+        "name": "echo",
+        "image": "public.ecr.aws/docker/library/alpine:3.18",
+        "essential": true,
+        "command": [
+          "sh",
+          "-c",
+          "echo LOG_TEST_STDOUT; echo LOG_TEST_STDERR 1>&2; sleep 300"
+        ],
+        "logConfiguration": {
+          "logDriver": "awslogs",
+          "options": {
+            "awslogs-group": "/ecs/corigami-web",
+            "awslogs-region": "us-east-2",
+            "awslogs-stream-prefix": "ecs-echo"
+          }
+        }
+      }
+    ]
+  }
+  

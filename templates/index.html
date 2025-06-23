@@ -17,6 +17,10 @@
   <!-- Load D3.js and our custom plotting script -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
+  <script>
+    // This must come *before* script.js so awsEnabled exists.
+    const awsEnabled = {{ 'true' if USE_AWS else 'false' }};
+  </script>
   
   <style>
     input[readonly] {
@@ -33,7 +37,10 @@
     <div class="form-container">
       <div class="form-header">
         <h1>C.ORIGAMI VIEWER</h1>
+        
         <p class="instructions-link"><a href="#" id="openModal">Instructions</a></p>
+        <button id="worker-btn" class="worker-button">Connect to server</button>
+      
       </div>
       <div id="instructions-modal" class="modal">
         <div class="modal-content">
@@ -84,7 +91,7 @@
         </div>
       </div>
       
-      <form id="corigami-form" method="post" action="/" enctype="multipart/form-data">
+      <form id="corigami-form" method="post" action="/?plot=true" enctype="multipart/form-data">
         <input type="hidden" id="output_dir" value="{{ user_output_folder }}">
         <input type="hidden" id="chimeric_active" name="chimeric_active" value="false">
         <!-- Deletion/Screening Toggle -->
@@ -142,7 +149,7 @@
           </div>
           <div class="col-40">
             <label for="region_start1" class="small-label">Start (bp)*</label>
-            <input type="number" id="region_start1" name="region_start1" value="{{ request.form.region_start1}}" required>
+            <input type="number" id="region_start1" name="region_start1" value="{{ request.form.region_start1|default(2097153, true) }}" required>
           </div>
           <div class="col-40">
             <label for="region_end1" class="small-label">End (bp)</label>
@@ -227,7 +234,7 @@
         <div class="row">
           <div class="col-full">
             <label for="apply_atac_norm" class="checkbox-container" id="apply_atac_norm_wrapper">
-              <input type="checkbox" id="apply_atac_norm" name="apply_atac_norm" value="true" style="display: none;" />
+              <input type="checkbox" id="apply_atac_norm" name="apply_atac_norm" value="true" checked style="display: none;" />
               <span id="apply_atac_norm_label">
                 Apply norm to my raw ATAC file
               </span>

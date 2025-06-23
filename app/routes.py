@@ -10,6 +10,8 @@ from PIL import Image
 from scipy.ndimage import rotate
 from flask import Blueprint, render_template, request, url_for, jsonify, session, current_app
 import re
+import shutil
+
 
 from app.utils import (
     get_upload_folder,
@@ -40,8 +42,8 @@ test_mode = False
 
 @main.before_request
 def before_request():
-    print("BEFORE REQUEST: session_id =", session.get('session_id'))
-    print("BEFORE REQUEST: current_job_id =", session.get('current_job_id'))
+    # print("BEFORE REQUEST: session_id =", session.get('session_id'))
+    # print("BEFORE REQUEST: current_job_id =", session.get('current_job_id'))
     cleanup_session_folders()
 
 
@@ -322,10 +324,19 @@ def run_prediction_and_render(
 
 @main.route('/', methods=['GET', 'POST'])
 def index():
-    print("===== ENTERING index() =====")
-    print("Method =", request.method)
-    print("request.form =>", request.form)
-    print("session['current_job_id'] before anything =>", session.get('current_job_id'))
+    # print("===== ENTERING index() =====")
+    
+    # ---------- ADD THIS ----------
+    model_path = None        # always in-scope
+    required_atac_norm  = None
+    required_ctcf_norm  = None
+    # ------------------------------
+    
+    
+    
+    # print("Method =", request.method)
+    # print("request.form =>", request.form)
+    # print("session['current_job_id'] before anything =>", session.get('current_job_id'))
     # Declare user output folder
     output_folder = get_user_output_folder()
     if request.method == 'GET':
@@ -776,3 +787,89 @@ def list_uploads():
                 display_name = f.split("_", 1)[-1] if "_" in f else f
                 files.append({"value": full_path, "name": display_name})
     return jsonify(files)
+
+
+###
+
+
+@main.route("/health", methods=["GET"])
+def health():
+    return "OK", 200
+
+@main.before_request
+def before_request():
+    if request.path == "/health":
+        return           # skip heavy work for the ALB check
+    cleanup_session_folders()
+
+
+# ── AWS worker‑control endpoints (only if USE_AWS=1) ───────────
+import os
+from flask import jsonify, current_app
+from botocore.exceptions import ClientError
+
+USE_AWS = os.getenv("USE_AWS") == "1"
+
+if USE_AWS:
+    import boto3
+
+    region = os.getenv("AWS_REGION", "us-east-2").replace("\u2011", "-")
+    ecs = boto3.client("ecs", region_name=region)
+    asg = boto3.client("autoscaling", region_name=region)
+
+    CLUSTER = "corigami"
+    SERVICE = "corigami-cpu-rq-worker-service"
+    ASG     = "corigami-cpu-asg"
+
+    @main.route("/api/worker-status")
+    def worker_status():
+        svc = ecs.describe_services(
+            cluster=CLUSTER,
+            services=[SERVICE]
+        )["services"][0]
+
+        # True if at least one task is already RUNNING
+        running  = svc.get("runningCount", 0) > 0
+        # True if at least one task is PENDING
+        starting = svc.get("pendingCount", 0) > 0
+
+        current_app.logger.debug(
+            f"ECS svc desired={svc['desiredCount']} "
+            f"pending={svc['pendingCount']} running={svc['runningCount']}"
+        )
+        return jsonify({"running": running, "starting": starting})
+
+    @main.route("/api/start-worker", methods=["POST"])
+    def start_worker():
+        # Step 1: bump ECS desiredCount → this immediately sets pendingCount=1
+        try:
+            ecs.update_service(cluster=CLUSTER, service=SERVICE, desiredCount=1)
+        except ClientError as e:
+            current_app.logger.error(f"ECS update_service failed: {e}")
+            return jsonify({"error": str(e)}), 500
+
+        # Step 2: also ensure ASG can add capacity downstream
+        try:
+            asg.set_desired_capacity(
+                AutoScalingGroupName=ASG,
+                DesiredCapacity=1,
+                HonorCooldown=True
+            )
+        except ClientError as e:
+            err = e.response.get("Error", {})
+            code = err.get("Code", "")
+            if code != "ScalingActivityInProgress":
+                current_app.logger.error(f"ASG set_desired_capacity failed: {e}")
+                return jsonify({"error": str(e)}), 500
+
+        return jsonify({"message": "starting"}), 200
+
+else:
+    # Dummy endpoints so the front‑end never 404s when AWS is off
+    @main.route("/api/worker-status")
+    def worker_status():
+        return jsonify({"running": False, "starting": False})
+
+    @main.route("/api/start-worker", methods=["POST"])
+    def start_worker():
+        return jsonify({"message": "AWS disabled"}), 501

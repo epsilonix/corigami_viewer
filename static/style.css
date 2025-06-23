@@ -308,6 +308,35 @@ div#screening_chart {
 div#gene_track_chart::-webkit-scrollbar {
   display: none; /* Chrome, Safari, Opera */
 }
+.worker-button {
+  padding: 6px 12px;
+  /* background: #008cba; */
+  color: #333;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 0.7rem;
+  margin-bottom:12px;
+  /* make room for the dot */
+  display: inline-flex;
+  align-items: center;
+}
+
+/* the dot */
+.worker-button::before {
+  content: "";
+  display: inline-block;
+  width: 0.6em;
+  height: 0.6em;
+  border-radius: 50%;
+  margin-right: 0.5em;
+  background-color: #e74c3c;  /* default = red (offline) */
+}
+
+/* status classes override the color */
+.worker-button.status-red::before    { background-color: #e74c3c; } /* red */
+.worker-button.status-orange::before { background-color: #f39c12; } /* orange */
+.worker-button.status-green::before  { background-color: #2ecc71; } /* green */
 .form-header {
   padding-left: 10px;
   border: 1px solid #FF985A;
@@ -590,7 +619,7 @@ ul.global-warning-list li::before, ul.model-requirements-list li::before {
   color: #FFB347;
 }
 .instructions-link {
-  margin-bottom: 20px;
+  margin-bottom: 12px;
   font-size: 0.8em;
   text-decoration:underline;
 }

@@ -1,0 +1,5 @@
+name: bio
+channels: [conda-forge, bioconda]
+dependencies:
+  - bedtools=2.27.1
+  - macs2=2.2.7.1
