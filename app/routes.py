@@ -212,12 +212,11 @@ def run_prediction_and_render(
     # Decide which seq_dir to us
 
     # 1) Launch editing.py or prediction.py (as an RQ job)
-    from app.tasks import q, run_editing_task, run_prediction_task
+    from app.tasks import run_editing_task, run_prediction_task
 
     if ds_option == "deletion" and del_start is not None and del_width is not None:
         editing_script = os.path.join(script_path, "editing.py")
-        job = q.enqueue(
-            run_editing_task,
+        run_editing_task(
             editing_script,
             region_chr,
             region_start,
@@ -229,12 +228,10 @@ def run_prediction_and_render(
             output_folder,
             ctcf_bw_for_model=ctcf_bw_for_model,
             env=env,
-            job_timeout=2000
         )
     else:
         prediction_script = os.path.join(script_path, "prediction.py")
-        job = q.enqueue(
-            run_prediction_task,
+        run_prediction_task(
             prediction_script,
             region_chr,
             region_start,
@@ -245,35 +242,7 @@ def run_prediction_and_render(
             output_folder,
             ctcf_bw_for_model=ctcf_bw_for_model,
             env=env,
-            job_timeout=2000
         )
-
-    # **Store the job ID in session so we can cancel if needed**
-    session['current_job_id'] = job.id
-    print(f"Enqueued job with ID = {job.id}")
-
-    # 2) Wait for result (blocking) but also check for "canceled"
-    start_wait = time.time()
-    timeout_secs = 2500  # or whatever timeout you want
-    while True:
-        # Refresh RQ job status
-        job.refresh()
-
-        # If the job was canceled or failed, raise an error
-        if job.get_status() == 'canceled':
-            raise RuntimeError("Job was canceled by the user.")
-        if job.is_failed:
-            raise RuntimeError("Error in RQ job. Check worker logs.")
-
-        # If the job is fully finished, break out 
-        if job.is_finished:
-            break
-
-        # Optional: check how long we've been waiting
-        if (time.time() - start_wait) > timeout_secs:
-            raise RuntimeError("Timed out waiting for RQ job to finish writing result.npy")
-
-        time.sleep(0.5)
 
     # By here, the job is done and 'result.npy' should be fully written.
     if not os.path.exists(hi_c_matrix_path):
@@ -309,6 +278,22 @@ def run_prediction_and_render(
     # 5) Screening config (placeholder)
     screening_config_json = None
 
+        # ------------------------------------------------------------------
+    # >>> NEW: stash everything in the current RQ job’s meta so that
+    #          /api/job/<id>/html can render the template later.
+    # ------------------------------------------------------------------
+    from rq import get_current_job
+    _job = get_current_job()
+    if _job:
+        _job.meta.update(
+            hi_c_config      = hi_c_config,
+            ctcf_config      = ctcf_config,
+            atac_config      = atac_config,
+            gene_track_config= gene_track_config,
+            screening_config = screening_config_json,
+        )
+        _job.save_meta()
+
     return {
         "hi_c_config": hi_c_config,  # (a Python dict, not a string!)
         "ctcf_config": ctcf_config,
@@ -324,327 +309,58 @@ def run_prediction_and_render(
 
 @main.route('/', methods=['GET', 'POST'])
 def index():
-    # print("===== ENTERING index() =====")
-    
-    # ---------- ADD THIS ----------
-    model_path = None        # always in-scope
-    required_atac_norm  = None
-    required_ctcf_norm  = None
-    # ------------------------------
-    
-    
-    
-    # print("Method =", request.method)
-    # print("request.form =>", request.form)
-    # print("session['current_job_id'] before anything =>", session.get('current_job_id'))
-    # Declare user output folder
+    """
+    Landing page (GET) or legacy synchronous workflow (POST).
+    For POST we still run everything in‑process – useful for quick
+    single‑machine setups without Redis – by re‑using exactly the same
+    `prepare_inputs()` helper the JSON/RQ path uses.
+    """
     output_folder = get_user_output_folder()
+
+    # ------------------------------  GET  ------------------------------
     if request.method == 'GET':
-        return render_template("index.html", screening_mode=False, output_folder=output_folder)
+        return render_template(
+            "index.html",
+            screening_mode=False,
+            output_folder=output_folder
+        )
 
-    # Check chimeric / deletion / screening settings 
-    chimeric_active = (request.form.get('region_start2', '').strip() != '')
-    print("CHIMERIC_ACTIVE =>", chimeric_active)
-    if chimeric_active:
-        session['chimeric_active'] = True
-    else:
-        session['chimeric_active'] = False
-    ds_option = request.form.get('ds_option', 'none')
-    screening_requested = (ds_option == 'screening')
-
+    # ------------------------------  POST  -----------------------------
+    # Make sure user‑specific output dir is fresh
     clear_folder(output_folder)
     os.makedirs(output_folder, exist_ok=True)
 
-    # Get model path
-    region_model = request.form.get('model_select')
-    if region_model == 'IMR90':
-        model_path = "corigami_data/model_weights/v1_jimin.ckpt"
-        required_atac_norm = 'log'
-        required_ctcf_norm = 'log2fc'
-    elif region_model == 'BALL':
-        model_path = "corigami_data/model_weights/v4_javier.ckpt"
-        required_atac_norm = 'minmax'
-        required_ctcf_norm = 'minmax'
+    # Consolidate all preprocessing / normalisation / chimeric logic
+    run_args = prepare_inputs(request.form.to_dict(flat=True), output_folder)
 
-    apply_atac_norm = (request.form.get('apply_atac_norm') == 'true')
-    apply_ctcf_norm = (request.form.get('apply_ctcf_norm') == 'true')
+    # Perform prediction + plot‑config building **in the web process**
+    # (If you prefer the RQ path even here, simply enqueue instead.)
+    configs = run_prediction_and_render(**run_args)
 
-    session['model_path'] = model_path
+    # Extra configs used only for HTML rendering
+    custom_axis_cfg, gene_track_cfg = build_axis_and_gene_configs(
+        run_args, request.form   # tiny helper, omitted for brevity
+    )
 
-    # Get genome path
-    genome = request.form.get('genome_select')
-    if genome == 'hg38':
-        seq_dir = "./corigami_data/data/hg38/dna_sequence"
-    elif genome == 'mm10':
-        seq_dir = "./corigami_data/data/mm10/dna_sequence"
-    session['seq_dir'] = seq_dir
-
-    session['final_genome'] = genome
-
-    # Get region 1
-    region_chr1 = request.form.get('region_chr1')
-    region_start1 = int(request.form.get('region_start1'))
-    region_end1 = int(request.form.get('region_end1') or (region_start1 + WINDOW_WIDTH))
-
-    first_reverse = False
-    first_flip    = False
-    second_reverse= False
-    second_flip   = False
-
-    # Get region 2
-    if chimeric_active:
-        region_chr2 = request.form.get('region_chr2')
-        region_start2 = int(request.form.get('region_start2'))
-        region_end2 = int(request.form.get('region_end2') or (region_start2 + WINDOW_WIDTH))
-        first_reverse  = (request.form.get('first_reverse') == 'true')
-        first_flip     = (request.form.get('first_flip') == 'true')
-        second_reverse = (request.form.get('second_reverse') == 'true')
-        second_flip    = (request.form.get('second_flip') == 'true')
-        
-        print("first_reverse =>", first_reverse)
-        print("first_flip =>", first_flip)
-        print("second_reverse =>", second_reverse)
-        print("second_flip =>", second_flip)
-
-    # Get raw ATAC and CTCF paths
-    raw_atac_path = request.form.get('atac_bw_path','').strip()
-    raw_ctcf_path = request.form.get('ctcf_bw_path','').strip()
-
-
-    prenorm_atac_path = raw_atac_path   # ensures variable is in scope
-
-    # 1) ATAC array assembly
-    if chimeric_active:
-        a1 = extract_bigwig_region_array(raw_atac_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
-        a2 = extract_bigwig_region_array(raw_atac_path, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
-        atac_arr = np.concatenate([a1, a2])
-    else:
-        atac_arr = extract_bigwig_region_array(raw_atac_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
-
-    # 2) CTCF path or array
-    prenorm_ctcf_path = raw_ctcf_path if raw_ctcf_path and raw_ctcf_path.lower() != 'none' else None
-    ctcf_arr = None
-
-    if not prenorm_ctcf_path:  # => predict
-        if chimeric_active:
-            p1_path = os.path.join(output_folder, "predicted_ctcf_region1.bw")
-            p2_path = os.path.join(output_folder, "predicted_ctcf_region2.bw")
-            p1 = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, p1_path)
-            p2 = predict_ctcf(raw_atac_path, region_chr2, region_start2, region_end2, p2_path)
-            r1 = extract_bigwig_region_array(p1, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
-            r2 = extract_bigwig_region_array(p2, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
-            ctcf_arr = np.concatenate([r1, r2])
-        else:
-            single_ctcf_out = os.path.join(output_folder, "predicted_ctcf.bw")
-            prenorm_ctcf_path = predict_ctcf(raw_atac_path, region_chr1, region_start1, region_end1, single_ctcf_out)
-
-    # 3) Write final bigWigs if chimeric
-    if chimeric_active:
-        chim_len = len(atac_arr)
-        if ctcf_arr is None:  # user gave a real CTCF bigWig, so build an array
-            r1 = extract_bigwig_region_array(raw_ctcf_path, region_chr1, region_start1, region_end1, do_reverse=first_reverse)
-            r2 = extract_bigwig_region_array(raw_ctcf_path, region_chr2, region_start2, region_end2, do_reverse=second_reverse)
-            ctcf_arr = np.concatenate([r1, r2])
-        atac_bw, ctcf_bw = write_chimeric_bigwig(atac_arr, ctcf_arr, output_folder, chim_len, "chrCHIM")
-        prenorm_atac_path, prenorm_ctcf_path = atac_bw, ctcf_bw
-    print("ATAC:", prenorm_atac_path)
-    print("CTCF:", prenorm_ctcf_path)
-
-    # 5a) FASTA
-    if chimeric_active:
-        fa_dir = f"./corigami_data/data/{genome}/dna_sequence"
-        fa1_path = os.path.join(fa_dir, f"{region_chr1}.fa.gz")
-        fa2_path = os.path.join(fa_dir, f"{region_chr2}.fa.gz")
-
-        chimera_files_dir = os.path.join(output_folder, "chimera_fasta")
-        os.makedirs(chimera_files_dir, exist_ok=True)
-
-        # Build synthetic chrCHIM.fa.gz
-        chim_fa_gz = assemble_chimeric_fasta(
-            fa1_path, region_start1, region_end1, 
-            do_reverse1=first_reverse, do_flip1=first_flip,
-            fa2_path=fa2_path, chr2_start=region_start2, chr2_end=region_end2,
-            do_reverse2=second_reverse, do_flip2=second_flip,
-            output_folder=chimera_files_dir,
-            chim_name="chrCHIM"
-        )
-        print("Created chimeric FASTA =>", chim_fa_gz)
-        seq_dir = chimera_files_dir
-    else:
-        # Non-chimeric mode: optionally do nothing or just use fa1_path
-        seq_dir = f"./corigami_data/data/{genome}/dna_sequence"
-
-    session['seq_dir'] = seq_dir
-    
-    #mode
-
-    if chimeric_active:
-        chrom, start, end = "chrCHIM", 0, chim_len
-    else:
-        chrom = region_chr1
-        start = region_start1
-        end   = region_end1
-
-    ## Screening logic
-    if screening_requested:
-        session['perturb_width'] = request.form.get('perturb_width')
-
-        peaks_file = request.form.get('peaks_file_path', '').strip()
-
-        if not peaks_file or peaks_file.lower() == "none":
-            # If user didn’t select one in the form, or you want to handle the fallback
-            # If you want to force the user to pick a peaks file, you can raise an error instead.
-            peaks_file, temp_bedgraph = generate_peaks_from_bigwig_macs2(
-                bw_path=prenorm_atac_path,
-                chrom=chrom,
-                start=start,
-                end=end,
-                outdir=output_folder
-            )
-            print(f'auto-generated peaks file: {peaks_file}')
-
-        session['peaks_file'] = peaks_file
-
-    if apply_atac_norm:
-        final_atac_path = normalize_bigwig(
-            prenorm_atac_path, 
-            chrom, start, end,
-            required_atac_norm,
-            output_folder
-        )
-    else:
-        final_atac_path = prenorm_atac_path
-
-    if apply_ctcf_norm:
-        final_ctcf_path = normalize_bigwig(
-            prenorm_ctcf_path, 
-            chrom, start, end,
-            required_ctcf_norm,
-            output_folder
-        )
-    else:
-        final_ctcf_path = prenorm_ctcf_path
-
-    # Decide if standard or chimeric
-    if chimeric_active:
-        # (Example) final coords for "chrCHIM"
-        run_args = {
-            "region_chr": "chrCHIM",
-            "region_start": 0,
-            "region_end": chim_len,
-            "ds_option": ds_option,
-            "model_path": model_path,
-            "genome": genome,
-            "atac_bw_for_model": final_atac_path,
-            "ctcf_bw_for_model": final_ctcf_path,
-            "raw_atac_path": final_atac_path,
-            "output_folder": output_folder,
-            "screening_requested": screening_requested,
-            "seq_dir": seq_dir
-        }
-
-        configs = run_prediction_and_render(**run_args)
-
-        session.update({
-            'final_atac_bw': final_atac_path,
-            'final_ctcf_bw': final_ctcf_path,
-            'final_region_chr': "chrCHIM",
-            'final_region_start': 0,
-            'final_region_end': chim_len
-        })
-
-        # Build chimeric gene track + axis
-        annotation_file = "static/genes.gencode.v38.txt" if genome == 'hg38' else "static/genes.gencode.M21.mm10.txt"
-        gene_track_cfg = prepare_chimeric_gene_track_config(
-            annotation_file, region_chr1, region_start1, region_end1,
-            region_chr2, region_start2, region_end2
-        )
-        custom_axis_config = {
-            "region1": {
-                "chrom": region_chr1,
-                "startMb": region_start1 / 1e6,
-                "endMb":   region_end1 / 1e6,
-                "isReversed": first_reverse
-            },
-            "region2": {
-                "chrom": region_chr2,
-                "startMb": region_start2 / 1e6,
-                "endMb":   region_end2 / 1e6,
-                "isReversed": second_reverse
-            }
-        }
-
-    else:
-        # Standard mode => optional deletion
-        del_start = del_width = None
-        if ds_option == "deletion":
-            del_start = int(request.form.get('del_start', '1500000'))
-            del_width = int(request.form.get('del_width', '500000'))
-
-        run_args = {
-            "region_chr": region_chr1,
-            "region_start": region_start1,
-            "region_end": region_end1,
-            "ds_option": ds_option,
-            "model_path": model_path,
-            "genome": genome,
-            "atac_bw_for_model": final_atac_path,
-            "ctcf_bw_for_model": final_ctcf_path,
-            "raw_atac_path": raw_atac_path,
-            "output_folder": output_folder,
-            "del_start": del_start,
-            "del_width": del_width,
-            "screening_requested": screening_requested,
-            "seq_dir": seq_dir
-        }
-
-        configs = run_prediction_and_render(**run_args)
-
-        session.update({
-            'final_atac_bw': final_atac_path,
-            'final_ctcf_bw': final_ctcf_path,
-            'final_region_chr': region_chr1,
-            'final_region_start': region_start1,
-            'final_region_end': region_end1
-        })
-
-        # Standard gene track + axis
-        gene_track_cfg = prepare_gene_track_config(
-            genome, region_chr1, region_start1, region_end1,
-            ds_option, del_start, del_width
-        )
-        custom_axis_config = {
-            "region1": {
-                "chrom": region_chr1,
-                "startMb": region_start1 / 1e6,
-                "endMb":   region_end1 / 1e6,
-                "isReversed": first_reverse
-            }
-        }
-        if ds_option == "deletion" and del_start is not None and del_width is not None:
-            custom_axis_config.update({
-                "deletionStartMb": del_start / 1e6,
-                "deletionEndMb": (del_start + del_width) / 1e6
-            })
-
-    # Decide partial vs full template
-    tmpl = "plots_partial.html" if request.headers.get("X-Requested-With") == "XMLHttpRequest" else "index.html"
-    print("INDEX route finishing with session_id =", session.get('session_id'))
-    print("INDEX route finishing with current_job_id =", session.get('current_job_id'))
+    # Decide whether the browser asked for just the partial fragment
+    tmpl = (
+        "plots_partial.html"
+        if request.headers.get("X-Requested-With") == "XMLHttpRequest"
+        else "index.html"
+    )
 
     return render_template(
         tmpl,
-        hi_c_config=configs["hi_c_config"],
-        ctcf_config=configs["ctcf_config"],
-        atac_config=configs["atac_config"],
-        screening_config=configs["screening_config"],
-        screening_mode=screening_requested,
-        screening_params="{}",
-        gene_track_config=gene_track_cfg,
-        user_output_folder=output_folder,
-        custom_axis_config=custom_axis_config
+        hi_c_config        = configs["hi_c_config"],
+        ctcf_config        = configs["ctcf_config"],
+        atac_config        = configs["atac_config"],
+        screening_config   = configs["screening_config"],
+        screening_mode     = run_args["screening_requested"],
+        screening_params   = "{}",
+        gene_track_config  = gene_track_cfg,
+        user_output_folder = output_folder,
+        custom_axis_config = custom_axis_cfg,
     )
-
 ###############################################################################
 # Screening Route
 ###############################################################################
@@ -873,3 +589,144 @@ else:
     @main.route("/api/start-worker", methods=["POST"])
     def start_worker():
         return jsonify({"message": "AWS disabled"}), 501
+ 
+# ---------------------------------------------------------------------
+# NEW  –  all the stuff that used to run in index() before we enqueued
+# ---------------------------------------------------------------------
+def prepare_inputs(form_json, output_folder):
+    """
+    - Does ATAC/CTCF bigWig slicing (and concatenation for chimeras)
+    - Runs MaxATAC to predict CTCF when requested
+    - Runs normalisation when check‑boxes were ticked
+    - Generates chrCHIM.fa.gz when needed
+    - Generates MACS2 peaks when screening & user picked "None"
+    Returns a dict ready to be fed into run_prediction_and_render().
+    """
+
+    # ------------- unpack plain fields -------------------------------
+    ds_option          = form_json.get("ds_option", "none")
+    model_select       = form_json["model_select"]          # IMR90 / BALL
+    genome             = form_json["genome_select"]         # hg38 / mm10
+    apply_atac_norm    = form_json.get("apply_atac_norm") == "true"
+    apply_ctcf_norm    = form_json.get("apply_ctcf_norm") == "true"
+    predict_ctcf_flag  = form_json.get("predict_ctcf") == "true"
+    screening_requested= (ds_option == "screening")
+
+    # regions ----------------------------------------------------------
+    r1_chr   = form_json["region_chr1"]
+    r1_start = int(form_json["region_start1"])
+    r1_end   = int(form_json.get("region_end1") or r1_start + WINDOW_WIDTH)
+
+    chimeric = bool(form_json.get("region_start2"))
+    if chimeric:
+        r2_chr   = form_json["region_chr2"]
+        r2_start = int(form_json["region_start2"])
+        r2_end   = int(form_json.get("region_end2") or r2_start + WINDOW_WIDTH)
+        f_rev  = form_json.get("first_reverse")  == "true"
+        s_rev  = form_json.get("second_reverse") == "true"
+    # -----------------------------------------------------------------
+
+    # model‑specific norm requirements --------------------------------
+    if model_select == "IMR90":
+        req_atac_norm, req_ctcf_norm = "log",  "log2fc"
+        model_path = "corigami_data/model_weights/v1_jimin.ckpt"
+    else:                               #  "BALL"
+        req_atac_norm = req_ctcf_norm = "minmax"
+        model_path = "corigami_data/model_weights/v4_javier.ckpt"
+
+    # paths from the form --------------------------------------------
+    raw_atac = form_json["atac_bw_path"].strip()
+    raw_ctcf = form_json.get("ctcf_bw_path", "none").strip()
+
+    # ---------- CHIMERIC / simple slicing ----------------------------
+    if chimeric:
+        # slice → concat   (helper from utils)
+        a1 = extract_bigwig_region_array(raw_atac, r1_chr, r1_start, r1_end, do_reverse=f_rev)
+        a2 = extract_bigwig_region_array(raw_atac, r2_chr, r2_start, r2_end, do_reverse=s_rev)
+        atac_arr = np.concatenate([a1, a2])
+        chim_len = atac_arr.shape[0]
+
+        # CTCF path or prediction
+        if raw_ctcf.lower() == "none" or predict_ctcf_flag:
+            p1 = predict_ctcf(raw_atac, r1_chr, r1_start, r1_end,
+                              os.path.join(output_folder, "pred_ctcf_r1.bw"))
+            p2 = predict_ctcf(raw_atac, r2_chr, r2_start, r2_end,
+                              os.path.join(output_folder, "pred_ctcf_r2.bw"))
+            c1 = extract_bigwig_region_array(p1, r1_chr, r1_start, r1_end, do_reverse=f_rev)
+            c2 = extract_bigwig_region_array(p2, r2_chr, r2_start, r2_end, do_reverse=s_rev)
+            ctcf_arr = np.concatenate([c1, c2])
+        else:
+            c1 = extract_bigwig_region_array(raw_ctcf, r1_chr, r1_start, r1_end, do_reverse=f_rev)
+            c2 = extract_bigwig_region_array(raw_ctcf, r2_chr, r2_start, r2_end, do_reverse=s_rev)
+            ctcf_arr = np.concatenate([c1, c2])
+
+        # write synthetic bigWigs
+        atac_bw, ctcf_bw = write_chimeric_bigwig(
+            atac_arr, ctcf_arr, output_folder, chim_len, "chrCHIM"
+        )
+        region_chr, region_start, region_end = "chrCHIM", 0, chim_len
+
+        # synthetic fasta
+        fasta_dir = os.path.join(output_folder, "chim_fasta")
+        os.makedirs(fasta_dir, exist_ok=True)
+        assemble_chimeric_fasta(
+            f"./corigami_data/data/{genome}/dna_sequence/{r1_chr}.fa.gz", r1_start, r1_end,
+            do_reverse1=f_rev, fa2_path=f"./corigami_data/data/{genome}/dna_sequence/{r2_chr}.fa.gz",
+            chr2_start=r2_start, chr2_end=r2_end, do_reverse2=s_rev,
+            output_folder=fasta_dir, chim_name="chrCHIM"
+        )
+        seq_dir = fasta_dir
+
+    else:
+        # non‑chimeric simple slice path
+        region_chr, region_start, region_end = r1_chr, r1_start, r1_end
+        atac_bw = raw_atac
+        if raw_ctcf.lower() == "none" or predict_ctcf_flag:
+            ctcf_bw = predict_ctcf(
+                raw_atac, r1_chr, r1_start, r1_end,
+                os.path.join(output_folder, "pred_ctcf.bw")
+            )
+        else:
+            ctcf_bw = raw_ctcf
+        seq_dir = f"./corigami_data/data/{genome}/dna_sequence"
+
+    # ------------- optional normalisation ---------------------------
+    final_atac = atac_bw
+    if apply_atac_norm:
+        final_atac = normalize_bigwig(final_atac, region_chr, region_start, region_end,
+                                      req_atac_norm, output_folder)
+
+    final_ctcf = ctcf_bw
+    if apply_ctcf_norm:
+        final_ctcf = normalize_bigwig(final_ctcf, region_chr, region_start, region_end,
+                                      req_ctcf_norm, output_folder)
+
+    # ------------- screening peak file ------------------------------
+    if screening_requested:
+        peaks = form_json.get("peaks_file_path", "none")
+        if not peaks or peaks.lower() == "none":
+            peaks, _tmp = generate_peaks_from_bigwig_macs2(
+                bw_path=final_atac, chrom=region_chr, start=region_start,
+                end=region_end, outdir=output_folder
+            )
+    else:
+        peaks = None
+
+    # ----------- assemble kwargs for downstream helper --------------
+    return dict(
+        region_chr       = region_chr,
+        region_start     = region_start,
+        region_end       = region_end,
+        ds_option        = ds_option,
+        model_path       = model_path,
+        genome           = genome,
+        seq_dir          = seq_dir,
+        atac_bw_for_model= final_atac,
+        ctcf_bw_for_model= final_ctcf,
+        raw_atac_path    = final_atac,          # used for drawing ATAC track
+        output_folder    = output_folder,
+        del_start        = form_json.get("del_start"),
+        del_width        = form_json.get("del_width"),
+        screening_requested = screening_requested,
+        model_select     = model_select         # keep for later use
+    )

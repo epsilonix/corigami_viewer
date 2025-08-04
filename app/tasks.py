@@ -249,3 +249,155 @@ def run_screening_task(
 
     run_cmd(cmd, env=env)
     return True
+
+def preprocessing_task(form_dict):
+    """
+    Enqueued by the API.  Runs all heavy utils code inside the worker.
+    """
+    from app.preprocessing import preprocessing
+    result = preprocessing(form_dict, use_session=False)
+    return result   # RQ serialises the dict; the API can fetch job.result
+
+# ─── TASK X:  worker_predict_and_norm  ────────────────────────────────────────
+"""
+   One-shot helper that performs every heavy step inside the worker:
+
+      • prepare_inputs()  – normalisation, CTCF prediction, MACS2 peaks …
+      • run_prediction_and_render()  – model inference + chart configs
+
+   All resulting artefacts (plot configs, axis config, etc.) are stashed
+   in job.meta so the /api/job/<id>/html route can render them later.
+"""
+import uuid, os, json, numpy as np
+from app.api import prepare_inputs    
+
+def worker_predict_and_norm(form_json: dict, outdir: str) -> bool:
+    """
+    Phase‑1 job.
+      • heavy preprocessing + fast 2 Mb prediction
+      • stores plot configs in parent‑job meta
+      • keeps the screening_job_id (written by /api/predict) intact
+    """
+    import shutil
+    from rq import get_current_job
+    from app.api   import prepare_inputs
+    from app.routes import run_prediction_and_render
+
+    # ── fresh /output folder ─────────────────────────────────────────────
+    if os.path.exists(outdir):
+        for p in os.listdir(outdir):
+            fp = os.path.join(outdir, p)
+            shutil.rmtree(fp) if os.path.isdir(fp) else os.unlink(fp)
+    else:
+        os.makedirs(outdir, exist_ok=True)
+
+    # ── heavy preprocessing + prediction ────────────────────────────────
+    run_args, axis_cfg, gene_cfg = prepare_inputs(form_json, outdir)
+    result   = run_prediction_and_render(**run_args)
+
+    # ── update job.meta without losing the child job id ─────────────────
+    job            = get_current_job()
+    existing_child = job.meta.get("screening_job_id")        # preserve if present
+
+    job.meta.update(
+        **result,                         # hi_c_config, atac_config, …
+        custom_axis_config = axis_cfg,
+        screening_mode     = (run_args["ds_option"] == "screening"),
+        run_args           = run_args,
+        form_json          = form_json,
+        outdir             = outdir,
+    )
+
+    if existing_child:                    # re‑insert after bulk update
+        job.meta["screening_job_id"] = existing_child
+
+    job.save_meta()
+    return True
+
+
+def worker_run_screening(parent_job_id: str, **kwargs) -> bool:
+    """
+    Phase‑2 job (runs after worker_predict_and_norm).
+
+    • reads paths & args from the parent job’s meta
+    • executes corigami screening
+    • writes the finished Highcharts config into **both**
+      – parent.meta  (so /api/job/<id>/html can embed it immediately)
+      – child.meta   (so /api/run_screening can fetch it directly)
+    """
+    import json, os
+    from rq import get_current_job
+    from rq.job import Job
+    from app.tasks import run_screening_task
+    from app.utils import generate_peaks_from_bigwig_macs2
+
+    # ── look up parent job & its stored data ────────────────────────────
+    parent = Job.fetch(parent_job_id, connection=get_current_job().connection)
+    meta   = parent.meta
+
+    run_args  = meta["run_args"]
+    form_json = meta["form_json"]
+    outdir    = meta["outdir"]
+
+    # ── ensure a peaks file exists ──────────────────────────────────────
+    peaks_file = form_json.get("peaks_file_path")
+    if not peaks_file or peaks_file.lower() == "none":
+        peaks_file, _ = generate_peaks_from_bigwig_macs2(
+            bw_path = run_args["atac_bw_for_model"],
+            chrom   = run_args["region_chr"],
+            start   = run_args["region_start"],
+            end     = run_args["region_end"],
+            outdir  = outdir,
+        )
+
+    # ── run the screening script ────────────────────────────────────────
+    screening_script = os.path.join(
+        "C.Origami", "src", "corigami", "inference", "screening.py"
+    )
+    run_screening_task(
+        screening_script,
+        run_args["region_chr"],
+        run_args["region_start"],
+        run_args["region_end"],
+        run_args["model_path"],
+        run_args["seq_dir"],
+        run_args["atac_bw_for_model"],
+        run_args["ctcf_bw_for_model"],
+        peaks_file,
+        outdir,
+        perturb_width = int(form_json.get("perturb_width", 2000)),
+        env = os.environ.copy() | {"PYTHONPATH": "C.Origami/src"},
+    )
+
+    # ── build the Highcharts config ─────────────────────────────────────
+    scr_json = os.path.join(outdir, "screening", "screening_results.json")
+    with open(scr_json) as fh:
+        scr = json.load(fh)
+
+    if "screening_config" not in scr:
+        x = scr["window_midpoints_mb"]
+        y = scr["impact_scores"]
+        scr["screening_config"] = {
+            "chart": {"type": "line", "height": 100},
+            "xAxis": {
+                # use EXACTLY the same domain the other charts got
+                "min": run_args["region_start"] / 1e6,
+                "max": run_args["region_end"]   / 1e6
+            },
+            "yAxis": {},
+            "series": [{
+                "name": "Screening score",
+                "data": [[xi, yi] for xi, yi in zip(x, y)],
+                "color": "#9FC0DE"
+            }]
+        }
+
+    # ── write into BOTH metas so nothing can clobber it ─────────────────
+    parent.meta["screening_config"] = scr["screening_config"]
+    parent.save_meta()
+
+    job = get_current_job()                # <- this child job
+    job.meta["screening_config"] = scr["screening_config"]
+    job.save_meta()
+
+    return True

@@ -153,7 +153,11 @@ function updateEndPosition() {
   const startVal1   = parseInt(startField1.value);
   if (!isNaN(startVal1)) {
     const computedEnd1 = startVal1 + WINDOW_WIDTH;
-    if (!endField1.value || isNaN(parseInt(endField1.value))) {
+    if (endField1.disabled) {
+      // in deletion‐mode, bake the computed end into the input’s value
+      endField1.value = computedEnd1;
+      endField1.placeholder = "";
+    } else if (!endField1.value || isNaN(parseInt(endField1.value, 10))) {
       endField1.placeholder = computedEnd1;
     } else {
       endField1.placeholder = "";
@@ -492,9 +496,11 @@ function toggleOptionalFields() {
 
     // Disable region_end1 so user can’t edit it
     if (endField1) {
+      const startVal = parseInt(document.getElementById("region_start1").value, 10) || 0;
+      const computedEnd = startVal + WINDOW_WIDTH;
+      endField1.value = computedEnd;
       endField1.disabled = true;
       endField1.classList.add("disabled-field");
-      // But we do not clear endField1.value. It retains the computed default. 
     }
 
   } else if (dsOption.value === "screening") {
@@ -1015,51 +1021,91 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
 
-  formElem.addEventListener("submit", function(e) {
-    if (runInProgress) {
-      e.preventDefault();
-      return false;
-    }
+  /* ─────────────────────────  SUBMIT HANDLER  ───────────────────────── */
+/*  SUBMIT HANDLER  –  drop‑in replacement  */
+formElem.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (runInProgress) return;
+  if (!checkFormRequirements()) return;
 
-    e.preventDefault();
-    if (!checkFormRequirements()) return false;
+  const container = document.getElementById("output-container");
+  container.innerHTML =
+    '<div class="loader" style="display:block;margin:0 auto;"></div>';
 
-    const container = document.getElementById("output-container");
-    container.innerHTML = '<div class="loader" style="display: block; margin: 0 auto;"></div>';
-
-    // If second-chr toggle is off, clear the second region fields
-    if (!document.getElementById('toggle-second-chr').classList.contains("active")) {
-      document.getElementById("region_chr2").value   = "";
-      document.getElementById("region_start2").value = "";
-      document.getElementById("region_end2").value   = "";
-    }
-
-    const formData = new FormData(formElem);
-    fetch(formElem.action, {
-      method: "POST",
-      body: formData,
-      headers: { "X-Requested-With": "XMLHttpRequest" }
-    })
-    .then(response => {
-      runInProgress = false;
-      if (submitBtn) submitBtn.value = "Generate plots";
-      if (!response.ok) throw new Error("Network response was not ok");
-      return response.text();
-    })
-    .then(html => {
-      container.innerHTML = html;
-      executeScripts(container);
-    })
-    .catch(error => {
-      console.error("Error during form submission:", error);
-      container.innerHTML = "<p style='color:red;'>Error generating plots.</p>";
+  /* wipe 2nd‑region inputs if the toggle is off */
+  if (!document.getElementById("toggle-second-chr").classList.contains("active")) {
+    ["region_chr2", "region_start2", "region_end2"].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
     });
-  });
-
-  // If server set screening_mode = true, auto-run screening
-  if (typeof screening_mode !== "undefined" && screening_mode === true) {
-    runScreening();
   }
+
+  /* ---------------------------------------------------------- */
+  /* 1️⃣  kick‑off: POST /api/predict (JSON body)                */
+  /* ---------------------------------------------------------- */
+  let job_id;
+  try {
+    const resp = await fetch("/api/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(Object.fromEntries(new FormData(formElem))),
+    });
+    if (resp.status !== 202) throw new Error(`HTTP ${resp.status}`);
+    job_id = (await resp.json()).job_id;
+  } catch (err) {
+    console.error("predict launch failed:", err);
+    container.innerHTML = "<p style='color:red;'>Could not start job.</p>";
+    return;
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 2️⃣  poll /api/job/<id> until it reports "finished"         */
+  /* ---------------------------------------------------------- */
+  async function waitUntilDone(id) {
+    while (true) {
+      try {
+        const res = await fetch(`/api/job/${id}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { status } = await res.json();
+        if (status === "failed") throw new Error("worker failed");
+        if (status === "finished") return;
+        /* queued | started → keep polling */
+      } catch (e) {
+        throw e;          // bubbled to outer catch
+      }
+      await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+
+  try {
+    await waitUntilDone(job_id);
+  } catch (err) {
+    console.error("job failed:", err);
+    container.innerHTML =
+      "<p style='color:red;'>Prediction job failed. Check logs.</p>";
+    return;
+  }
+
+  /* ---------------------------------------------------------- */
+  /* 3️⃣  fetch final HTML from /api/job/<id>/html               */
+  /* ---------------------------------------------------------- */
+  try {
+    const html = await fetch(`/api/job/${job_id}/html`).then(r => r.text());
+    container.innerHTML = html;
+    executeScripts(container);              // re‑run inline scripts
+  } catch (err) {
+    console.error("partial fetch failed:", err);
+    container.innerHTML =
+      "<p style='color:red;'>Could not fetch results.</p>";
+  }
+});
+
+
+
+  // // If server set screening_mode = true, auto-run screening
+  // if (typeof screening_mode !== "undefined" && screening_mode === true) {
+  //   runScreening();
+  // }
 
  // ───────── AWS “Connect to server” button logic ─────────
   if (awsEnabled) {

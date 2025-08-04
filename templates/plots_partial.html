@@ -37,57 +37,92 @@
   </div>
 
 </div>
-
 <script>
-  /* 
-   * Use the 'tojson' filter so Python None => JS null,
-   * and any dict => valid JSON string. 
-   * 'screening_mode' is a boolean, so we can handle that with an if/else or
-   * just pass it as is. 
-   */
-  var hiCConfig        = {{ hi_c_config|tojson }};
-  var ctcfConfig       = {{ ctcf_config|tojson }};
-  var atacConfig       = {{ atac_config|tojson }};
-  var geneTrackConfig  = {{ gene_track_config|tojson }};
-  var customAxisConfig = {{ custom_axis_config|tojson }};
+  /* =======================================================================
+     plots_partial – self‑contained, generation‑safe version
+     ===================================================================== */
+  (() => {
+    /* -------- Flask‑injected configs (local to this IIFE) ---------------- */
+    const hiCConfig        = {{ hi_c_config|tojson }};
+    const ctcfConfig       = {{ ctcf_config|tojson }};
+    const atacConfig       = {{ atac_config|tojson }};
+    const geneTrackConfig  = {{ gene_track_config|tojson }};
+    const customAxisConfig = {{ custom_axis_config|tojson }};
+    const screeningMode    = {{ 'true' if screening_mode else 'false' }};
+    const screeningConfig  = {{ screening_config|tojson }};
+    const parentJobId      = "{{ current_job_id }}";
 
-  // If the Python code sets screening_mode=True, we'll get JS "true", else "false".
-  var screeningMode = {{ 'true' if screening_mode else 'false' }};
+    /* -------- expose to the rest of the page ----------------------------- */
+    window.parentJobId   = parentJobId;
+    window.screeningMode = (screeningMode === true || screeningMode === "true");
 
-  // screening_config might be None => becomes null in JS
-  var screeningConfig = {{ screening_config|tojson }};
+    /* =====================================================================
+       ①  Generation token – invalidates *all* older polling loops
+       ===================================================================== */
+    window.__scrPollGen = (window.__scrPollGen || 0) + 1;
+    const myGen = window.__scrPollGen;          // capture for this fragment
 
-  // Expose globally if needed outside this script
-  window.screening_mode = screeningMode;
-
-  // 1) Draw standard charts if they exist
-  if (hiCConfig) {
-    drawHiCChart('#hi_c_chart', hiCConfig);
-    drawCustomAxis('#custom_axis_hic', customAxisConfig);
-  }
-  if (ctcfConfig) {
-    drawColumnChart('#ctcf_chart', ctcfConfig);
-    drawCustomAxis('#custom_axis_ctcf', customAxisConfig);
-  }
-  if (atacConfig) {
-    drawColumnChart('#atac_chart', atacConfig);
-    drawCustomAxis('#custom_axis_atac', customAxisConfig);
-  }
-  if (geneTrackConfig) {
-    drawGeneTrackChart('#gene_track_chart', geneTrackConfig);
-  }
-
-  // 2) If screening_mode == true, either use the config or call runScreening()
-  if (screeningMode) {
-    if (screeningConfig) {
-      // One-step approach: server gave us screening config
-      drawColumnChart('#screening_chart', screeningConfig);
-      drawCustomAxis('#custom_axis_screening', customAxisConfig);
-    } else {
-      // Two-step approach: run /run_screening endpoint now
-      runScreening();
+    /* ---------------- helper to poll /api/run_screening ------------------ */
+    function pollScreening() {
+      fetch(`/api/run_screening?parent=${encodeURIComponent(parentJobId)}`)
+        .then(resp => {
+          if (!resp.ok) {
+            console.warn("screening fetch:", resp.status);
+            /* Retry only for server / network errors (5xx / 0) */
+            if (resp.status >= 500 || resp.status === 0) scheduleRetry();
+            return null;                       // stop on 404 etc.
+          }
+          return resp.json();
+        })
+        .then(res => {
+          if (!res) return;                    // handled above
+          if (res.status === "done") {
+            drawColumnChart('#screening_chart', res.config);
+            drawCustomAxis ('#custom_axis_screening', customAxisConfig);
+            /* stop – no further retries */
+          } else if (res.status === "running") {
+            scheduleRetry();
+          } else if (res.status === "disabled") {
+            console.log("Screening wasn’t requested – polling stopped");
+          } else {                             // "error", unknown payload …
+            console.error("Screening error:", res);
+          }
+        })
+        .catch(err => {
+          console.error("pollScreening error:", err);
+          scheduleRetry();                     // network hiccup – retry
+        });
     }
-  } else {
-    console.log("No screening mode active.");
-  }
+
+    function scheduleRetry() {
+      /* re‑schedule only if THIS is still the latest fragment */
+      if (myGen === window.__scrPollGen) {
+        window.__scrPollHandle = setTimeout(pollScreening, 5000);
+      }
+    }
+
+    /* ---------------- always‑available plots ----------------------------- */
+    if (hiCConfig)  { drawHiCChart   ('#hi_c_chart',  hiCConfig);
+                      drawCustomAxis('#custom_axis_hic', customAxisConfig); }
+    if (ctcfConfig) { drawColumnChart('#ctcf_chart',   ctcfConfig);
+                      drawCustomAxis('#custom_axis_ctcf', customAxisConfig); }
+    if (atacConfig) { drawColumnChart('#atac_chart',   atacConfig);
+                      drawCustomAxis('#custom_axis_atac', customAxisConfig); }
+    if (geneTrackConfig) {
+                      drawGeneTrackChart('#gene_track_chart', geneTrackConfig); }
+
+    /* ---------------- optional screening plot ---------------------------- */
+    if (window.screeningMode) {
+      const scrDiv = document.getElementById("screening_chart");
+      if (screeningConfig) {
+        drawColumnChart('#screening_chart', screeningConfig);
+        drawCustomAxis ('#custom_axis_screening', customAxisConfig);
+      } else if (scrDiv) {
+        /* show loader until first data arrive */
+        scrDiv.innerHTML =
+          "<div class='loader' style='display:block;margin:0 auto;'></div>";
+        pollScreening();
+      }
+    }
+  })();
 </script>

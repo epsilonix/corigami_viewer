@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <title>C.Origami Viewer</title>
-  <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
   {% if screening_mode %}
     <script>
       var screening_mode = true;
@@ -17,6 +18,7 @@
   <!-- Load D3.js and our custom plotting script -->
   <script src="https://d3js.org/d3.v7.min.js"></script>
   <script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
+
   <script>
     // This must come *before* script.js so awsEnabled exists.
     const awsEnabled = {{ 'true' if USE_AWS else 'false' }};

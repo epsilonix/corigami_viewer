@@ -143,15 +143,22 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
                    for w in range(int((screen_end - screen_start) / step_size))]
         print(f"Total windows (uniform): {len(windows)}")
 
-    # ───────────────────── edge filter (±1 Mb) ──────────────────────
-    EDGE_BUFFER = 1_048_576            # 1 Mb in bp
+    # ───────── edge filter: keep windows whose FULL prediction span
+    #           stays ≥1 Mb away from either chromosome end ──────────
+    EDGE_BUFFER     = 1_048_576               # 1 Mb
+    PRED_WINDOW_LEN = 2_097_152               # model window (2 Mb)
+    HALF_WINDOW     = PRED_WINDOW_LEN // 2
 
-    valid = [w for w in windows
-            if (w >= screen_start + EDGE_BUFFER) and (w <= chrom_len - EDGE_BUFFER)]
+    valid = [
+        w for w in windows
+        if (w - HALF_WINDOW) >= EDGE_BUFFER                # left edge ≥1 Mb
+        and (w + HALF_WINDOW) <= (chrom_len - EDGE_BUFFER) # right edge ≥1 Mb
+    ]
 
     skipped_windows += len(windows) - len(valid)
     windows = valid
-    print(f"Windows after ±1 Mb centre filter: {len(windows)}  (skipped {skipped_windows})")
+    print(f"Windows after full-span edge filter: {len(windows)}  (skipped {skipped_windows})")
+
         # ───────────────────── result containers ────────────────────────────
     preds            = np.empty((0, 256, 256))
     preds_deletion   = np.empty((0, 256, 256))

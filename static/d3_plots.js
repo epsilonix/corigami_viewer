@@ -155,7 +155,6 @@ function drawColumnChart(containerSelector, config) {
   // -----------------------------------------------------------------
   const PX_PER_MB = 200;
   const MIN_BARS_PER_MB = 30;
-  const HIDE_X_AXIS_LABELS = true;
   const margin = { top: 20, right: 20, bottom: 40, left: 50 };
 
   // -----------------------------------------------------------------
@@ -553,6 +552,29 @@ function drawColumnChart(containerSelector, config) {
   ctx.lineTo(fullWidth, axisPx);
   ctx.strokeStyle = "#000";
   ctx.stroke();
+
+  // remove this if you want to hide the x-axis labels
+  if (!HIDE_X_AXIS_LABELS) {
+    ctx.save();
+    ctx.translate(0, axisPx);
+    const ticks = xScale.ticks(5);
+    ctx.beginPath();
+    ticks.forEach(t => {
+      const x = xScale(t);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, 6);
+    });
+    ctx.stroke();
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ticks.forEach(t => {
+      const x = xScale(t);
+      ctx.fillText(d3.format(".2f")(t), x, 6);
+    });
+    ctx.restore();
+  }
+
 
   // 5h) Y-axis line & ticks
   ctx.save();
