@@ -48,6 +48,9 @@ def _genome_to_seq_dir(genome: str) -> str:
 
 
 # ---------------------------------------------------------------- prepare_inputs
+
+def _truthy(v): return str(v).lower() in ("1", "true", "on", "yes")
+
 def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
     """
     Re‑implements all heavy preprocessing formerly in routes.index():  
@@ -103,21 +106,6 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
     else:
         ctcf_pre_norm = ctcf_raw
 
-    # ----- optional normalisation
-    if apply_atac_norm:
-        atac_final = normalize_bigwig(
-            atac_pre_norm, chr1, start1, end1, req_atac_norm, outdir
-        )
-    else:
-        atac_final = atac_pre_norm
-
-    if apply_ctcf_norm:
-        ctcf_final = normalize_bigwig(
-            ctcf_pre_norm, chr1, start1, end1, req_ctcf_norm, outdir
-        )
-    else:
-        ctcf_final = ctcf_pre_norm
-
     # ════════════ deletion or chimeric bookkeeping ───────────────────────── #
     del_start = del_width = None
     if ds_opt == "deletion":
@@ -125,16 +113,27 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
         del_width = int(form.get("del_width",   500_000))
 
     if chimeric:
-        # second region
-        chr2   = form["region_chr2"]
-        start2 = int(form["region_start2"])
-        end2   = int(form.get("region_end2") or start2 + WINDOW_WIDTH)
+        # second region from form
+        chr2        = form["region_chr2"]
+        chr2_start  = int(form["region_start2"])
+        chr2_end    = int(form.get("region_end2") or chr2_start + WINDOW_WIDTH)
+
+        # canonical for region 1
+        chr1_start  = start1
+        chr1_end    = end1
+
+        # map HTML checkboxes → canonical booleans
+        chr1_reverse = _truthy(form.get("first_reverse"))
+        chr1_flip    = _truthy(form.get("first_flip"))
+        chr2_reverse = _truthy(form.get("second_reverse"))
+        chr2_flip    = _truthy(form.get("second_flip"))
 
         # splice ATAC/CTCF arrays → synthetic chrCHIM
-        a1 = extract_bigwig_region_array(atac_final, chr1, start1, end1)
-        a2 = extract_bigwig_region_array(atac_final, chr2, start2, end2)
-        c1 = extract_bigwig_region_array(ctcf_final, chr1, start1, end1)
-        c2 = extract_bigwig_region_array(ctcf_final, chr2, start2, end2)
+        a1 = extract_bigwig_region_array(atac_raw, chr1, chr1_start, chr1_end, do_reverse=chr1_reverse)
+        a2 = extract_bigwig_region_array(atac_raw, chr2, chr2_start, chr2_end, do_reverse=chr2_reverse)
+        c_src = ctcf_pre_norm  # predicted or provided CTCF *before* any per-window norm
+        c1 = extract_bigwig_region_array(c_src, chr1, chr1_start, chr1_end, do_reverse=chr1_reverse)
+        c2 = extract_bigwig_region_array(c_src, chr2, chr2_start, chr2_end, do_reverse=chr2_reverse)
 
         atac_final, ctcf_final = write_chimeric_bigwig(
             np.concatenate([a1, a2]),
@@ -142,27 +141,54 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
             outdir, len(a1) + len(a2), "chrCHIM",
         )
 
-        # synthetic FASTA
+        chim_len = len(a1) + len(a2)
+        if apply_atac_norm:
+            atac_final = normalize_bigwig(
+                atac_final, "chrCHIM", 0, chim_len, req_atac_norm, outdir, prefix="chrCHIM_atac"
+            )
+        if apply_ctcf_norm:
+            ctcf_final = normalize_bigwig(
+                ctcf_final, "chrCHIM", 0, chim_len, req_ctcf_norm, outdir, prefix="chrCHIM_ctcf"
+            )
+
+        # synthetic FASTA (keyword flags use canonical names)
         assemble_chimeric_fasta(
-            f"{seq_dir}/{chr1}.fa.gz", start1, end1,
-            f"{seq_dir}/{chr2}.fa.gz", start2, end2,
+            f"{seq_dir}/{chr1}.fa.gz", chr1_start, chr1_end,
+            f"{seq_dir}/{chr2}.fa.gz", chr2_start, chr2_end,
+            chr1_reverse=chr1_reverse, chr1_flip=chr1_flip,
+            chr2_reverse=chr2_reverse, chr2_flip=chr2_flip,
             output_folder=os.path.join(outdir, "chim_fa"),
             chim_name="chrCHIM",
         )
         seq_dir = os.path.join(outdir, "chim_fa")
-        chr_final, start_final, end_final = "chrCHIM", 0, len(a1) + len(a2)
+        chr_final, start_final, end_final = "chrCHIM", 0, chim_len
 
         gene_cfg = prepare_chimeric_gene_track_config(
             "static/genes.gencode.v38.txt",
-            chr1, start1, end1,
-            chr2, start2, end2,
+            chr1, chr1_start, chr1_end,
+            chr2, chr2_start, chr2_end,
         )
         axis_cfg = {
-            "region1": {"chrom": chr1, "startMb": start1/1e6, "endMb": end1/1e6},
-            "region2": {"chrom": chr2, "startMb": start2/1e6, "endMb": end2/1e6},
+            "region1": {"chrom": chr1, "startMb": chr1_start/1e6, "endMb": chr1_end/1e6},
+            "region2": {"chrom": chr2, "startMb": chr2_start/1e6, "endMb": chr2_end/1e6},
         }
 
     else:
+        # NON-CHIMERIC PATH - moved here so it doesn't execute for chimeric
+        if apply_atac_norm:
+            atac_final = normalize_bigwig(
+                atac_pre_norm, chr1, start1, end1, req_atac_norm, outdir
+            )
+        else:
+            atac_final = atac_pre_norm
+
+        if apply_ctcf_norm:
+            ctcf_final = normalize_bigwig(
+                ctcf_pre_norm, chr1, start1, end1, req_ctcf_norm, outdir
+            )
+        else:
+            ctcf_final = ctcf_pre_norm
+
         chr_final, start_final, end_final = chr1, start1, end1
         gene_cfg = prepare_gene_track_config(
             genome, chr1, start1, end1, ds_opt, del_start, del_width
@@ -187,14 +213,12 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
         seq_dir           = seq_dir,
         atac_bw_for_model = atac_final,
         ctcf_bw_for_model = ctcf_final,
-        raw_atac_path     = atac_raw,
         output_folder     = outdir,
         del_start         = del_start,
         del_width         = del_width,
         screening_requested = ds_opt == "screening",
     )
     return run_args, axis_cfg, gene_cfg
-
 
 # ═════════════════════════════════ routes ═════════════════════════════════ #
 # ──────────────────────────────────────────────────────────

@@ -204,6 +204,7 @@ def get_bigwig_signal(
         values.append(avg)
         positions.append(mid)
 
+    print("ATAC open:", bw_path, "chroms:", list(bw.chroms().keys())[:3], "...", "has chrCHIM?", "chrCHIM" in bw.chroms())
     bw.close()
     return positions, values
 
@@ -287,7 +288,6 @@ def normalize_bigwig(
         bw_out.addEntries(
             chrom,
             start,
-            ends=end,
             values=norm_arr.tolist(),
             span=1,
             step=1
@@ -725,21 +725,26 @@ def write_chrom_fasta(out_fa, chrom_name, seq_str):
     return out_fa
 
 def assemble_chimeric_fasta(
-    fa1_path, chr1_start, chr1_end, do_reverse1, do_flip1,
-    fa2_path, chr2_start, chr2_end, do_reverse2, do_flip2,
+    fa1_path, chr1_start, chr1_end,
+    fa2_path, chr2_start, chr2_end,
+    *,                          # keyword-only from here
+    chr1_reverse=False,
+    chr1_flip=False,
+    chr2_reverse=False,
+    chr2_flip=False,
     output_folder,
-    chim_name="chrCHIM"
+    chim_name="chrCHIM",
 ):
-    """
-    Extract two slices from 2 FASTA files (or same file) & produce 'chrCHIM.fa.gz'.
-    Returns the path to the final FASTA.
-    """
     os.makedirs(output_folder, exist_ok=True)
 
-    seq1 = extract_fasta_region(fa1_path, chr1_start, chr1_end, 
-                                do_reverse=do_reverse1, do_flip=do_flip1)
-    seq2 = extract_fasta_region(fa2_path, chr2_start, chr2_end,
-                                do_reverse=do_reverse2, do_flip=do_flip2)
+    seq1 = extract_fasta_region(
+        fa1_path, chr1_start, chr1_end,
+        do_reverse=chr1_reverse, do_flip=chr1_flip
+    )
+    seq2 = extract_fasta_region(
+        fa2_path, chr2_start, chr2_end,
+        do_reverse=chr2_reverse, do_flip=chr2_flip
+    )
 
     chim_seq = seq1 + seq2
     out_fa_path = os.path.join(output_folder, f"{chim_name}.fa")
@@ -753,43 +758,30 @@ def assemble_chimeric_fasta(
 def assemble_chimeric_arrays(
     raw_atac_path,
     raw_ctcf_path,
-    chr1, start1, end1,
-    chr2, start2, end2,
-    first_reverse=False,
-    first_flip=False,
-    second_reverse=False,
-    second_flip=False
+    chr1, chr1_start, chr1_end,
+    chr2, chr2_start, chr2_end,
+    chr1_reverse=False, chr1_flip=False,
+    chr2_reverse=False, chr2_flip=False
 ):
-    """
-    For the signals, we only do `reverse`; ignore flip for bigWig signals.
-    For FASTA, we can do both reverse & flip. 
-    But here, as an example, we strip out the do_flip for bigWig signals 
-    or treat do_flip same as do_reverse. 
-    """
-    # We interpret 'flip' as a DNA complement concept, 
-    # but for bigWig signals, we won't do complement. We'll do reverse only if needed.
-
     arr_atac_1 = extract_bigwig_region_array(
-        raw_atac_path, chr1, start1, end1,
-        do_reverse=(first_reverse or first_flip)  # treat flip as reverse for signals
+        raw_atac_path, chr1, chr1_start, chr1_end,
+        do_reverse=(chr1_reverse or chr1_flip)
     )
     arr_atac_2 = extract_bigwig_region_array(
-        raw_atac_path, chr2, start2, end2,
-        do_reverse=(second_reverse or second_flip)
+        raw_atac_path, chr2, chr2_start, chr2_end,
+        do_reverse=(chr2_reverse or chr2_flip)
     )
-
     chim_atac = np.concatenate([arr_atac_1, arr_atac_2])
 
     arr_ctcf_1 = extract_bigwig_region_array(
-        raw_ctcf_path, chr1, start1, end1,
-        do_reverse=(first_reverse or first_flip)
+        raw_ctcf_path, chr1, chr1_start, chr1_end,
+        do_reverse=(chr1_reverse or chr1_flip)
     )
     arr_ctcf_2 = extract_bigwig_region_array(
-        raw_ctcf_path, chr2, start2, end2,
-        do_reverse=(second_reverse or second_flip)
+        raw_ctcf_path, chr2, chr2_start, chr2_end,
+        do_reverse=(chr2_reverse or chr2_flip)
     )
     chim_ctcf = np.concatenate([arr_ctcf_1, arr_ctcf_2])
-
     return chim_atac, chim_ctcf
 
 def clear_folder(folder):

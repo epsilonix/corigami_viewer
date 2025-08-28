@@ -57,7 +57,7 @@ def prepare_plot_configs(
     region_end,
     ds_option,
     ctcf_bw_for_model,
-    raw_atac_path,
+    atac_bw_for_model,
     del_start=None,
     del_width=None
 ):
@@ -68,6 +68,8 @@ def prepare_plot_configs(
     """
     import numpy as np
     from scipy.ndimage import rotate
+    print(f"prepare_plot_configs received: atac_bw_for_model={atac_bw_for_model}")
+
 
     # 1) Remove rows and columns that are entirely zero BEFORE rotation
     # nonzero_row_mask = ~np.all(hi_c_matrix == 0, axis=1)
@@ -142,7 +144,7 @@ def prepare_plot_configs(
     }
 
     # ATAC track
-    atac_positions, atac_values = get_bigwig_signal(raw_atac_path, region_chr, region_start, region_end)
+    atac_positions, atac_values = get_bigwig_signal(atac_bw_for_model, region_chr, region_start, region_end)
     atac_positions_mb = [p / 1e6 for p in atac_positions]
     atac_chart_config = {
         "chart": {"height": 100},
@@ -170,7 +172,7 @@ def prepare_plot_configs(
                 "rightDomain": [del_end_mb, x_end_mb],
                 "title": ""
             }
-
+    print(f"prepare_plot_configs: atac_bw={atac_bw_for_model}, ctcf_bw={ctcf_bw_for_model}")
     return hi_c_chart_config, ctcf_chart_config, atac_chart_config, None, {}
 
 
@@ -188,7 +190,6 @@ def run_prediction_and_render(
     seq_dir,
     atac_bw_for_model,
     ctcf_bw_for_model,
-    raw_atac_path,
     output_folder,
     del_start=None,
     del_width=None,
@@ -201,6 +202,8 @@ def run_prediction_and_render(
     4. Optionally sets screening config.
     5. Returns dict with chart configs in JSON form.
     """
+    print(f"run_prediction_and_render received: atac_bw_for_model={atac_bw_for_model}")
+
     BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
     PYTHON_SRC_PATH = os.path.join(BASE_DIR, "..", "C.Origami", "src")
     env             = os.environ.copy()
@@ -250,7 +253,10 @@ def run_prediction_and_render(
 
     hi_c_matrix = np.load(hi_c_matrix_path)
 
-
+    if region_chr == "chrCHIM":
+        atac_bw_for_model = os.path.join(output_folder, "chrCHIM_atac.bw")
+        ctcf_bw_for_model = os.path.join(output_folder, "chrCHIM_ctcf.bw")
+        print(f"[FORCE] chrCHIM plotting inputs → ATAC={atac_bw_for_model}  CTCF={ctcf_bw_for_model}")
     # 3) Build chart configs
     hi_c_config, ctcf_config, atac_config, _, _ = prepare_plot_configs(
         hi_c_matrix,
@@ -259,7 +265,7 @@ def run_prediction_and_render(
         region_end,
         ds_option,
         ctcf_bw_for_model,
-        raw_atac_path,
+        atac_bw_for_model,
         del_start,
         del_width
     )
@@ -590,143 +596,3 @@ else:
     def start_worker():
         return jsonify({"message": "AWS disabled"}), 501
  
-# ---------------------------------------------------------------------
-# NEW  –  all the stuff that used to run in index() before we enqueued
-# ---------------------------------------------------------------------
-def prepare_inputs(form_json, output_folder):
-    """
-    - Does ATAC/CTCF bigWig slicing (and concatenation for chimeras)
-    - Runs MaxATAC to predict CTCF when requested
-    - Runs normalisation when check‑boxes were ticked
-    - Generates chrCHIM.fa.gz when needed
-    - Generates MACS2 peaks when screening & user picked "None"
-    Returns a dict ready to be fed into run_prediction_and_render().
-    """
-
-    # ------------- unpack plain fields -------------------------------
-    ds_option          = form_json.get("ds_option", "none")
-    model_select       = form_json["model_select"]          # IMR90 / BALL
-    genome             = form_json["genome_select"]         # hg38 / mm10
-    apply_atac_norm    = form_json.get("apply_atac_norm") == "true"
-    apply_ctcf_norm    = form_json.get("apply_ctcf_norm") == "true"
-    predict_ctcf_flag  = form_json.get("predict_ctcf") == "true"
-    screening_requested= (ds_option == "screening")
-
-    # regions ----------------------------------------------------------
-    r1_chr   = form_json["region_chr1"]
-    r1_start = int(form_json["region_start1"])
-    r1_end   = int(form_json.get("region_end1") or r1_start + WINDOW_WIDTH)
-
-    chimeric = bool(form_json.get("region_start2"))
-    if chimeric:
-        r2_chr   = form_json["region_chr2"]
-        r2_start = int(form_json["region_start2"])
-        r2_end   = int(form_json.get("region_end2") or r2_start + WINDOW_WIDTH)
-        f_rev  = form_json.get("first_reverse")  == "true"
-        s_rev  = form_json.get("second_reverse") == "true"
-    # -----------------------------------------------------------------
-
-    # model‑specific norm requirements --------------------------------
-    if model_select == "IMR90":
-        req_atac_norm, req_ctcf_norm = "log",  "log2fc"
-        model_path = "corigami_data/model_weights/v1_jimin.ckpt"
-    else:                               #  "BALL"
-        req_atac_norm = req_ctcf_norm = "minmax"
-        model_path = "corigami_data/model_weights/v4_javier.ckpt"
-
-    # paths from the form --------------------------------------------
-    raw_atac = form_json["atac_bw_path"].strip()
-    raw_ctcf = form_json.get("ctcf_bw_path", "none").strip()
-
-    # ---------- CHIMERIC / simple slicing ----------------------------
-    if chimeric:
-        # slice → concat   (helper from utils)
-        a1 = extract_bigwig_region_array(raw_atac, r1_chr, r1_start, r1_end, do_reverse=f_rev)
-        a2 = extract_bigwig_region_array(raw_atac, r2_chr, r2_start, r2_end, do_reverse=s_rev)
-        atac_arr = np.concatenate([a1, a2])
-        chim_len = atac_arr.shape[0]
-
-        # CTCF path or prediction
-        if raw_ctcf.lower() == "none" or predict_ctcf_flag:
-            p1 = predict_ctcf(raw_atac, r1_chr, r1_start, r1_end,
-                              os.path.join(output_folder, "pred_ctcf_r1.bw"))
-            p2 = predict_ctcf(raw_atac, r2_chr, r2_start, r2_end,
-                              os.path.join(output_folder, "pred_ctcf_r2.bw"))
-            c1 = extract_bigwig_region_array(p1, r1_chr, r1_start, r1_end, do_reverse=f_rev)
-            c2 = extract_bigwig_region_array(p2, r2_chr, r2_start, r2_end, do_reverse=s_rev)
-            ctcf_arr = np.concatenate([c1, c2])
-        else:
-            c1 = extract_bigwig_region_array(raw_ctcf, r1_chr, r1_start, r1_end, do_reverse=f_rev)
-            c2 = extract_bigwig_region_array(raw_ctcf, r2_chr, r2_start, r2_end, do_reverse=s_rev)
-            ctcf_arr = np.concatenate([c1, c2])
-
-        # write synthetic bigWigs
-        atac_bw, ctcf_bw = write_chimeric_bigwig(
-            atac_arr, ctcf_arr, output_folder, chim_len, "chrCHIM"
-        )
-        region_chr, region_start, region_end = "chrCHIM", 0, chim_len
-
-        # synthetic fasta
-        fasta_dir = os.path.join(output_folder, "chim_fasta")
-        os.makedirs(fasta_dir, exist_ok=True)
-        assemble_chimeric_fasta(
-            f"./corigami_data/data/{genome}/dna_sequence/{r1_chr}.fa.gz", r1_start, r1_end,
-            do_reverse1=f_rev, fa2_path=f"./corigami_data/data/{genome}/dna_sequence/{r2_chr}.fa.gz",
-            chr2_start=r2_start, chr2_end=r2_end, do_reverse2=s_rev,
-            output_folder=fasta_dir, chim_name="chrCHIM"
-        )
-        seq_dir = fasta_dir
-
-    else:
-        # non‑chimeric simple slice path
-        region_chr, region_start, region_end = r1_chr, r1_start, r1_end
-        atac_bw = raw_atac
-        if raw_ctcf.lower() == "none" or predict_ctcf_flag:
-            ctcf_bw = predict_ctcf(
-                raw_atac, r1_chr, r1_start, r1_end,
-                os.path.join(output_folder, "pred_ctcf.bw")
-            )
-        else:
-            ctcf_bw = raw_ctcf
-        seq_dir = f"./corigami_data/data/{genome}/dna_sequence"
-
-    # ------------- optional normalisation ---------------------------
-    final_atac = atac_bw
-    if apply_atac_norm:
-        final_atac = normalize_bigwig(final_atac, region_chr, region_start, region_end,
-                                      req_atac_norm, output_folder)
-
-    final_ctcf = ctcf_bw
-    if apply_ctcf_norm:
-        final_ctcf = normalize_bigwig(final_ctcf, region_chr, region_start, region_end,
-                                      req_ctcf_norm, output_folder)
-
-    # ------------- screening peak file ------------------------------
-    if screening_requested:
-        peaks = form_json.get("peaks_file_path", "none")
-        if not peaks or peaks.lower() == "none":
-            peaks, _tmp = generate_peaks_from_bigwig_macs2(
-                bw_path=final_atac, chrom=region_chr, start=region_start,
-                end=region_end, outdir=output_folder
-            )
-    else:
-        peaks = None
-
-    # ----------- assemble kwargs for downstream helper --------------
-    return dict(
-        region_chr       = region_chr,
-        region_start     = region_start,
-        region_end       = region_end,
-        ds_option        = ds_option,
-        model_path       = model_path,
-        genome           = genome,
-        seq_dir          = seq_dir,
-        atac_bw_for_model= final_atac,
-        ctcf_bw_for_model= final_ctcf,
-        raw_atac_path    = final_atac,          # used for drawing ATAC track
-        output_folder    = output_folder,
-        del_start        = form_json.get("del_start"),
-        del_width        = form_json.get("del_width"),
-        screening_requested = screening_requested,
-        model_select     = model_select         # keep for later use
-    )
