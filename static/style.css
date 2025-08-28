@@ -68,6 +68,37 @@
   font-weight:500;
 }
 
+/* locked state visuals (stroke + hatch) */
+.checkbox-container.locked {
+  position: relative;
+  border-color: #4a4a4a !important; /* dark grey stroke */
+  color: #4a4a4a !important;
+  background-color: #f4f5f7 !important;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0,0,0,0.06) 0 8px,
+    transparent 8px 16px
+  ); /* medium grey hatch */
+}
+
+/* keep the little square in sync with the darker stroke */
+.checkbox-container.locked::before {
+  border-color: #4a4a4a !important;
+}
+
+/* keep the checkmark visible but neutral grey when locked */
+.checkbox-container.locked.checked::after {
+  border-right-color: #4a4a4a !important;
+  border-bottom-color: #4a4a4a !important;
+}
+label#predict_ctcf_wrapper {
+  display: none;
+}
+/* if you want to suppress the blue "checked" background when locked */
+.checkbox-container.locked.checked {
+  background-color: #eef0f2 !important; /* neutralized */
+}
+
 div#gene-track-wrapper {
   overflow-y: hidden;
   overflow-x: visible;
@@ -270,7 +301,7 @@ input#peaks_file_upload {
   margin-top: 10px !important;
 }
 .disabled-toggle {
-  opacity: 0.6;
+  opacity: 1;
   pointer-events: none;
 }
 

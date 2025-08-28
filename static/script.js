@@ -450,6 +450,7 @@ function showSecondChr() {
   }
 
   collectAndDisplayErrors();
+  updateNormLocks();
 }
 
 function hideSecondChr() {
@@ -474,6 +475,7 @@ function hideSecondChr() {
   }
 
   collectAndDisplayErrors();
+  updateNormLocks();
 }
 
 function toggleOptionalFields() {
@@ -676,6 +678,7 @@ function ajaxUploadFile(fileInputId, fileType, dropdownId) {
         uploadButton.classList.remove('loading');
       }
       collectAndDisplayErrors(); // re-validate after upload
+      updateNormLocks();
     });
 }
 
@@ -827,10 +830,12 @@ document.addEventListener('DOMContentLoaded', function() {
       updateNormalizationLabels();
       toggleOptionalFields();
       updateEndPosition();
+      updateNormLocks();
 
       // Mark init complete & validate
       window.initComplete = true;
       collectAndDisplayErrors();
+      updateNormLocks();
 
       console.log("All dropdowns done. Initialization complete!");
     })
@@ -896,12 +901,28 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 
   updateNormalizationLabels();
+  updateNormLocks();
   // Screening fields
   document.getElementById("perturb_width").addEventListener("input", storeFormFields);
 
   // Model changes
-  document.getElementById("model_select").addEventListener("change", storeFormFields);
-  document.getElementById("model_select").addEventListener("change", updateNormalizationLabels);
+  document.getElementById("model_select").addEventListener("change", () => {
+    // 1) swap labels + hide/show + preset fallbacks
+    updateNormalizationLabels();
+  
+    // 2) re-lock/unlock checkboxes based on (new) model + (new) selected sources
+    updateNormLocks();
+  
+    // 3) fire change on CTCF dropdown so its listener syncs the “auto” checkbox class
+    const ctcfDD = document.getElementById("ctcf_bw_path");
+    if (ctcfDD) ctcfDD.dispatchEvent(new Event("change", { bubbles: true }));
+  
+    // 4) re-run validation to enable/disable submit & refresh warnings
+    collectAndDisplayErrors();
+  
+    // 5) persist
+    storeFormFields();
+  });
   // DS option toggles
   const dsRadios = document.getElementsByName("ds_option");
   dsRadios.forEach(radio => {
@@ -909,6 +930,7 @@ document.addEventListener('DOMContentLoaded', function() {
       storeFormFields();
       toggleOptionalFields();
       collectAndDisplayErrors();
+      updateNormLocks();
     });
   });
 
@@ -1004,7 +1026,17 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     storeFormFields();
     collectAndDisplayErrors();
+    updateNormLocks();
   });
+    // ATAC dropdown => re-lock + re-validate when user switches file/preset
+  const atacDropdownEl = document.getElementById("atac_bw_path");
+  if (atacDropdownEl) {
+    atacDropdownEl.addEventListener("change", () => {
+      storeFormFields();
+      updateNormLocks();          // decides preset vs user file + model
+      collectAndDisplayErrors();  // keeps the submit state correct
+    });
+  }
 
   // 2) Checkbox => dropdown
   predictCtcfCheckbox.addEventListener("change", function() {
@@ -1018,6 +1050,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     storeFormFields();
     collectAndDisplayErrors();
+    updateNormLocks();
   });
 
 
@@ -1352,3 +1385,70 @@ function updateNormalizationLabels() {
 }
 
 
+// Lock normalization methods
+
+// --- replace these helpers ---
+function _selectedIsPreset(selectEl) {
+  if (!selectEl) return false;
+  const opt = selectEl.options[selectEl.selectedIndex];
+  if (!opt) return false;
+
+  // 1) official signal
+  if (opt.hasAttribute("data-model")) return true;
+
+  // 2) value-based fallback for presets shipped with the app
+  const v = String(opt.value || "").toLowerCase();
+  return v.includes("/corigami_data/") || v.startsWith("./corigami_data/");
+}
+
+function _lock(wrapperEl, checkboxEl, shouldCheck) {
+  if (!wrapperEl || !checkboxEl) return;
+  checkboxEl.checked = !!shouldCheck;
+  wrapperEl.classList.toggle("checked", !!shouldCheck);
+  wrapperEl.classList.add("disabled-toggle", "locked"); // visual + block clicks
+}
+function _unlock(wrapperEl) {
+  if (!wrapperEl) return;
+  wrapperEl.classList.remove("disabled-toggle", "locked");
+}
+
+function updateNormLocks() {
+  const model  = document.getElementById("model_select")?.value || "IMR90";
+
+  const atacDD = document.getElementById("atac_bw_path");
+  const ctcfDD = document.getElementById("ctcf_bw_path");
+
+  const atacCB = document.getElementById("apply_atac_norm");
+  const atacW  = document.getElementById("apply_atac_norm_wrapper");
+
+  const ctcfCB = document.getElementById("apply_ctcf_norm");
+  const ctcfW  = document.getElementById("apply_ctcf_norm_wrapper");
+
+  const autoCB = document.getElementById("predict_ctcf");
+  const autoW  = document.getElementById("predict_ctcf_wrapper");
+
+  // reset → then apply locks
+  _unlock(atacW); _unlock(ctcfW); _unlock(autoW);
+
+  const atacIsPreset = _selectedIsPreset(atacDD);
+  const ctcfIsPreset = _selectedIsPreset(ctcfDD);
+  const ctcfIsAuto   = !!(autoCB && autoCB.checked) || (ctcfDD && ctcfDD.value === "none");
+
+  // ATAC
+  if (atacIsPreset && model === "IMR90") {
+    // IMR-90 + preset ATAC → log-norm = CHECKED + locked
+    _lock(atacW, atacCB, true);
+  } else if (atacIsPreset && model === "BALL") {
+    // B-ALL + preset ATAC → minmax = UNCHECKED + locked
+    _lock(atacW, atacCB, false);
+  }
+
+  // CTCF (B-ALL rules)
+  if (model === "BALL" && ctcfIsPreset) {
+    _lock(ctcfW, ctcfCB, false); // preset CTCF → minmax unchecked + locked
+  }
+  if (model === "BALL" && ctcfIsAuto) {
+    _lock(autoW, autoCB, true);  // auto-generate locked ON
+    _lock(ctcfW, ctcfCB, true);  // norm locked ON
+  }
+}

@@ -400,6 +400,7 @@ def run_screening_endpoint():
 
 
     print(f'run screening endpoint: peaks file: {peaks_file}')
+  
     # 4) Now do the screening with final_atac_bw, final_ctcf_bw, peaks_file
     # (No re-assembly, no normalization, no chimeric logic needed)
     screening_script = os.path.join("C.Origami", "src", "corigami", "inference", "screening.py")

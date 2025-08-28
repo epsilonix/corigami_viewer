@@ -207,6 +207,58 @@ def run_prediction_task(
     return True
 
 # ─── TASK 4: run_screening ────────────────────────────────────────────────────
+def _ensure_interior_peaks(peaks_file, chrom, screen_start, screen_end, window_bp, outdir):
+    """
+    Keep only peaks whose midpoint is >= window_bp/2 away from both edges so a full window fits.
+    If nothing survives, seed a few interior peaks so screening can run.
+    Returns the path to the filtered peaks file.
+    """
+    try:
+        if not (peaks_file and os.path.exists(peaks_file)):
+            return peaks_file
+
+        os.makedirs(outdir, exist_ok=True)
+        out_path = os.path.join(outdir, "auto_peaks_interior.narrowPeak")
+
+        min_mid = int(screen_start + window_bp // 2)
+        max_mid = int(screen_end   - window_bp // 2)
+
+        kept = 0
+        with open(peaks_file) as fin, open(out_path, "w") as fout:
+            for line in fin:
+                if not line.strip():
+                    continue
+                parts = line.split("\t")
+                if parts[0] != chrom:
+                    continue
+                try:
+                    start = int(parts[1]); end = int(parts[2])
+                except ValueError:
+                    continue
+                mid = (start + end) // 2
+                if min_mid <= mid <= max_mid:
+                    fout.write(line)
+                    kept += 1
+
+        if kept == 0:
+            # seed a few interior peaks to force at least some windows
+            step = 400_000
+            seed_half = 150
+            with open(out_path, "w") as fout:
+                pos = min_mid + 200_000
+                while pos <= max_mid - 200_000:
+                    s = max(screen_start, pos - seed_half)
+                    e = min(screen_end,   pos + seed_half)
+                    fout.write(f"{chrom}\t{s}\t{e}\tseed\t1000\t.\n")
+                    pos += step
+            print(f"[worker] no interior peaks; seeded synthetic peaks in {out_path}")
+        else:
+            print(f"[worker] interior peaks kept: {kept} -> {out_path}")
+
+        return out_path
+    except Exception as e:
+        print(f"[worker] _ensure_interior_peaks error: {e}; using original {peaks_file}")
+        return peaks_file 
 
 def run_screening_task(
     screening_script,
@@ -349,6 +401,18 @@ def worker_run_screening(parent_job_id: str, **kwargs) -> bool:
             end     = run_args["region_end"],
             outdir  = outdir,
         )
+        # NEW: for chrCHIM, keep only interior peaks so windows pass the edge filter
+    if run_args["region_chr"] == "chrCHIM" and peaks_file:
+        # use the model window size (2,097,152 bp), not the screen span
+        peaks_file = _ensure_interior_peaks(
+            peaks_file = peaks_file,
+            chrom = run_args["region_chr"],
+            screen_start = run_args["region_start"],
+            screen_end   = run_args["region_end"],
+            window_bp = 2_097_152,
+            outdir = os.path.join(outdir, "screening"),
+        )
+        print(f"[worker] screening will use interior peaks file: {peaks_file}")
 
     # ── run the screening script ────────────────────────────────────────
     screening_script = os.path.join(

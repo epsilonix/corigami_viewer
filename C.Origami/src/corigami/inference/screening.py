@@ -143,21 +143,37 @@ def screening(output_path, celltype, chr_name, screen_start, screen_end, perturb
                    for w in range(int((screen_end - screen_start) / step_size))]
         print(f"Total windows (uniform): {len(windows)}")
 
-    # ───────── edge filter: keep windows whose FULL prediction span
-    #           stays ≥1 Mb away from either chromosome end ──────────
-    EDGE_BUFFER     = 1_048_576               # 1 Mb
-    PRED_WINDOW_LEN = 2_097_152               # model window (2 Mb)
+    # ───────── edge filter (conditional for chrCHIM vs real chromosomes) ─────────
+    PRED_WINDOW_LEN = 2_097_152
     HALF_WINDOW     = PRED_WINDOW_LEN // 2
+    EDGE_BUFFER     = 1_048_576  # 1 Mb
 
-    valid = [
-        w for w in windows
-        if (w - HALF_WINDOW) >= EDGE_BUFFER                # left edge ≥1 Mb
-        and (w + HALF_WINDOW) <= (chrom_len - EDGE_BUFFER) # right edge ≥1 Mb
-    ]
+    _before = len(windows)
 
-    skipped_windows += len(windows) - len(valid)
-    windows = valid
+    if chr_name == "chrCHIM":
+        # For the artificial 4 Mb chrCHIM, require that the FULL 2 Mb prediction
+        # PLUS the perturbation fits inside the screening span.
+        left_bound  = screen_start + HALF_WINDOW
+        right_bound = screen_end   - HALF_WINDOW - perturb_width
+
+        if right_bound < left_bound:
+            print(f"[screening] WARNING: screen span too small for 2Mb+perturbation "
+                f"(start={screen_start}, end={screen_end}, pw={perturb_width})")
+            windows = []
+        else:
+            windows = [w for w in windows if left_bound <= w <= right_bound]
+    else:
+        # For real chromosomes, keep windows whose FULL prediction span stays
+        # ≥1 Mb away from either chromosome end.
+        windows = [
+            w for w in windows
+            if (w - HALF_WINDOW) >= EDGE_BUFFER
+            and (w + HALF_WINDOW) <= (chrom_len - EDGE_BUFFER)
+        ]
+
+    skipped_windows += _before - len(windows)
     print(f"Windows after full-span edge filter: {len(windows)}  (skipped {skipped_windows})")
+
 
         # ───────────────────── result containers ────────────────────────────
     preds            = np.empty((0, 256, 256))

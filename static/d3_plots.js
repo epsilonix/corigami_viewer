@@ -136,6 +136,60 @@ function drawHiCChart(containerSelector, config) {
   }
 }
 
+// === Hatch helpers ============================================================
+const HATCH_BAND_HEIGHT = 20; // px tall band
+
+function hexToRgb(hex) {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return { r: 159, g: 192, b: 222 }; // fallback (#9FC0DE)
+  return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
+}
+
+function darkenHex(hex, amount = 30) { // amount: 0..255 darker
+  const { r, g, b } = hexToRgb(hex);
+  const clamp = (v) => Math.max(0, Math.min(255, v));
+  const d = (v) => clamp(v - amount);
+  const toHex = (v) => v.toString(16).padStart(2, "0");
+  return `#${toHex(d(r))}${toHex(d(g))}${toHex(d(b))}`;
+}
+
+function makeDiagHatch(colorHex, bgAlpha = 0.12, lineAlpha = 0.5, size = 8, thickness = 1) {
+  const off = document.createElement("canvas");
+  off.width = off.height = size;
+  const c = off.getContext("2d");
+  const { r, g, b } = hexToRgb(colorHex);
+
+  // subtle tinted background
+  c.fillStyle = `rgba(${r},${g},${b},${bgAlpha})`;
+  c.fillRect(0, 0, size, size);
+
+  // diagonal strokes (same angle/feel as your disabled buttons)
+  c.strokeStyle = `rgba(${r},${g},${b},${lineAlpha})`;
+  c.lineWidth = thickness;
+  c.beginPath();
+  c.moveTo(-size, size / 2);
+  c.lineTo(size / 2, -size);
+  c.moveTo(0, size);
+  c.lineTo(size, 0);
+  c.moveTo(size / 2, size);
+  c.lineTo(size * 1.5, size / 2);
+  c.stroke();
+
+  return c.createPattern(off, "repeat");
+}
+
+function drawHatchedBand(ctx, xStartPx, xEndPx, bandHeightPx, colorHex) {
+  const w = Math.max(0, xEndPx - xStartPx);
+  if (!w) return;
+  const pattern = makeDiagHatch(colorHex);
+  ctx.save();
+  ctx.fillStyle = pattern;
+  ctx.fillRect(xStartPx, 0, w, bandHeightPx);
+  ctx.strokeStyle = darkenHex(colorHex, 40); // darker outline for definition
+  ctx.lineWidth = 1;
+  ctx.strokeRect(Math.floor(xStartPx) + 0.5, 0.5, Math.floor(w) - 1, Math.max(1, bandHeightPx) - 1);
+  ctx.restore();
+}
 
 /**
  * Draws a column (bar) chart using the given config.
@@ -237,6 +291,7 @@ function drawColumnChart(containerSelector, config) {
   // but let's figure out the chart height
   const height = config.chart.height || 150;
 
+
   // -----------------------------------------------------------------
   // 4) Check if axisBreak => do the "two-scale" approach
   // -----------------------------------------------------------------
@@ -281,72 +336,7 @@ function drawColumnChart(containerSelector, config) {
       .range([height, 0]);
     const axisPx = yScale(axisValue);
 
-    // 4f) If screening => shading
-    if (config.screening) {
-      ctx.save();
-      ctx.fillStyle = "rgba(200, 200, 200, 0.4)";
-    
-      // We'll figure out if/where we shade the left side (start) and the right side (end).
-      // 'xMin' and 'xMax' are in Mb, from config.xAxis.min and config.xAxis.max
-      // 'chromEndMb' is the entire chromosome length in Mb (if known).
-      let chromEndMb = null;
-      if (window.chromosomeLengths && config.chromName) {
-        let bpLen = window.chromosomeLengths[config.chromName];
-        if (bpLen) {
-          chromEndMb = bpLen / 1e6; // convert to Mb
-        }
-      }
-    
-      // We’ll define two booleans and numeric boundaries:
-      let doLeftShading  = false;
-      let doRightShading = false;
-      let leftLimitMb    = xMin;  // up to where we shade on the left
-      let rightLimitMb   = xMax;  // from where we shade on the right
-    
 
-      console.log("screening?", config.screening);
-      console.log("isChimeric?", config.isChimeric);
-      console.log("xMin, xMax:", xMin, xMax);
-      console.log("chromName:", config.chromName);
-      console.log("chromEndMb computed:", chromEndMb);
-      
-      // 1) Always shade first & last 1Mb if chimeric:
-      if (config.isChimeric) {
-        doLeftShading  = true;
-        doRightShading = true;
-        leftLimitMb    = xMin + 1.0;     // shade from xMin => (xMin + 1Mb)
-        rightLimitMb   = xMax - 1.0;     // shade from (xMax - 1Mb) => xMax
-      }
-      // 2) If NOT chimeric, see if xMin < 1 => that means we’re actually near the chromosome start
-      //    so we shade from xMin => 1.0
-      //    Similarly, if xMax > chromEndMb - 1 => shade that portion
-      else if (chromEndMb) {
-        if (xMin < 1.0) {
-          doLeftShading = true;
-          leftLimitMb   = Math.min(xMax, 1.0); // never exceed xMax
-        }
-        if (xMax > (chromEndMb - 1.0)) {
-          doRightShading = true;
-          rightLimitMb   = Math.max(xMin, chromEndMb - 1.0);
-        }
-      }
-    
-      // Now do the actual shading, converting Mb => pixels
-      if (doLeftShading) {
-        const shadeEndPx = xScale(leftLimitMb);
-        if (shadeEndPx > 0) {
-          ctx.fillRect(0, 0, shadeEndPx, height);
-        }
-      }
-      if (doRightShading) {
-        const shadeStartPx = xScale(rightLimitMb);
-        if (shadeStartPx < fullWidth) {
-          ctx.fillRect(shadeStartPx, 0, fullWidth - shadeStartPx, height);
-        }
-      }
-    
-      ctx.restore();
-    }
     
     // 4g) Decide bar spacing on left side
     let leftCount = leftData.length;
@@ -424,6 +414,49 @@ function drawColumnChart(containerSelector, config) {
     });
     ctx.restore();
 
+    // 4j.5) If screening => draw hatched bands ON TOP (first/last 1 Mb)
+    if (config.screening) {
+      const hatchColor = (config.series && config.series[0] && config.series[0].color) || "#9FC0DE";
+      const bandH = Math.min(HATCH_BAND_HEIGHT, Math.max(10, 0.25 * height));
+
+      // optional chromosome length for non-chimeric logic
+      let chromEndMb = null;
+      if (!config.isChimeric && window.chromosomeLengths && config.chromName) {
+        const bpLen = window.chromosomeLengths[config.chromName];
+        if (bpLen) chromEndMb = bpLen / 1e6;
+      }
+
+      // LEFT band
+      if (config.isChimeric || (chromEndMb && xMin < 1.0)) {
+        const leftFromMb = leftDomain[0];
+        const leftToMb   = config.isChimeric
+          ? Math.min(leftDomain[0] + 1.0, leftDomain[1])
+          : Math.min(1.0, leftDomain[1]);
+
+        const x0 = scaleLeft(leftFromMb);
+        const x1 = scaleLeft(leftToMb);
+        drawHatchedBand(ctx, x0, x1, bandH, hatchColor);
+      }
+
+      // RIGHT band
+      if (config.isChimeric || (chromEndMb && xMax > (chromEndMb - 1.0))) {
+        ctx.save();
+        ctx.translate(leftWidthPx + gapPx, 0);
+
+        const rightFromMb = config.isChimeric
+          ? Math.max(rightDomain[1] - 1.0, rightDomain[0])
+          : Math.max(chromEndMb - 1.0, rightDomain[0]);
+        const rightToMb   = rightDomain[1];
+
+        const x0 = scaleRight(rightFromMb);
+        const x1 = scaleRight(rightToMb);
+        drawHatchedBand(ctx, x0, x1, bandH, hatchColor);
+
+        ctx.restore();
+      }
+    }
+
+
     // 4k) (Optional) Zigzag break line
     if (!HIDE_X_AXIS_LABELS) {
       ctx.save();
@@ -485,46 +518,6 @@ function drawColumnChart(containerSelector, config) {
     .range([height, 0]);
   const axisPx = yScale(axisValue);
 
-  // 5d) If screening => shading skip region (unchanged logic)
-  if (config.screening) {
-    ctx.save();
-    ctx.fillStyle = "rgba(200, 200, 200, 0.4)";
-    if (config.isChimeric) {
-      console.log("COLUMN PLOT SKIP REGION: isChimeric:", config.isChimeric);
-      const leftSkipEndX = xScale(Math.min(xMax, xMin + 1.0));
-      if (leftSkipEndX > 0) {
-        ctx.fillRect(0, 0, leftSkipEndX, height);
-      }
-      const rightSkipStartX = xScale(Math.max(xMin, xMax - 1.0));
-      if (rightSkipStartX < fullWidth) {
-        const w = fullWidth - rightSkipStartX;
-        ctx.fillRect(rightSkipStartX, 0, w, height);
-      }
-    } else {
-      // normal skip => first/last 1 Mb
-      let chromEndMb = null;
-      const regionChrElem = document.getElementById("region_chr1");
-      if (regionChrElem && window.chromosomeLengths) {
-        let regionChr = regionChrElem.value;
-        let bpLen = window.chromosomeLengths[regionChr];
-        if (bpLen) {
-          chromEndMb = bpLen / 1e6;
-        }
-      }
-      if (chromEndMb) {
-        const leftSkipEndX = xScale(Math.max(xMin, 1.0));
-        if (leftSkipEndX > 0) {
-          ctx.fillRect(0, 0, leftSkipEndX, height);
-        }
-        const rightSkipStartX = xScale(Math.min(xMax, chromEndMb - 1.0));
-        if (rightSkipStartX < fullWidth) {
-          const w = fullWidth - rightSkipStartX;
-          ctx.fillRect(rightSkipStartX, 0, w, height);
-        }
-      }
-    }
-    ctx.restore();
-  }
 
   // 5e) Decide bar spacing
   let dataCount = data.length;
@@ -545,6 +538,50 @@ function drawColumnChart(containerSelector, config) {
     ctx.fillStyle = config.series[0].color || "#9FC0DE";
     ctx.fillRect(xPx, top, barWidth, h);
   });
+
+  // 5f.5) If screening => draw hatched edge bands ON TOP (first/last 1 Mb)
+  if (config.screening) {
+    const hatchColor = (config.series && config.series[0] && config.series[0].color) || "#9FC0DE";
+    const bandH = Math.min(HATCH_BAND_HEIGHT, Math.max(10, 0.25 * height));
+
+    // sanity ping
+    console.log("[hatch] screening:", true, "isChimeric:", !!config.isChimeric, "xMin/xMax:", xMin, xMax);
+
+    if (config.isChimeric) {
+      // Always hatch first/last 1 Mb of the plotted span
+      const leftEndMb    = Math.min(xMax, xMin + 1.0);
+      const rightStartMb = Math.max(xMin, xMax - 1.0);
+      drawHatchedBand(ctx, xScale(xMin),         xScale(leftEndMb),    bandH, hatchColor);
+      drawHatchedBand(ctx, xScale(rightStartMb), xScale(xMax),         bandH, hatchColor);
+    } else {
+      // Only hatch if within 1 Mb of true chromosome ends
+      let chromEndMb = null;
+
+      if (config.chromName && window.chromosomeLengths) {
+        const bpLen = window.chromosomeLengths[config.chromName];
+        if (bpLen) chromEndMb = bpLen / 1e6;
+      }
+      if (!chromEndMb) {
+        const regionChrElem = document.getElementById("region_chr1");
+        if (regionChrElem && window.chromosomeLengths) {
+          const bpLen = window.chromosomeLengths[regionChrElem.value];
+          if (bpLen) chromEndMb = bpLen / 1e6;
+        }
+      }
+
+      console.log("[hatch] chromEndMb:", chromEndMb);
+
+      if (chromEndMb) {
+        if (xMin < 1.0) {
+          drawHatchedBand(ctx, xScale(xMin), xScale(Math.max(xMin, 1.0)), bandH, hatchColor);
+        }
+        if (xMax > (chromEndMb - 1.0)) {
+          drawHatchedBand(ctx, xScale(Math.min(xMax, chromEndMb - 1.0)), xScale(xMax), bandH, hatchColor);
+        }
+      }
+    }
+  }
+
 
   // 5g) Horizontal axis line
   ctx.beginPath();
@@ -992,6 +1029,65 @@ function drawTicksBelow(ctx, scale, tickVals, labelPrecision=1) {
   ctx.restore();
 }
 
+function drawTicksBelowStacked(
+  ctx, scale, tickVals,
+  {
+    xOffset = 0,        // how much the context is translated for drawing
+    worldOffset = 0,    // absolute X offset for collision checks (e.g., chunk1Width)
+    labelFormatter = t => t.toFixed(1),
+    minGapPx = 6,       // padding between labels
+    rowHeight = 12,     // vertical step for stacked rows
+    baselineY = 0,
+    maxRows = 2,
+    font = "10px sans-serif"
+  } = {},
+  rowRightmost = []     // carry-over state across segments
+) {
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.font = font;
+
+  // ensure rows
+  for (let r = rowRightmost.length; r < maxRows; r++) rowRightmost[r] = -Infinity;
+
+  // sort by on-screen x to get consistent collision behavior with reversed scales
+  const ticksSorted = tickVals.slice().sort((a, b) => scale(a) - scale(b));
+
+  // draw ticks + place labels with stacking
+  const labels = [];
+  ticksSorted.forEach(t => {
+    const xLocal = scale(t);
+    const xDraw = xLocal + xOffset;          // where we draw on the current ctx
+    const xWorld = xLocal + worldOffset;     // where we *measure* collisions globally
+
+    // tick mark
+    ctx.beginPath();
+    ctx.moveTo(xDraw, baselineY);
+    ctx.lineTo(xDraw, baselineY + 6);
+    ctx.strokeStyle = "#000";
+    ctx.stroke();
+
+    const txt = labelFormatter(t);
+    const w = ctx.measureText(txt).width;
+
+    // choose a row that doesn't collide
+    let row = 0;
+    while (row < maxRows && (xWorld - w / 2) < (rowRightmost[row] + minGapPx)) row++;
+    if (row >= maxRows) row = maxRows - 1; // clamp to last row if all crowded
+
+    rowRightmost[row] = Math.max(rowRightmost[row], xWorld + w / 2);
+    labels.push({ x: xDraw, y: baselineY + 8 + row * rowHeight, txt });
+  });
+
+  // draw labels after placing all
+  ctx.fillStyle = "#000";
+  labels.forEach(({ x, y, txt }) => ctx.fillText(txt, x, y));
+
+  ctx.restore();
+  return rowRightmost;
+}
+
 /*************************************************************
 * drawCustomAxis
 * Draws a synthetic axis with up to two segments (for chimeric),
@@ -1162,7 +1258,11 @@ function drawCustomAxis(containerSelector, config) {
     const minMbC1 = Math.min(c1Min, c1Max);
     const maxMbC1 = Math.max(c1Min, c1Max);
     const t1Vals = buildTickVals(minMbC1, maxMbC1, tickStep, reversed);
-    drawTicksBelow(ctx, scale1, t1Vals);
+    let rowState = [];
+    rowState = drawTicksBelowStacked(ctx, scale1, t1Vals, {
+    xOffset: 0,             // we didn't translate yet
+    worldOffset: 0          // absolute 0..chunk1Width
+    }, rowState);
 
     // 2) The red vertical line at boundary
     ctx.save();
@@ -1183,7 +1283,10 @@ function drawCustomAxis(containerSelector, config) {
     const minMbC2 = Math.min(c2Min, c2Max);
     const maxMbC2 = Math.max(c2Min, c2Max);
     const t2Vals = buildTickVals(minMbC2, maxMbC2, tickStep, reversed);
-    drawTicksBelow(ctx, scale2, t2Vals);
+    rowState = drawTicksBelowStacked(ctx, scale2, t2Vals, {
+    xOffset: 0,                 // drawing inside the translated ctx
+    worldOffset: chunk1Width    // but collisions are checked in world coords
+    }, rowState);
 
     ctx.restore();
     return;
