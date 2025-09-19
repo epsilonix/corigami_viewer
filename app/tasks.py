@@ -442,9 +442,9 @@ def worker_run_screening(parent_job_id: str, **kwargs) -> bool:
         x = scr["window_midpoints_mb"]
         y = scr["impact_scores"]
         scr["screening_config"] = {
-            "chart": {"type": "line", "height": 100},
+            "screening": True,  # Add this flag
+            "chart": {"type": "column", "height": 100},  # Change from "line" to "column"
             "xAxis": {
-                # use EXACTLY the same domain the other charts got
                 "min": run_args["region_start"] / 1e6,
                 "max": run_args["region_end"]   / 1e6
             },

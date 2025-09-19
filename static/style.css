@@ -1,693 +1,695 @@
-/* style.css */
-@keyframes glow {
-  0% {
-    box-shadow: 0 0 5px rgba(0, 150, 255, 0.5);
-  }
-  50% {
-    box-shadow: 0 0 20px rgba(0, 150, 255, 1);
-  }
-  100% {
-    box-shadow: 0 0 5px rgba(0, 150, 255, 0.5);
-  }
-}
-.checkbox-container {
-  /* Make the label act like a clickable card */
-  position: relative;
-  display: inline-flex;        /* horizontal layout of [checkbox + text] */
-  align-items: center;
-  cursor: pointer;
-  border: 1px solid #779ECC;
-  border-radius: 5px;
-  padding: 8px 10px;
-  margin-bottom: 5px;
-  transition: background-color 0.2s ease;
-  font-size: 0.8em;
-  width:100%;
-  color: #779ECC;
-}
-
-.checkbox-container:hover {
-  background-color: #fcfdff;   /* slightly different color on hover */
-}
-
-/* Add a custom 'check' indicator to the left side */
-.checkbox-container::before {
-  content: "";
-  /* The little box on the left that acts like our "checkbox" */
-  display: inline-block;
-  width: 18px;
-  height: 18px;
-  margin-right: 10px;
-
-  background-color: white;
-  border: 1px solid #779ECC;
-  border-radius: 3px;   /* optional if you want a rounded look */
-  box-sizing: border-box;
-}
-
-.checkbox-container::after {
-  content: "";
-  display: none;  /* show only when .checked */
-  position: absolute;
-  top: 10px;
-  left: 16px;
-  width: 6px;
-  height: 11px;
-  /* This forms the “check” by combining a right border & bottom border at 45° */
-  border-right: 2px solid #779ECC;
-  border-bottom: 2px solid #779ECC;
-  transform: rotate(45deg);
-}
-.checkbox-container.checked::after {
-  display: block;  /* reveal checkmark */
-}
-
-/* Entire label background turns lightblue if 'checked' */
-.checkbox-container.checked {
-  background-color: #e6f3fe;
-  font-weight:500;
-}
-
-/* locked state visuals (stroke + hatch) */
-.checkbox-container.locked {
-  position: relative;
-  border-color: #4a4a4a !important; /* dark grey stroke */
-  color: #4a4a4a !important;
-  background-color: #f4f5f7 !important;
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(0,0,0,0.06) 0 8px,
-    transparent 8px 16px
-  ); /* medium grey hatch */
-}
-
-/* keep the little square in sync with the darker stroke */
-.checkbox-container.locked::before {
-  border-color: #4a4a4a !important;
-}
-
-/* keep the checkmark visible but neutral grey when locked */
-.checkbox-container.locked.checked::after {
-  border-right-color: #4a4a4a !important;
-  border-bottom-color: #4a4a4a !important;
-}
-label#predict_ctcf_wrapper {
-  display: none;
-}
-/* if you want to suppress the blue "checked" background when locked */
-.checkbox-container.locked.checked {
-  background-color: #eef0f2 !important; /* neutralized */
-}
-
-div#gene-track-wrapper {
-  overflow-y: hidden;
-  overflow-x: visible;
-  display: inline-block;
-  min-width: max-content;
-}
-
-/* Custom column width classes */
-.col-20 {
-  flex: 0 0 22%;
-  padding: 0 0px 0 10px;
-}
-.col-40 {
-  flex: 0 0 39%;
-  padding: 0 0 0 10px;
-}
-.col-40:last-of-type {
-  padding-right: 10px;
-}
-/* Container for full-width rows */
-.col-full {
-  flex: 0 0 100%;
-  padding: 0 10px;
-}
-input[type="submit"].submit-button.disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-/* Style for the add second chromosome toggle */
-.add-second-chr-container {
-  text-align: center;
-  width: 100%;
-  display: inline-flex;
-  vertical-align: middle;
-  cursor:pointer
-}
-span.toggle-plus-label {
-  font-size: 0.80em;
-  line-height: 0;
-  margin: auto 0;
-  color: #779ECC
-}
-.toggle-plus {
-  font-size: 2em;
-  cursor: pointer;
-  transition: transform 0.3s ease, color 0.3s ease;
-  display: inline-block;
-  width: 1em;       /* restrict width to roughly one character */
-  height: 1em;      /* restrict height to roughly one character */
-  line-height: 1em; /* ensure text is vertically centered */
-  text-align: center;
-  vertical-align: middle;
-  transform-origin: center center;
-  color: #779ECC;
-}
-.toggle-plus.active {
-  transform: rotate(45deg);
-  color: #FFB347;
-}
-
-/* Reverse/Flip Toggle Styling (Using provided yesNo style) */
-.yesNo {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.3em;
-  border: 1px solid lightgrey;
-  border-radius: 5px;
-}
-.yesNo > legend {
-  font-size: 0.7em;
-}
-.no-bottom-margin {
-  margin-bottom: 0!important;
-}
-.radioButton {
-  display: inline-block;
-  position: relative;
-}
-.radioButton label {
-  background-color: white;
-  border-radius: 5px;
-  border: 1px solid;
-  display: block;
-  padding: 0.3em 0.8em;  /* Shorter height */
-  font-size: 11px;
-}
-.radioButton input {
-  appearance: none;
-  background: none;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  position: absolute;
-  left: 0;
-  top: 0;
-  height: 100%;
-  width: 100%;
-  z-index: 2;
-}
-.radioButton input:checked + label {
-  background-color: #59AFF8;
-  color: white;
-  border-color: white;
-  box-shadow: 0 0 0 2px #59AFF8;
-}
-.radioButton input:not(:checked):hover + label,
-.radioButton input:not(:checked):focus + label { 
-  background-color: #fff;
-  border-color: #2b6cb0;
-  cursor: pointer;
-}
-.radioButton__true input:checked + label {
-  background-color: #F2C894;
-  box-shadow: 0 0 0 1px #F2C894;
-}
-.radioButton__true input:not(:checked):hover + label,
-.radioButton__true input:not(:checked):focus + label {  
-  border-color: #F2C894;
-  color: #F2C894;
-} 
-.radioButton__false input:checked + label {
-  background-color: #F2C894;
-  box-shadow: 0 0 0 2px #F2C894;
-}
-.radioButton__false input:not(:checked):hover + label,
-.radioButton__false input:not(:checked):focus + label {
-  background-color: white;
-  border-color: #F2C894;
-  color: #F2C894;
-}
-
-.upload-button.loading {
-  animation: glow 1s infinite;
-  pointer-events: none;
-  opacity: 0.8;
-}
-
-p.loading-screening-text {
-  font-size: 12px;
-  margin-left: 25px;
-  color: green;
-  text-decoration: underline;
-}
-
-.atac-square, .ctcf-square, .screening-square {
-  margin-top: -3px;
-  display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 5px;
-  vertical-align: middle;
-}
-.atac-square {
-  background-color: #FF985A;
-}
-.ctcf-square {
-  background-color: #779ECC;
-}
-.screening-square {
-  background-color: #9FC0DE;
-}
-
-#output-container {
-  display: flex;
-  align-items: center;
-  justify-content: center; /* or any height you want to ensure vertical centering */
-}
-.loader {
-  width: 50px;
-  aspect-ratio: 1;
-  border-radius: 50%;
-  border: 8px solid #9FC0DE;
-  border-right-color: #F2C894;
-  animation: l2 1s infinite linear;
-}
-@keyframes l2 {
-  to { transform: rotate(1turn); }
-}
-
-*, *::before, *::after {
-  box-sizing: border-box;
-}
-input#peaks_file_upload {
-  display: none;
-}
-.screening_title, .atac_title, .ctcf_title {
-  margin-left: 25px;
-  font-size: 12px;
-}
-
-.screening_title_container, .atac_title_container, .ctcf_title_container {
-  position: sticky;
-  top: 0;
-  left: 0;
-}
-#screening-fields-2 .row {
-  margin-bottom: 0px !important;
-  margin-top: 10px !important;
-}
-.disabled-toggle {
-  opacity: 1;
-  pointer-events: none;
-}
-
-/* Global Body Styling */
-body {
-  font-family: Arial, sans-serif;
-  margin: 0;
-  padding: 0;
-}
-div#peaks_file_container {
-  margin-top: 20px;
-} 
-div#screening-fields-2 {
-  margin: 15px 0 0 0;
-}
-div#deletion-fields {
-  margin: 20px 0 0 0;
-}
-div#gene_track_chart {
-  position: relative;
-  margin-top: 10px;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none; /* IE 10+ */
-  margin-bottom: 25px;
-} 
-div#custom_axis_atac, div#custom_axis_ctcf, div#custom_axis_screening {
-  margin-top: -45px;
-}
-div#custom_axis_hic {
-  margin-top: -10px;
-}
-div#screening_chart {
-  min-height: 110px;
-}
-div#gene_track_chart::-webkit-scrollbar {
-  display: none; /* Chrome, Safari, Opera */
-}
-.worker-button {
-  padding: 6px 12px;
-  /* background: #008cba; */
-  color: #333;
-  border: none;
-  border-radius: 20px;
-  cursor: pointer;
-  font-size: 0.7rem;
-  margin-bottom:12px;
-  /* make room for the dot */
-  display: inline-flex;
-  align-items: center;
-}
-
-/* the dot */
-.worker-button::before {
-  content: "";
-  display: inline-block;
-  width: 0.6em;
-  height: 0.6em;
-  border-radius: 50%;
-  margin-right: 0.5em;
-  background-color: #e74c3c;  /* default = red (offline) */
-}
-
-/* status classes override the color */
-.worker-button.status-red::before    { background-color: #e74c3c; } /* red */
-.worker-button.status-orange::before { background-color: #f39c12; } /* orange */
-.worker-button.status-green::before  { background-color: #2ecc71; } /* green */
-.form-header {
-  padding-left: 10px;
-  border: 1px solid #FF985A;
-  margin: 10px 10px 15px 10px;
-  color: #FF985A;
-}
-#deletion-fields .row {
-  margin-bottom: 5px;
-}
-.container {
-  display: flex;
-  flex-wrap: wrap;
-  min-height: 100vh;
-}
-
-.form-header h1 {
-  margin-bottom: 10px;
-  font-size: 1.3rem;
-}
-.form-container {
-  flex: 0 0 35%;
-  max-width: 400px;
-  padding: 10px 20px 20px 20px;
-  background-color: #f8f8f8;
-  overflow-y: auto;
-}
-.output-container {
-  flex: 1 1 65%;
-  max-width: 65%;
-}
-.row {
-  display: flex;
-  flex-wrap: wrap;
-  margin-bottom: 15px;
-  align-items: center;
-}
-.col-full {
-  flex: 1 1 100%;
-  padding: 0 10px;
-}
-.col-half {
-  flex: 1 1 50%;
-  padding: 0 10px;
-}
-label.small-label {
-  font-size: 0.8em;
-  font-weight: normal;
-  margin-bottom: 3px;
-  display: block;
-}
-.inline-label {
-  font-size: 0.8em;
-  font-weight: normal;
-  margin-left: 5px;
-}
-input[type="text"],
-select,
-input[type="number"] {
-  width: 100%;
-  padding: 8px;
-  font-size: 0.8em;
-  margin-bottom: 5px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-}
-.file-input-container {
-  display: flex;
-  align-items: center;
-}
-.atac-input-container,
-.ctcf-input-container {
-  margin-bottom: 0;
-}
-.file-upload-group {
-  display: flex;
-  align-items: center;
-}
-.file-upload-group select {
-  height: 40px;
-}
-.file-input-container input[type="file"] {
-  display: none;
-}
-.upload-button {
-  display: inline-block;
-  padding: 8px 16px;
-  margin-left: 10px;
-  background-color:#779ECC ;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8em;
-  transition: background-color 0.3s ease;
-  margin-top: -4px;
-  line-height: 24px;
-}
-.upload-button:hover {
-  background-color: #FFB347;
-}
-
-/* Toggle Switches */
-.switch {
-  position: relative;
-  background: #eceaea;
-  border-radius: 32px;
-  overflow: hidden;
-  margin-top: 5px;
-  margin-bottom: 10px;
-}
-.switch-input {
-  display: none;
-}
-.switch-label {
-  font-weight: bold;
-  position: relative;
-  z-index: 2;
-  float: left;
-  /* For 3-option toggles */
-  width: 33.33%;
-  line-height: 28px;
-  font-size: 12px;
-  color: #676a6c;
-  text-align: center;
-  cursor: pointer;
-  transition: color 0.3s;
-}
-.switch-input:checked + .switch-label {
-  color: #fff;
-}
+/* ===================================================================
+   C.ORIGAMI VIEWER — style.css (organized)
+   Palette:
+     Primary Blue:  #2b6cb0
+     Accent Blue:   #779ECC
+     Accent Orange: #FFB347
+     Accent Peach:  #FF985A
+     Neutral BG:    #f8f8f8
+   =================================================================== */
 
 
-div#global-error-module {
-  font-size: 0.8rem;
-  margin: 0 10px 20px 10px;
-  border: 1px solid lightgrey;
-  border-radius: 5px;
-  padding: 0 20px;
-  color: #555;
-}
-.model-requirements-box {
-  font-size: 0.8rem;
-  margin: 0 10px 20px 10px;
-  border: 1px solid #779ECC;
-  border-radius: 5px;
-  padding: 0 20px;
-  color: #779ECC;
-  background-color: #e6f3fe;
-  line-height:1.3
-}
+/* ===========================
+   0) RESETS & GLOBAL
+   =========================== */
 
-/* Optional: remove default bullet style */
-ul.global-error-list, ul.global-warning-list, ul.model-requirements-list {
-  list-style-type: none; /* or whatever spacing you prefer */
-  margin: 1rem 0;
-  padding:0;
-  line-height:1.3;
-}
+   *, *::before, *::after { box-sizing: border-box; }
 
-/* The magic: Each LI gets a background icon. We can do it via ::before pseudo-element. */
-ul.global-error-list li, ul.global-warning-list li, ul.model-requirements-list li {
-  position: relative;
-  margin-left: 0; /* if you want a flush left edge */
-  margin-bottom: 0.5rem; /* spacing between lines */
-  padding-left: 24px; /* space for the icon */
-}
+   html, body {
+     margin: 0;
+     padding: 0;
+     font-family: Arial, sans-serif;
+   }
+   
+   body { background: #fff; }
+   
+   /* Keyframes */
+   @keyframes glow {
+     0%   { box-shadow: 0 0 5px  rgba(0, 150, 255, 0.5); }
+     50%  { box-shadow: 0 0 20px rgba(0, 150, 255, 1); }
+     100% { box-shadow: 0 0 5px  rgba(0, 150, 255, 0.5); }
+   }
+   @keyframes l2 { to { transform: rotate(1turn); } }
+   
+   
+   /* ===========================
+      1) LAYOUT
+      =========================== */
+   
+   .container {
+     display: flex;
+     flex-wrap: wrap;
+     min-height: 100vh;
+   }
+   
+   .form-container {
+     flex: 0 0 35%;
+     max-width: 400px;
+     padding: 10px 20px 20px 20px;
+     background-color: #f8f8f8;
+     overflow-y: auto;
+   }
+   
+   .output-container {
+     flex: 1 1 65%;
+     max-width: 65%;
+     display: flex;
+     align-items: center;
+     justify-content: center;
+   }
+   
+   .form-header {
+     padding-left: 10px;
+     border: 1px solid #FF985A;
+     margin: 10px 10px 15px 10px;
+     color: #FF985A;
+   }
+   
+   .form-header h1 {
+     margin-bottom: 10px;
+     font-size: 1.3rem;
+   }
+   
+   .row {
+     display: flex;
+     flex-wrap: wrap;
+     margin-bottom: 15px;
+     align-items: center;
+   }
+   
+   /* Grid helpers */
+   .col-full { flex: 1 1 100%; padding: 0 10px; }
+   .col-half { flex: 1 1 50%;  padding: 0 10px; }
+   .col-20   { flex: 0 0 22%;  padding: 0 0 0 10px; }
+   .col-40   { flex: 0 0 39%;  padding: 0 0 0 10px; }
+   .col-40:last-of-type { padding-right: 10px; }
+   
+   
+   /* ===========================
+      2) TYPOGRAPHY & FORMS
+      =========================== */
+   
+   label.small-label {
+     font-size: 0.8em;
+     font-weight: normal;
+     margin-bottom: 3px;
+     display: block;
+   }
+   
+   .inline-label { font-size: 0.8em; font-weight: normal; margin-left: 5px; }
+   
+   input[type="text"],
+   input[type="number"],
+   select {
+     width: 100%;
+     padding: 8px;
+     font-size: 0.8em;
+     margin-bottom: 5px;
+     border: 1px solid #ccc;
+     border-radius: 4px;
+   }
+   
+   input[readonly] {
+     background-color: #e0e0e0;
+     color: #555;
+     cursor: not-allowed;
+   }
+   
+   .file-input-container { display: flex; align-items: center; }
+   .file-input-container input[type="file"] { display: none; } /* hidden native */
+   .file-upload-group { display: flex; align-items: center; }
+   .file-upload-group select { height: 40px; }
+   
+   .upload-button {
+     display: inline-block;
+     padding: 8px 16px;
+     margin-left: 10px;
+     background-color: #779ECC;
+     color: white;
+     border: none;
+     border-radius: 4px;
+     cursor: pointer;
+     font-size: 0.8em;
+     transition: background-color 0.3s ease;
+     margin-top: -4px;
+     line-height: 24px;
+   }
+   .upload-button:hover { background-color: #FFB347; }
+   .upload-button.loading { animation: glow 1s infinite; pointer-events: none; opacity: 0.8; }
+   
+   input#peaks_file_upload { display: none; } /* keep custom button */
+   
+   input[type="submit"].submit-button.disabled { opacity: 0.5; cursor: not-allowed; }
+   
+   .submit-button {
+     display: block;
+     padding: 8px 16px;
+     background-color: #779ECC;
+     color: white;
+     border: none;
+     border-radius: 4px;
+     cursor: pointer;
+     font-size: 0.8em;
+     transition: background-color 0.3s ease;
+     width: 100%;
+    margin-top:10px;
+   }
+   .submit-button:hover { background-color: #FFB347; }
+   
+   
+   /* ===========================
+      3) SWITCHES & TOGGLES
+      =========================== */
+   
+   /* 3.1) Prediction / Deletion / Screening switch */
+   .switch {
+     position: relative;
+     background: #eceaea;
+     border-radius: 32px;
+     overflow: hidden;
+     margin-top: 5px;
+     margin-bottom: 10px;
+   }
+   .switch-input { display: none; }
+   .switch-label {
+     font-weight: bold;
+     position: relative;
+     z-index: 2;
+     float: left;
+     width: 33.33%;
+     line-height: 28px;
+     font-size: 12px;
+     color: #676a6c;
+     text-align: center;
+     cursor: pointer;
+     transition: color 0.3s;
+   }
+   .switch-input:checked + .switch-label { color: #fff; }
+   
+   /* Highlight selector */
+   .ds-toggle { width: 100%; height: 28px; }
+   .ds-toggle .switch-selector {
+     position: absolute;
+     z-index: 1;
+     top: 0; left: 0;
+     width: 33.33%; height: 28px;
+     border-radius: 32px;
+     background-color: #FFB347;
+     transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
+   }
+   #ds_none:checked      ~ .switch-selector { transform: translateX(0%);   }
+   #ds_deletion:checked  ~ .switch-selector { transform: translateX(100%); }
+   #ds_screening:checked ~ .switch-selector { transform: translateX(200%); }
+   
+   /* 3.2) Add second region toggle */
+   .add-second-chr-container {
+     text-align: center;
+     width: 100%;
+     display: inline-flex;
+     vertical-align: middle;
+     cursor: pointer;
+   }
+   span.toggle-plus-label {
+     font-size: 0.80em;
+     line-height: 0;
+     margin: auto 0;
+     color: #779ECC;
+   }
+   .toggle-plus {
+     font-size: 2em;
+     cursor: pointer;
+     transition: transform 0.3s ease, color 0.3s ease;
+     display: inline-block;
+     width: 1em;
+     height: 1em;
+     line-height: 1em;
+     text-align: center;
+     vertical-align: middle;
+     transform-origin: center center;
+     color: #779ECC;
+   }
+   .toggle-plus.active { transform: rotate(45deg); color: #FFB347; }
+   
+   /* 3.3) Reverse / Flip group */
+   .yesNo {
+     display: flex;
+     flex-direction: row;
+     flex-wrap: wrap;
+     align-items: center;
+     gap: 0.3em;
+     border: 1px solid lightgrey;
+     border-radius: 5px;
+   }
+   .yesNo > legend { font-size: 0.7em; }
+   
+   .radioButton { display: inline-block; position: relative; }
+   .radioButton label {
+     background-color: white;
+     border-radius: 5px;
+     border: 1px solid;
+     display: block;
+     padding: 0.3em 0.8em;
+     font-size: 11px;
+   }
+   .radioButton input {
+     appearance: none;
+     background: none;
+     border: none;
+     border-radius: 5px;
+     cursor: pointer;
+     position: absolute;
+     left: 0; top: 0;
+     height: 100%; width: 100%;
+     z-index: 2;
+   }
+   .radioButton input:checked + label {
+     background-color: #59AFF8;
+     color: white;
+     border-color: white;
+     box-shadow: 0 0 0 2px #59AFF8;
+   }
+   .radioButton input:not(:checked):hover + label,
+   .radioButton input:not(:checked):focus + label {
+     background-color: #fff;
+     border-color: #2b6cb0;
+     cursor: pointer;
+   }
+   
+   /* Sub-variants */
+   .radioButton__true  input:checked + label { background-color: #F2C894; box-shadow: 0 0 0 1px #F2C894; }
+   .radioButton__true  input:not(:checked):hover + label,
+   .radioButton__true  input:not(:checked):focus + label { border-color: #F2C894; color: #F2C894; }
+   
+   .radioButton__false input:checked + label { background-color: #F2C894; box-shadow: 0 0 0 2px #F2C894; }
+   .radioButton__false input:not(:checked):hover + label,
+   .radioButton__false input:not(:checked):focus + label { background-color: white; border-color: #F2C894; color: #F2C894; }
+   
+   .no-bottom-margin { margin-bottom: 0 !important; }
+   .disabled-toggle  { opacity: 1; pointer-events: none; }
+   
+   
+   /* ===========================
+      4) CUSTOM CHECKBOX CARDS
+      =========================== */
+   
+   .checkbox-container {
+     position: relative;
+     display: inline-flex;
+     align-items: center;
+     cursor: pointer;
+     border: 1px solid #779ECC;
+     border-radius: 5px;
+     padding: 8px 10px;
+     margin-bottom: 5px;
+     transition: background-color 0.2s ease;
+     font-size: 0.8em;
+     width: 100%;
+     color: #779ECC;
+   }
+   .checkbox-container:hover { background-color: #fcfdff; }
+   
+   /* left square */
+   .checkbox-container::before {
+     content: "";
+     display: inline-block;
+     width: 18px; height: 18px;
+     margin-right: 10px;
+     background-color: white;
+     border: 1px solid #779ECC;
+     border-radius: 3px;
+     box-sizing: border-box;
+   }
+   /* tick */
+   .checkbox-container::after {
+     content: "";
+     display: none;
+     position: absolute;
+     top: 10px; left: 16px;
+     width: 6px; height: 11px;
+     border-right: 2px solid #779ECC;
+     border-bottom: 2px solid #779ECC;
+     transform: rotate(45deg);
+   }
+   .checkbox-container.checked::after { display: block; }
+   .checkbox-container.checked { background-color: #e6f3fe; font-weight: 500; }
+   
+   /* locked look */
+   .checkbox-container.locked {
+     position: relative;
+     border-color: #4a4a4a !important;
+     color: #4a4a4a !important;
+     background-color: #f4f5f7 !important;
+     background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.06) 0 8px, transparent 8px 16px);
+   }
+   .checkbox-container.locked::before { border-color: #4a4a4a !important; }
+   .checkbox-container.locked.checked::after {
+     border-right-color: #4a4a4a !important;
+     border-bottom-color: #4a4a4a !important;
+   }
+   .checkbox-container.locked.checked { background-color: #eef0f2 !important; }
+   
+   /* hide predict CTCF wrapper label by default per original */
+   label#predict_ctcf_wrapper { display: none; }
+   
+   
+   /* ===========================
+      5) STATUS & LEGENDS
+      =========================== */
+   
+   /* Worker button with colored status dot */
+   .worker-button {
+     padding: 6px 12px;
+     color: #333;
+     border: none;
+     border-radius: 20px;
+     cursor: pointer;
+     font-size: 0.7rem;
+     margin-bottom: 12px;
+     display: inline-flex;
+     align-items: center;
+   }
+   .worker-button::before {
+     content: "";
+     display: inline-block;
+     width: 0.6em; height: 0.6em;
+     border-radius: 50%;
+     margin-right: 0.5em;
+     background-color: #e74c3c; /* default offline red */
+   }
+   .worker-button.status-red::before    { background-color: #e74c3c; }
+   .worker-button.status-orange::before { background-color: #f39c12; }
+   .worker-button.status-green::before  { background-color: #2ecc71; }
+   
+   /* Report-a-bug header button */
+   .bug-button {
+     margin-left: 8px;
+     padding: 6px 10px;
+     border: 1px solid #c33;
+     background: #fff5f5;
+     color: #c33;
+     border-radius: 6px;
+     cursor: pointer;
+     font-size: 0.78rem;
+     transition: background .2s ease, transform .05s ease;
+   }
+   .bug-button:hover { background: #ffe9e9; }
+   .bug-button:active { transform: translateY(1px); }
+   
+   /* Tiny legend squares */
+   .atac-square, .ctcf-square, .screening-square {
+     margin-top: -3px;
+     display: inline-block;
+     width: 12px; height: 12px;
+     margin-right: 5px;
+     vertical-align: middle;
+   }
+   .atac-square     { background-color: #FF985A; }
+   .ctcf-square     { background-color: #779ECC; }
+   .screening-square{ background-color: #9FC0DE; }
+   
+   .screening_title_container, .atac_title_container, .ctcf_title_container { position: sticky; top: 0; left: 0; }
+   .screening_title, .atac_title, .ctcf_title { margin-left: 25px; font-size: 12px; }
+   
+   
+   /* ===========================
+      6) MESSAGES & HELP BOXES
+      =========================== */
+   
+   div#global-error-module {
+     font-size: 0.8rem;
+     margin: 0 10px 20px 10px;
+     border: 1px solid lightgrey;
+     border-radius: 5px;
+     padding: 0 20px;
+     color: #555;
+   }
+   
+   .model-requirements-box {
+     font-size: 0.8rem;
+     margin: 0 10px 20px 10px;
+     border: 1px solid #779ECC;
+     border-radius: 5px;
+     padding: 0 20px;
+     color: #779ECC;
+     background-color: #e6f3fe;
+     line-height: 1.3;
+   }
+   
+   ul.global-error-list,
+   ul.global-warning-list,
+   ul.model-requirements-list {
+     list-style-type: none;
+     margin: 1rem 0;
+     padding: 0;
+     line-height: 1.3;
+   }
+   ul.global-error-list li,
+   ul.global-warning-list li,
+   ul.model-requirements-list li {
+     position: relative;
+     margin-left: 0;
+     margin-bottom: 0.5rem;
+     padding-left: 24px;
+   }
+   ul.global-error-list li::before,
+   ul.global-warning-list li::before,
+   ul.model-requirements-list li::before {
+     content: "";
+     position: absolute;
+     left: 0; top: 0;
+     width: 16px; height: 16px;
+     background-size: contain !important;
+     margin-top: 2px;
+   }
+   ul.global-error-list li::before      { background: url("/static/warning.svg") no-repeat center center; }
+   ul.global-warning-list li::before,
+   ul.model-requirements-list li::before{ background: url("/static/green-circle.svg") no-repeat center center; }
+   
+   .instructions-link a{
+     margin-bottom: 12px;
+     font-size: 0.8em;
+     text-decoration: underline;
+     color: #FF985A;
+   }
+   /* Base + smooth fade */
+    .instructions-link a {
+      color: #FF985A;                 /* current color */
+      transition: color 180ms ease;   /* fade */
+    }
 
-/* Insert the warning.svg as a pseudo-element before the actual text */
-ul.global-error-list li::before, ul.global-warning-list li::before, ul.model-requirements-list li::before {
-  content: "";
-  position: absolute;
-  left: 0; 
-  top: 0; 
-  width: 16px;
-  height: 16px;
-  
-  background-size: contain!important;
-  margin-top: 2px; /* adjust vertical alignment as needed */
-}
-ul.global-error-list li::before {
-  background: url("/static/warning.svg") no-repeat center center;
-}
-ul.global-warning-list li::before, ul.model-requirements-list li::before {
-  background: url("/static/green-circle.svg") no-repeat center center;
-}
+    /* Hover: ~12% darker */
+    .instructions-link a:hover,
+    .instructions-link a:focus-visible {
+      color: #E0793D;                 /* darker peach */
+    }
+      
+   
+   /* ===========================
+      7) GENE TRACK & PLOTS
+      =========================== */
+   
+   div#gene-track-wrapper {
+     overflow-y: hidden;
+     overflow-x: visible;
+     display: inline-block;
+     min-width: max-content;
+   }
+   
+   div#gene_track_chart {
+     position: relative;
+     margin-top: 10px;
+     scrollbar-width: none;           /* Firefox */
+     -ms-overflow-style: none;        /* IE 10+ */
+     margin-bottom: 25px;
+   }
+   div#gene_track_chart::-webkit-scrollbar { display: none; } /* Chrome/Safari/Opera */
+   
+   div#custom_axis_hic       { margin-top: -10px; }
+   div#custom_axis_atac,
+   div#custom_axis_ctcf,
+   div#custom_axis_screening { margin-top: -45px; }
+   
+   #screening_chart { min-height: 110px; }
+   #output-container .loader {
+     width: 50px;
+     aspect-ratio: 1;
+     border-radius: 50%;
+     border: 8px solid #9FC0DE;
+     border-right-color: #F2C894;
+     animation: l2 1s infinite linear;
+   }
+   
+   p.loading-screening-text {
+     font-size: 12px;
+     margin-left: 25px;
+     color: green;
+     text-decoration: underline;
+   }
+   
+   
+   /* ===========================
+      8) FORM SECTION SPACING
+      =========================== */
+   
+   div#peaks_file_container { margin-top: 20px; }
+   div#screening-fields-2   { margin: 15px 0 0 0; }
+   div#deletion-fields      { margin: 20px 0 0 0; }
+   #deletion-fields .row    { margin-bottom: 5px; }
+   #screening-fields-2 .row { margin-bottom: 0 !important; margin-top: 10px !important; }
+   #predict_ctcf_row, #ctcf_norm_row { margin-bottom: 0 !important; }
+   
+ 
+   
+   /* ===========================
+      10) RESPONSIVE
+      =========================== */
+   
+   /* Sidebar fixed width on wider screens */
+   @media (min-width: 801px) {
+     .container { flex-direction: row; }
+     .form-container { flex: 0 0 350px; max-width: 350px; }
+     .output-container { flex: 1; max-width: calc(100% - 350px); }
+   }
+   
+   /* Stack on narrow */
+   @media (max-width: 800px) {
+     .container { flex-direction: column; }
+     .form-container, .output-container { flex: 0 0 auto; width: 100%; max-width: 100%; }
+     .col-full { width: 100%; }
+   }
+   
+   /* Compact modal on small phones */
+   @media (max-width: 560px) {
+     .modal-content {
+       width: 94vw;
+       margin: 4vh auto;
+       max-height: 90vh;
+       border-radius: 10px;
+     }
+     .modal-header { padding: 12px 16px; }
+     #instructions-body, #bug-body { padding: 14px 16px 16px; }
+     .close { top: 8px; right: 10px; }
+   }
+   
 
+/* ===========================
+   9) MODAL (INSTRUCTIONS / BUG)
+   =========================== */
 
-
-/* Deletion/Screening Toggle */
-.ds-toggle {
-  width: 100%;
-  height: 28px;
-}
-.ds-toggle .switch-selector {
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  left: 0;
-  width: 33.33%;
-  height: 28px;
-  border-radius: 32px;
-  background-color: #FFB347;
-  transition: all 0.3s cubic-bezier(0.18, 0.89, 0.32, 1.28);
-}
-#ds_none:checked ~ .switch-selector {
-  transform: translateX(0%);
-}
-#ds_deletion:checked ~ .switch-selector {
-  transform: translateX(100%);
-}
-#ds_screening:checked ~ .switch-selector {
-  transform: translateX(200%);
-}
-#predict_ctcf_row, #ctcf_norm_row {
-  margin-bottom:0 !important;
-}
-/* Submit Button */
-.submit-button {
-  display: block;
-  padding: 8px 16px;
-  background-color: #779ECC;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.8em;
-  transition: background-color 0.3s ease;
-  width:100%;
-  margin-top:20px;
-}
-.submit-button:hover {
-  background-color: #FFB347;
-}
-
-/* Modal and Instructions */
+/* Backdrop */
 .modal {
   display: none;
   position: fixed;
   z-index: 100;
-  left: 0;
-  top: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
+  background-color: rgba(10,18,28,0.55);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
   overflow: auto;
-  background-color: rgba(0,0,0,0.4);
 }
+.modal * {
+  font-family: inherit;           /* match body { font-family: Arial, sans-serif; } */
+}
+/* Card */
 .modal-content {
   background-color: #fff;
-  margin: 15% auto;
-  border: 1px solid #888;
-  width: 80%;
-  max-width: 600px;
-  border-radius: 4px;
-  font-size: 0.9em;
-  line-height: 1.5;
+  width: min(720px, 92vw);
+  max-height: 86vh;
+  margin: 6vh auto;
+  border: 1px solid #e7eef9;
+  border-radius: 12px;
+  box-shadow: 0 22px 60px rgba(0,0,0,0.25);
+  overflow: hidden;          /* header fixed, body scrolls */
+  display: flex;
+  flex-direction: column;    /* header, body, footer */
+  font-size: 0.90em;
+  line-height: 1.55;
+  position: relative;        /* for close button */
 }
+
+/* Header ribbon */
 .modal-header {
-  padding: 20px 50px 20px 20px;
-  background-color:#2b6cb0;
-  color:white;
-  font-style: italic;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start; /* left-aligned */
+  gap: 12px;
+  padding: 14px 18px;
+  background: linear-gradient(135deg, #2b6cb0 0%, #779ECC 100%);
+  color: #fff;
+  border-bottom: 1px solid rgba(255,255,255,0.15);
 }
-.modal-header a{
-  color:#FFB347;
+.modal-title {
+  font-weight: 600;
+  font-size: 1rem;
 }
-.modal-instructions {
-  padding: 10px 20px 20px 20px;
-}
+.modal-header a { color: #FFB347; text-decoration: none; }
+.modal-header a:hover { text-decoration: underline; }
+
+/* Close button */
 .close {
-  color: white;
-  float: right;
-  font-size: 30px;
-  /* font-weight: bold; */
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  font-size: 26px;
+  color: #fff;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 6px;
   cursor: pointer;
-  margin-right: 20px;
-  margin-top: 10px;
 }
 .close:hover,
 .close:focus {
   color: #FFB347;
+  background: rgba(255,255,255,0.08);
 }
-.instructions-link {
-  margin-bottom: 12px;
-  font-size: 0.8em;
-  text-decoration:underline;
+
+/* Bodies */
+.modal-instructions { padding: 10px 20px 20px 20px; } /* legacy block (kept) */
+#instructions-body,
+#bug-body {
+  padding: 18px 20px 20px 20px;
+  overflow: auto;
+  background: #fff;
 }
-.instructions-link a {
-  color: #FF985A;
-  text-decoration: none;
+
+/* Sectioning inside the modal */
+.modal-section + .modal-section {
+  border-top: 1px dashed #e5edf7;
+  margin-top: 12px;
+  padding-top: 12px;
 }
-.instructions-link a:hover {
+.modal-section h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  color: #2b3a55;
+}
+.modal-list {
+  margin: 6px 0 6px 18px;
+  padding: 0;
+}
+.modal-list li { margin: 4px 0; }
+
+/* Footer */
+.modal-footer {
+  padding: 10px 18px 14px;
+  background: #fafcff;
+  border-top: 1px solid #e7eef9;
+  color: #445;
+  font-size: 0.9em;
+}
+.modal-footer a {
+  color: #2b6cb0;
   text-decoration: underline;
 }
 
-/* Responsive Sidebar: above 1000px, fixed width of 380px;
-   below 1000px, sidebar becomes a horizontal bar above plot output */
-@media (min-width: 801px) {
-  .container {
-    flex-direction: row;
-  }
-  .form-container {
-    flex: 0 0 350px;
-    max-width: 350px;
-  }
-  .output-container {
-    flex: 1;
-    max-width: calc(100% - 350px);
-  }
-}
-@media (max-width: 800px) {
-  .container {
-    flex-direction: column;
-  }
-  .form-container,
-  .output-container {
-    flex: 0 0 auto;
-    width: 100%;
-    max-width: 100%;
-  }
-  .col-full {
-    width: 100%;
-}
+/* Bug iframe */
+#bug-body iframe {
+  width: 100%;
+  height: 65vh;
+  border: 0;
+  border-radius: 8px;
+  background: #f7fafc;
+  box-shadow: inset 0 0 0 1px #e7eef9;
 }

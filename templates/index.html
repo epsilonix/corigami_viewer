@@ -1,130 +1,171 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>C.Origami Viewer</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 
-  {% if screening_mode %}
-    <script>
-      var screening_mode = true;
-      var screening_params = {{ screening_params|safe }};
-    </script>
-  {% else %}
-    <script>
-      var screening_mode = false;
-    </script>
-  {% endif %}
-  <!-- Load D3.js and our custom plotting script -->
-  <script src="https://d3js.org/d3.v7.min.js"></script>
-  <script src="{{ url_for('static', filename='d3_plots.js') }}"></script>
-
-  <script>
-    // This must come *before* script.js so awsEnabled exists.
-    const awsEnabled = {{ 'true' if USE_AWS else 'false' }};
-  </script>
-  
-  <style>
-    input[readonly] {
-      background-color: #e0e0e0;
-      color: #555;
-      cursor: not-allowed;
-    }
-  </style>
-  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}">
-
+  <!-- External libraries only (no inline JS) -->
+  <script src="https://d3js.org/d3.v7.min.js" defer></script>
+  <script src="{{ url_for('static', filename='d3_plots.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='script.js') }}" defer></script>
 </head>
-<body>
+
+<body data-aws-enabled="{{ 'true' if USE_AWS else 'false' }}">
   <div class="container">
     <div class="form-container">
       <div class="form-header">
         <h1>C.ORIGAMI VIEWER</h1>
-        
-        <p class="instructions-link"><a href="#" id="openModal">Instructions</a></p>
-        <button id="worker-btn" class="worker-button">Connect to server</button>
-      
-      </div>
-      <div id="instructions-modal" class="modal">
-        <div class="modal-content">
-          <span class="close">&times;</span>
-          <!-- Links to paper and GitHub -->
-          <div class="modal-header">
-            For more information on C.Origami, 
-            <a href="https://www.nature.com/articles/s41587-022-01612-8" target="_blank">read the paper</a> or visit the 
-            <a href="https://github.com/tanjimin/C.Origami" target="_blank">GitHub repository</a>.
-          </div>
-      
-          <!-- Step-by-step instructions -->
-          <div class="modal-instructions">
-            <ol>
-              <li>
-              <strong>Select a mode</strong>:
-              <ul>
-                <li><strong>Prediction</strong>: Predicts a Hi-C plot for a given locus using C.Origami</li>
-                <li><strong>Deletion</strong>: Predicts the effect of deleting a region</li>
-                <li><strong>Screening</strong>: Calculates an impact score for peaks (requires several minutes)</li>
-              </ul>
-            </li>
-            <li><strong>Select a pre-trained model and genome</strong></li>
-            <li>
-              <strong>Provide a chromosome and window</strong> up to <em>20 Mb in length</em>. 
-              You can also add a second region, which simulates a translocation (i.e. splicing together two loci).
-            </li>
-            <li>
-              <strong>Provide an ATAC and CTCF file.</strong> 
-              You may select a pre-normalized file that adheres with the model's requirements, or upload a raw file and check the box to perform normalization.
-              If no CTCF file is provided, one will be automatically generated using maxATAC 
-              (this requires a <em>raw</em> ATAC file).
-            </li>
-            <li>
-              <strong>Deletion route</strong>: Select a deletion start and width within the bounds of your chosen chromosome window.
-            </li>
-            <li>
-              <strong>Screening route</strong>: Choose a perturbation width to systematically alter peaks. You may provide an optional peaks file, or generate one automatically. If the latter option is selected, the ATAC bigwig file is first used to generate a bedGraph using UCSC’s bigwigtobedgraph, then MACS2 bdgpeakcall is used to call peaks above a cutoff threshold of 0.5.
 
-              <em>Note: </em> when providing two regions, the screening will be skipped for the first and last 1 Mb of the combined region.
-            </li>
-            <li>
-              <strong>Generate your plots!</strong> The process can take a few minutes, especially for large regions 
-              or screening mode, so please be patient.
-            </li>
-          </ol>
-        </div>
+        <!-- Header links (HTML-only open via query param) -->
+        <p class="instructions-link">
+          <a href="/?modal=instructions" id="openModal">Instructions</a>
+          <span class="instructions-sep"> | </span>
+          <a href="/?modal=bug" id="openBugModal">Report a bug</a>
+        </p>
+
+        <button id="worker-btn" class="worker-button status-red">Connect to server</button>
+      </div>
+
+      <!-- Unified modal: Instructions / Bug (HTML-only switching via ?modal=...) -->
+      <div
+        id="instructions-modal"
+        class="modal"
+        aria-hidden="{{ 'false' if request.args.get('modal') in ['bug','instructions'] else 'true' }}"
+        style="{% if request.args.get('modal') in ['bug','instructions'] %}display:block{% else %}display:none{% endif %}"
+      >
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+          <span class="close" aria-label="Close">&times;</span>
+
+          <!-- Header -->
+          <div class="modal-header">
+            <div class="modal-title" id="modal-title">
+                C.Origami Viewer
+            </div>
+          </div>
+
+          <!-- Body: INSTRUCTIONS -->
+          <div
+            id="instructions-body"
+            class="modal-body"
+            data-modal-section="instructions"
+          >
+            <div class="modal-section">
+              <h4>1. Select from the following modes:</h4>
+              <ul class="modal-list">
+                <li><strong>Prediction</strong>: Generate cell-type-specific contact maps for regions up to 20 Mb.</li>
+                <li><strong>Deletion</strong>: Remove a region to assess domain merging and insulation changes.</li>
+                <li><strong>Screening</strong>: Calculate an impact score for perturbations at ATAC-seq peaks by systematically deleting small segments.</li>
+              </ul>
+            </div>
+
+            <div class="modal-section">
+              <h4>2. Model &amp; genome</h4>
+              <p>Select an available pre-trained model and genome.</p>
+            </div>
+
+            <div class="modal-section">
+              <h4>3. Region</h4>
+              <p>
+                Provide a chromosome and window up to <strong>20 Mb</strong>.
+                Click “+” to add a second region for <strong>translocation analysis.</strong>
+                (simulates fusion of two genomic regions).
+              </p>
+            </div>
+
+            <div class="modal-section">
+              <h4>4. ATAC &amp; CTCF</h4>
+              <ul class="modal-list">
+                <li>Use model presets or upload your own bigWig files.</li>
+                <li>If you provide raw files, please check the box to normalize the files as per the model's requirements.</li>
+                <li>If you do not have a CTCF file, one can be generated from ATAC using maxATAC.</li>
+              </ul>
+            </div>
+
+            <div class="modal-section">
+              <h4>5. Deletion</h4>
+              <p>Select a <strong>deletion start</strong> and <strong>width</strong> within your window.</p>
+            </div>
+
+            <div class="modal-section">
+              <h4>6. Screening</h4>
+              <ul class="modal-list">
+                <li>Set <strong>perturbation width</strong> (default: <strong>1 kb</strong>).</li>
+                <li>Upload a peaks file or auto-generate from ATAC using MACS2.</li>
+                <li><em>Note:</em> screening skips the first and last 1 Mb of each chromosome.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Body: BUG -->
+          <div
+            id="bug-body"
+            class="modal-body"
+            data-modal-section="bug"
+          >
+            <div class="modal-section">
+              <iframe
+                id="bug-form"
+                src="https://docs.google.com/forms/d/e/1FAIpQLSeHtQStAeWxW3lrV7OyKz0VdKWpHMeMYVqShugTRcoSwzYAIQ/viewform?embedded=true"
+                loading="lazy"
+                title="Bug report form">
+              </iframe>
+              <p style="margin-top:8px;font-size:0.9em;">
+                Can’t see the form?
+                <a
+                  href="https://docs.google.com/forms/d/e/1FAIpQLSeHtQStAeWxW3lrV7OyKz0VdKWpHMeMYVqShugTRcoSwzYAIQ/viewform"
+                  target="_blank" rel="noopener">Open it in a new tab</a>.
+              </p>
+            </div>
+          </div>
+
+          <!-- Footer -->
+          <div class="modal-footer">
+            For more information on C.Origami,
+            <a href="https://www.nature.com/articles/s41587-022-01612-8" target="_blank" rel="noopener">read the paper</a>
+            or visit the
+            <a href="https://github.com/tanjimin/C.Origami" target="_blank" rel="noopener">GitHub repository</a>.
+          </div>
         </div>
       </div>
-      
+
+      <!-- Main form -->
       <form id="corigami-form" method="post" action="/?plot=true" enctype="multipart/form-data">
-        <input type="hidden" id="output_dir" value="{{ user_output_folder }}">
-        <input type="hidden" id="chimeric_active" name="chimeric_active" value="false">
-        <!-- Deletion/Screening Toggle -->
+        <input type="hidden" id="output_dir" value="{{ user_output_folder }}" />
+        <input type="hidden" id="chimeric_active" name="chimeric_active" value="false" />
+
+        <!-- Mode switch -->
         <div class="row">
           <div class="col-full">
             <div class="switch ds-toggle">
               <input id="ds_none" name="ds_option" type="radio" value="none" class="switch-input" required
-                     {% if request.form.ds_option == 'none' or not request.form.ds_option %}checked{% endif %}>
+                     {% if request.form.ds_option == 'none' or not request.form.ds_option %}checked{% endif %} />
               <label for="ds_none" class="switch-label">Prediction</label>
+
               <input id="ds_deletion" name="ds_option" type="radio" value="deletion" class="switch-input" required
-                     {% if request.form.ds_option == 'deletion' %}checked{% endif %}>
+                     {% if request.form.ds_option == 'deletion' %}checked{% endif %} />
               <label for="ds_deletion" class="switch-label">Deletion</label>
+
               <input id="ds_screening" name="ds_option" type="radio" value="screening" class="switch-input" required
-                     {% if request.form.ds_option == 'screening' %}checked{% endif %}>
+                     {% if request.form.ds_option == 'screening' %}checked{% endif %} />
               <label for="ds_screening" class="switch-label">Screening</label>
+
               <span class="switch-selector"></span>
             </div>
           </div>
         </div>
+
+        <!-- Global error module -->
         <div class="global-error-module" id="global-error-module"></div>
-        <!-- Combined Model & Genome Row -->
+
+        <!-- Model & Genome -->
         <div class="row">
           <div class="col-half">
             <label for="model_select" class="small-label">Pretrained model*:</label>
             <select id="model_select" name="model_select" required>
-              <option value="IMR90" {% if request.form.model_select == 'IMR90' %}selected{% endif %}>
-                IMR-90
-              </option>
-              <option value="BALL" {% if request.form.model_select == 'BALL' %}selected{% endif %}>
-                B-ALL
-              </option>
+              <option value="IMR90" {% if request.form.model_select == 'IMR90' %}selected{% endif %}>IMR-90</option>
+              <option value="BALL"  {% if request.form.model_select == 'BALL'  %}selected{% endif %}>B-ALL</option>
             </select>
           </div>
           <div class="col-half">
@@ -136,12 +177,12 @@
           </div>
         </div>
 
+        <!-- Model requirements box -->
         <div id="model-requirements" class="model-requirements-box">
-          <ul class="model-requirements-list" id="model-requirements-list">
-          </ul>
+          <ul class="model-requirements-list" id="model-requirements-list"></ul>
         </div>
 
-        <!-- Region Row with 20/40/40 width distribution -->
+        <!-- Region 1 -->
         <div class="row">
           <div class="col-20">
             <label for="region_chr1" class="small-label">Chr*</label>
@@ -151,24 +192,25 @@
           </div>
           <div class="col-40">
             <label for="region_start1" class="small-label">Start (bp)*</label>
-            <input type="number" id="region_start1" name="region_start1" value="{{ request.form.region_start1|default(2097153, true) }}" required>
+            <input type="number" id="region_start1" name="region_start1"
+                   value="{{ request.form.region_start1|default(2097153, true) }}" required />
           </div>
           <div class="col-40">
             <label for="region_end1" class="small-label">End (bp)</label>
-            <input type="number" id="region_end1" name="region_end1">
+            <input type="number" id="region_end1" name="region_end1" />
           </div>
         </div>
-        <!-- Add Second Chromosome Toggle (Plus/X) -->
+
+        <!-- Add second region toggle -->
         <div class="row">
           <div class="add-second-chr-container" id="toggle-second-chr-container">
-            <span id="toggle-second-chr" class="toggle-plus">+</span>
+            <span id="toggle-second-chr" class="toggle-plus" aria-hidden="true">+</span>
             <span class="toggle-plus-label">Add second region</span>
           </div>
         </div>
 
-        <!-- Optional Second Chromosome Fields -->
+        <!-- Region 2 (optional) -->
         <div id="second_chr_fields" style="display:none;">
-          <!-- Second Chromosome Inputs -->
           <div class="row">
             <div class="col-20">
               <label for="region_chr2" class="small-label">Chr2*</label>
@@ -178,16 +220,16 @@
             </div>
             <div class="col-40">
               <label for="region_start2" class="small-label">Start (bp)*</label>
-              <input type="number" id="region_start2" name="region_start2">
+              <input type="number" id="region_start2" name="region_start2" />
             </div>
             <div class="col-40">
               <label for="region_end2" class="small-label">End (bp)</label>
-              <input type="number" id="region_end2" name="region_end2">
+              <input type="number" id="region_end2" name="region_end2" />
             </div>
           </div>
-          <!-- Orientation Toggles for Reverse/Flip -->
+
+          <!-- Orientation toggles -->
           <div class="row orientation-toggles">
-            <!-- First Chromosome Orientation -->
             <div class="col-half">
               <fieldset class="yesNo">
                 <legend>First region</legend>
@@ -201,7 +243,6 @@
                 </span>
               </fieldset>
             </div>
-            <!-- Second Chromosome Orientation -->
             <div class="col-half">
               <fieldset class="yesNo">
                 <legend>Second region</legend>
@@ -218,82 +259,91 @@
           </div>
         </div>
 
-        <!-- ATAC‑seq BigWig File -->
+        <!-- ATAC -->
         <div class="row file-input-container atac-input-container">
           <div class="col-full">
-            <label for="atac_bw_path" class="small-label">ATAC‑seq BigWig File*:</label>
+            <label for="atac_bw_path" class="small-label">ATAC-seq BigWig File*:</label>
             <div class="file-upload-group">
               <select id="atac_bw_path" name="atac_bw_path" required>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/atac.bw" selected data-model="IMR90">IMR-90 Preset (raw)</option>
-                <option value="./corigami_data/data/hg38/ball/MCG023_ATAC_merged_IS_slop20_RP20M_minmax01.bw" data-model="BALL">B-ALL Preset (minmax normalized)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/atac.bw" selected data-model="IMR90">
+                  IMR-90 Preset (raw)
+                </option>
+                <option value="./corigami_data/data/hg38/ball/MCG023_ATAC_merged_IS_slop20_RP20M_minmax01.bw" data-model="BALL">
+                  B-ALL Preset (minmax normalized)
+                </option>
               </select>
               <label class="upload-button" for="atac_bw_file">Upload</label>
             </div>
-            <input type="file" id="atac_bw_file" name="atac_bw_file">
+            <input type="file" id="atac_bw_file" name="atac_bw_file" />
           </div>
         </div>
-        <!-- ATAC File Normalization -->
+
+        <!-- ATAC normalization -->
         <div class="row">
           <div class="col-full">
             <label for="apply_atac_norm" class="checkbox-container" id="apply_atac_norm_wrapper">
-              <input type="checkbox" id="apply_atac_norm" name="apply_atac_norm" value="true" checked style="display: none;" />
-              <span id="apply_atac_norm_label">
-                Apply norm to my raw ATAC file
-              </span>
+              <input type="checkbox" id="apply_atac_norm" name="apply_atac_norm" value="true" checked style="display:none;" />
+              <span id="apply_atac_norm_label">Apply norm to my raw ATAC file</span>
             </label>
           </div>
         </div>
-        <!-- CTCF BigWig File -->
+
+        <!-- CTCF -->
         <div class="row file-input-container ctcf-input-container">
           <div class="col-full">
             <label for="ctcf_bw_path" class="small-label">CTCF BigWig File:</label>
             <div class="file-upload-group">
               <select id="ctcf_bw_path" name="ctcf_bw_path">
                 <option value="none" selected>None (auto-generate)</option>
-                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw" data-model="IMR90">IMR-90 Preset (log2fc normalized)</option>
-                <option value="./corigami_data/data/hg38/ball/MCG023_CTCF_merged_maxatac_predict.bw" data-model="BALL">B-ALL Preset (minmax normalized)</option>
+                <option value="./corigami_data/data/hg38/imr90/genomic_features/ctcf_log2fc.bw" data-model="IMR90">
+                  IMR-90 Preset (log2fc normalized)
+                </option>
+                <option value="./corigami_data/data/hg38/ball/MCG023_CTCF_merged_maxatac_predict.bw" data-model="BALL">
+                  B-ALL Preset (minmax normalized)
+                </option>
               </select>
               <label class="upload-button" for="ctcf_bw_file">Upload</label>
             </div>
-            <input type="file" id="ctcf_bw_file" name="ctcf_bw_file">
+            <input type="file" id="ctcf_bw_file" name="ctcf_bw_file" />
           </div>
         </div>
+
+        <!-- Predict CTCF from ATAC -->
         <div class="row" id="predict_ctcf_row">
           <div class="col-full">
             <label for="predict_ctcf" class="checkbox-container" id="predict_ctcf_wrapper">
-              <input type="checkbox" id="predict_ctcf" name="predict_ctcf" value="true" style="display: none;" />
-              <span id="predict_ctcf_label">
-                Automatically generate my CTCF file
-              </span>
+              <input type="checkbox" id="predict_ctcf" name="predict_ctcf" value="true" style="display:none;" />
+              <span id="predict_ctcf_label">Automatically generate my CTCF file</span>
             </label>
           </div>
         </div>
-        <!-- CTCF File Normalization -->
+
+        <!-- CTCF normalization -->
         <div class="row" id="ctcf_norm_row">
           <div class="col-full">
             <label for="apply_ctcf_norm" class="checkbox-container" id="apply_ctcf_norm_wrapper">
-              <input type="checkbox" id="apply_ctcf_norm" name="apply_ctcf_norm" value="true" style="display: none;" />
-              <span id="apply_ctcf_norm_label">
-                Apply norm to my raw CTCF file
-              </span>
+              <input type="checkbox" id="apply_ctcf_norm" name="apply_ctcf_norm" value="true" style="display:none;" />
+              <span id="apply_ctcf_norm_label">Apply norm to my raw CTCF file</span>
             </label>
           </div>
         </div>
-        <!-- Deletion Parameters -->
-        <div id="deletion-fields" class="optional-row" style="display: none;">
+
+        <!-- Deletion parameters -->
+        <div id="deletion-fields" class="optional-row" style="display:none;">
           <div class="row">
             <div class="col-half">
               <label for="del_start" class="small-label">Deletion Start (bp):*</label>
-              <input type="number" id="del_start" name="del_start" value="{{ request.form.del_start or '1500000' }}">
+              <input type="number" id="del_start" name="del_start" value="{{ request.form.del_start or '1500000' }}" />
             </div>
             <div class="col-half">
               <label for="del_width" class="small-label">Deletion Width (bp):*</label>
-              <input type="number" id="del_width" name="del_width" value="{{ request.form.del_width or '500000' }}">
+              <input type="number" id="del_width" name="del_width" value="{{ request.form.del_width or '500000' }}" />
             </div>
           </div>
         </div>
-        <!-- Peaks File Container (for screening) -->
-        <div id="peaks_file_container" class="optional-row" style="display: none;">
+
+        <!-- Peaks (screening) -->
+        <div id="peaks_file_container" class="optional-row" style="display:none;">
           <div class="col-full">
             <label for="peaks_file_path" class="small-label">Peaks File (MACS2 narrowPeak):</label>
             <div class="file-upload-group">
@@ -305,28 +355,33 @@
               </select>
               <label class="upload-button" for="peaks_file_upload">Upload</label>
             </div>
-            <input type="file" id="peaks_file_upload" name="peaks_file">
+            <input type="file" id="peaks_file_upload" name="peaks_file" />
           </div>
         </div>
-        <!-- Screening Fields -->
-        <div id="screening-fields-2" class="optional-row" style="display: none;">
+
+        <!-- Screening parameters -->
+        <div id="screening-fields-2" class="optional-row" style="display:none;">
           <div class="row">
             <div class="col-full">
               <label for="perturb_width" class="small-label">Perturbation Width (bp):*</label>
-              <input type="number" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}">
+              <input type="number" id="perturb_width" name="perturb_width" value="{{ request.form.perturb_width or '1000' }}" />
             </div>
           </div>
         </div>
+
+        <!-- Submit -->
         <div class="row">
           <div class="col-full">
-            <input type="submit" value="Generate plots" class="submit-button">
+            <input type="submit" value="Generate plots" class="submit-button" />
           </div>
         </div>
       </form>
+
       <div id="screening_message" style="color:red;"></div>
     </div>
+
+    <!-- Output -->
     <div id="output-container" class="output-container">
-      <!-- D3 chart containers -->
       <div id="hi_c_chart"></div>
       <div id="ctcf_chart"></div>
       <div id="atac_chart"></div>
@@ -335,6 +390,5 @@
       {% endif %}
     </div>
   </div>
-  <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

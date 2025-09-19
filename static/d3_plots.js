@@ -199,459 +199,359 @@ function drawHatchedBand(ctx, xStartPx, xEndPx, bandHeightPx, colorHex) {
  *
  * The rest of the code is your original logic for binning, screening shading, Y-axis, etc.
  */
+// === Continuous-series helpers ==============================================
+
+function resampleUniformXY(data, xMin, xMax, stepMb) {
+  // data: [[xMb, y], ...], assumed sorted by x
+  if (!data.length) return [];
+  const out = [];
+  let i = 0;
+
+  // clamp bounds to data
+  const dMin = data[0][0], dMax = data[data.length - 1][0];
+  const X0 = Math.max(xMin, dMin);
+  const X1 = Math.min(xMax, dMax);
+  if (X1 <= X0) return out;
+
+  for (let x = X0; x <= X1 + 1e-9; x += stepMb) {
+    while (i < data.length - 1 && data[i + 1][0] < x) i++;
+    // linear interpolate between data[i] and data[i+1]
+    if (i >= data.length - 1) {
+      out.push([x, data[data.length - 1][1]]);
+    } else {
+      const [x0, y0] = data[i];
+      const [x1, y1] = data[i + 1];
+      const t = (x - x0) / Math.max(1e-9, (x1 - x0));
+      out.push([x, y0 + t * (y1 - y0)]);
+    }
+  }
+  return out;
+}
+
+function movingAverage(vals, winPoints) {
+  if (winPoints <= 1) return vals.slice();
+  const half = Math.floor(winPoints / 2);
+  const out = new Array(vals.length);
+  let sum = 0;
+  for (let i = 0; i < vals.length; i++) {
+    sum += vals[i];
+    if (i > winPoints) sum -= vals[i - winPoints - 1];
+    const left = Math.max(0, i - half);
+    const right = Math.min(vals.length - 1, i + half);
+    const len = right - left + 1;
+    let s = 0;
+    for (let j = left; j <= right; j++) s += vals[j];
+    out[i] = s / len;
+  }
+  return out;
+}
+
+function gaussianKernel(winPoints, sigmaPoints) {
+  const half = Math.floor(winPoints / 2);
+  const k = new Array(winPoints);
+  const s2 = 2 * sigmaPoints * sigmaPoints;
+  let sum = 0;
+  for (let i = -half; i <= half; i++) {
+    const v = Math.exp(-(i * i) / s2);
+    k[i + half] = v;
+    sum += v;
+  }
+  for (let i = 0; i < k.length; i++) k[i] /= sum;
+  return k;
+}
+
+function convolve1D(vals, kernel) {
+  const n = vals.length, m = kernel.length, half = Math.floor(m / 2);
+  const out = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    let acc = 0, wsum = 0;
+    for (let j = 0; j < m; j++) {
+      const idx = i + j - half;
+      if (idx >= 0 && idx < n) {
+        acc += vals[idx] * kernel[j];
+        wsum += kernel[j];
+      }
+    }
+    out[i] = wsum > 0 ? acc / wsum : vals[i];
+  }
+  return out;
+}
+
+function smoothSeriesXY(xy, smoothingCfg, pxPerMb = PX_PER_MB) {
+  // smoothingCfg: { method: 'gaussian'|'movingAvg', windowMb: 0.05, sigmaMb?: 0.02, resamplePx?: 1.5 }
+  if (!xy.length || !smoothingCfg) return xy;
+
+  const xMin = xy[0][0], xMax = xy[xy.length - 1][0];
+  const resamplePx = Math.max(0.5, smoothingCfg.resamplePx ?? 1.5);  // ~1-2 px steps
+  const stepMb = resamplePx / pxPerMb;
+
+  // Resample to uniform grid
+  const uniformXY = resampleUniformXY(xy, xMin, xMax, stepMb);
+  if (!uniformXY.length) return xy;
+
+  const xs = uniformXY.map(d => d[0]);
+  let ys = uniformXY.map(d => d[1]);
+
+  // Smoothing
+  const windowMb = Math.max(0, smoothingCfg.windowMb ?? 0);
+  if (windowMb > 0) {
+    const winPoints = Math.max(1, Math.round(windowMb / stepMb));
+    if (smoothingCfg.method === 'gaussian') {
+      const sigmaMb = Math.max(1e-6, smoothingCfg.sigmaMb ?? (windowMb / 3));
+      const sigmaPoints = Math.max(1, Math.round(sigmaMb / stepMb));
+      const kernel = gaussianKernel(winPoints | 1, sigmaPoints);
+      ys = convolve1D(ys, kernel);
+    } else {
+      ys = movingAverage(ys, winPoints | 1);
+    }
+  }
+
+  return xs.map((x, i) => [x, ys[i]]);
+}
+
+// replace your current drawLineAndArea with this drop-in
+function drawLineAndArea(ctx, pts, xScale, yScale, axisPx, color, doArea, stroke = true, areaAlpha = 0.28) {
+  if (!pts.length) return;
+
+  ctx.save();
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin  = "round";
+  ctx.lineCap   = "round";
+
+  const alpha = Number.isFinite(areaAlpha) ? Math.max(0, Math.min(1, areaAlpha)) : 0.28;
+
+  if (doArea) {
+    const areaGen = d3.area()
+      .x(d => xScale(d[0]))
+      .y0(axisPx)
+      .y1(d => yScale(d[1]))
+      .curve(d3.curveMonotoneX)
+      .context(ctx);
+
+    // Convert hex color to RGBA with the specified alpha
+    const rgb = hexToRgb(color);
+    ctx.fillStyle = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
+    
+    ctx.beginPath();
+    areaGen(pts);
+    ctx.fill();
+  }
+
+  // Draw the stroke if requested (after the area so it's on top)
+  if (stroke) {
+    const lineGen = d3.line()
+      .x(d => xScale(d[0]))
+      .y(d => yScale(d[1]))
+      .curve(d3.curveMonotoneX)
+      .context(ctx);
+
+    ctx.beginPath();
+    lineGen(pts);
+    ctx.strokeStyle = color;
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+
+
+
+
 function drawColumnChart(containerSelector, config) {
   console.log("=== drawColumnChart START ===");
-  console.log("Container selector:", containerSelector);
-  console.log("Chart config:", config);
+  console.log("config.screening:", config.screening);
+  console.log("config.chart.type:", config.chart?.type);
 
-  // -----------------------------------------------------------------
-  // Constants & defaults (unchanged)
-  // -----------------------------------------------------------------
   const PX_PER_MB = 200;
   const MIN_BARS_PER_MB = 30;
   const margin = { top: 20, right: 20, bottom: 40, left: 50 };
 
-  // -----------------------------------------------------------------
-  // 1) Basic validation
-  // -----------------------------------------------------------------
+  // 1) Validate x-range
   if (!config.xAxis || typeof config.xAxis.min !== "number" || typeof config.xAxis.max !== "number") {
-    console.warn("Missing or invalid xAxis.min/max in config.xAxis:", config.xAxis);
+    console.warn("Missing/invalid xAxis.min/max:", config.xAxis);
     return;
   }
   const xMin = config.xAxis.min;
   const xMax = config.xAxis.max;
   const domainSpanMb = xMax - xMin;
 
-  // We'll store these in a closure so we can detect axisBreak
-  const hasBreak   = !!config.xAxis.axisBreak;           // NEW
-  const leftDomain = config.xAxis.leftDomain || [];       // e.g. [xMin, delStartMb]
-  const rightDomain= config.xAxis.rightDomain || [];      // e.g. [delEndMb, xMax]
-
-  // -----------------------------------------------------------------
-  // 2) Prepare data array (binning/screening) EXACTLY as before
-  // -----------------------------------------------------------------
-  let originalData = (config.series && config.series[0] && config.series[0].data) || [];
-  console.log("Data length:", originalData.length);
-  if (!originalData.length) {
-    // Show "No data" message
-    const fallback = document.querySelector(containerSelector);
-    if (fallback) fallback.innerHTML = "<p style='color:red;'>No data available.</p>";
-    console.warn("Column chart: data array is empty.");
-    return;
+  // FIXED: Screening should always be bars, never continuous
+  let chartType, isContinuous;
+  if (config.screening === true || config.chart?.type === "column") {
+    chartType = "column";
+    isContinuous = false;
+  } else {
+    chartType = (config.chart && config.chart.type) || "area";
+    isContinuous = (chartType === "line" || chartType === "area" || config.forceContinuous === true);
   }
+  console.log("chartType:", chartType);
+  console.log("isContinuous:", isContinuous);
+  console.log("config.screening (again):", config.screening);
+  
+  const stroke = (config.stroke !== false);   // default true; false hides the line
+  const areaAlpha = config.areaAlpha ?? 0.28; // optional fill opacity
+  const hasBreak   = !!config.xAxis.axisBreak;
+  const leftDomain = config.xAxis.leftDomain || [];
+  const rightDomain= config.xAxis.rightDomain || [];
 
-  // Sort data by x
-  originalData.sort((a, b) => a[0] - b[0]);
-  console.log("Sorted data (first few points):", originalData.slice(0, 5));
+  // Rest of the function continues as before...
+  // (The key change is that isContinuous is now forced to false when config.screening is true)
 
-  // Screening or binning
+  // 2) Data prep (keep your binning for bar mode; continuous uses raw for fidelity)
+  let originalData = (config.series && config.series[0] && config.series[0].data) || [];
+  originalData.sort((a, b) => a[0] - b[0]); // sort by x
+
   let data = [];
   if (config.screening) {
     data = originalData;
-  } else {
+  } else if (!isContinuous) {
+    // bars: ensure at least min bar density
     const minBars = Math.round(domainSpanMb * MIN_BARS_PER_MB);
-    console.log("minBars needed =", minBars, "domainSpanMb:", domainSpanMb);
-    if (originalData.length >= minBars) {
-      data = originalData;
-    } else {
-      console.log("Binning to produce", minBars, "bars");
-      data = binAndUpsampleData(originalData, xMin, xMax, minBars);
-    }
+    data = (originalData.length >= minBars) ? originalData
+                                            : binAndUpsampleData(originalData, xMin, xMax, minBars);
+  } else {
+    // continuous: use raw points (we'll resample uniformly later for smoothing)
+    data = originalData;
   }
 
-  console.log("Final data length after binning or screening mode:", data.length);
-
-  // -----------------------------------------------------------------
-  // 3) Y-domain logic (same as before)
-  // -----------------------------------------------------------------
+  // 3) Y-domain
   const rawYMin = d3.min(data, d => d[1]);
   const rawYMax = d3.max(data, d => d[1]);
   let yMin = (typeof rawYMin === "number") ? rawYMin : 0;
   let yMax = (typeof rawYMax === "number") ? rawYMax : 0;
 
   let domainMin, domainMax, axisValue;
-  if (yMax < 0) {
-    // entire negative
-    domainMin = yMin; 
-    domainMax = yMax;
-    axisValue = yMin;
-  } else if (yMin > 0) {
-    // entire positive
-    domainMin = 0;
-    domainMax = yMax;
-    axisValue = 0;
-  } else {
-    // crosses zero
-    domainMin = yMin;
-    domainMax = yMax;
-    axisValue = 0;
-  }
+  if (yMax < 0) { domainMin = yMin; domainMax = yMax; axisValue = yMin; }
+  else if (yMin > 0) { domainMin = 0; domainMax = yMax; axisValue = 0; }
+  else { domainMin = yMin; domainMax = yMax; axisValue = 0; }
 
-  // We'll define yScale later inside each approach
-  // but let's figure out the chart height
   const height = config.chart.height || 150;
+  const color  = (config.series && config.series[0] && config.series[0].color) || "#9FC0DE";
+  const smoothing = config.screening ? null : (config.smoothing || null);
 
 
-  // -----------------------------------------------------------------
-  // 4) Check if axisBreak => do the "two-scale" approach
-  // -----------------------------------------------------------------
+  // ===== Axis-break two-scale =====
   if (hasBreak && leftDomain.length === 2 && rightDomain.length === 2) {
-    // =========== NEW: Two-scale approach =============
-    // 4a) Calculate spans
     const leftSpan  = leftDomain[1]  - leftDomain[0];
     const rightSpan = rightDomain[1] - rightDomain[0];
-    const totalSpan = leftSpan + rightSpan;
-    const gapPx     = 0; // If you want a small gap, e.g. 20
-    // Convert to px
     const leftWidthPx  = leftSpan  * PX_PER_MB;
     const rightWidthPx = rightSpan * PX_PER_MB;
-    const totalWidthPx = leftWidthPx + rightWidthPx + gapPx;
+    const totalWidthPx = leftWidthPx + rightWidthPx;
 
-    // 4b) Create hi-res canvas
     const canvasWidth  = totalWidthPx + margin.left + margin.right;
     const canvasHeight = height       + margin.top  + margin.bottom;
     const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
-    if (!ctx) {
-      console.error("No 2D context for 2-scale approach");
-      return;
-    }
     ctx.translate(margin.left, margin.top);
 
-    // 4c) Build 2 x‐scales
-    const scaleLeft = d3.scaleLinear()
-      .domain([ leftDomain[0],  leftDomain[1] ])
-      .range([0, leftWidthPx]);
-    const scaleRight = d3.scaleLinear()
-      .domain([ rightDomain[0], rightDomain[1] ])
-      .range([0, rightWidthPx]);
+    const scaleLeft  = d3.scaleLinear().domain([leftDomain[0],  leftDomain[1]]).range([0, leftWidthPx]);
+    const scaleRight = d3.scaleLinear().domain([rightDomain[0], rightDomain[1]]).range([0, rightWidthPx]);
 
-    // 4d) Filter data into left portion / right portion
     const leftData  = data.filter(d => d[0] >= leftDomain[0]  && d[0] <= leftDomain[1]);
     const rightData = data.filter(d => d[0] >= rightDomain[0] && d[0] <= rightDomain[1]);
 
-    // 4e) Y scale (common for both)
-    const yScale = d3.scaleLinear()
-      .domain([domainMin, domainMax])
-      .nice()
-      .range([height, 0]);
+    const yScale = d3.scaleLinear().domain([domainMin, domainMax]).nice().range([height, 0]);
     const axisPx = yScale(axisValue);
+    const smoothing = config.smoothing || { method: 'gaussian', windowMb: 0.06, sigmaMb: 0.02, resamplePx: 0.75 };
+    const stroke = (config.stroke !== false);        // default true; set to false to hide stroke
+    const areaAlpha = config.areaAlpha ?? 0.28;    
+    if (isContinuous) {
+      // Left chunk
+      const leftSmooth = smoothSeriesXY(leftData, smoothing, PX_PER_MB);
+      drawLineAndArea(ctx, leftSmooth, scaleLeft, yScale, axisPx, color, chartType === "area", stroke, areaAlpha);
 
+      // Baseline under left
+      ctx.beginPath(); ctx.moveTo(0, axisPx); ctx.lineTo(leftWidthPx, axisPx); ctx.strokeStyle = "#000"; ctx.stroke();
 
-    
-    // 4g) Decide bar spacing on left side
-    let leftCount = leftData.length;
-    let leftSpacing = (leftCount > 1) ? (leftWidthPx / (leftCount - 1)) : leftWidthPx;
-    let barMultiplier = config.screening ? 0.02 : 0.05;
-    let leftBarWidth = leftSpacing * barMultiplier;
-    leftBarWidth = Math.min(Math.max(leftBarWidth, 1), 20);
-
-    // 4h) Draw left bars
-    leftData.forEach(d => {
-      const xVal = d[0], yVal = d[1];
-      const xPx = scaleLeft(xVal) - leftBarWidth/2;
-      const yValPx = yScale(yVal);
-      const top = Math.min(yValPx, axisPx);
-      const bottom = Math.max(yValPx, axisPx);
-      const h = bottom - top;
-      ctx.fillStyle = (config.series[0].color || "#9FC0DE");
-      ctx.fillRect(xPx, top, leftBarWidth, h);
-    });
-
-    // Baseline for left chunk
-    ctx.beginPath();
-    ctx.moveTo(0, axisPx);
-    ctx.lineTo(leftWidthPx, axisPx);
-    ctx.strokeStyle = "#000";
-    ctx.stroke();
-
-    // 4i) Right chunk
-    // Move over
-    ctx.save();
-    ctx.translate(leftWidthPx + gapPx, 0);
-
-    let rightCount = rightData.length;
-    let rightSpacing= (rightCount > 1) ? (rightWidthPx / (rightCount - 1)) : rightWidthPx;
-    let rightBarWidth = rightSpacing * barMultiplier;
-    rightBarWidth = Math.min(Math.max(rightBarWidth,1), 20);
-
-    rightData.forEach(d => {
-      const xVal = d[0], yVal = d[1];
-      const xPx = scaleRight(xVal) - rightBarWidth/2;
-      const yValPx = yScale(yVal);
-      const top = Math.min(yValPx, axisPx);
-      const bottom = Math.max(yValPx, axisPx);
-      const h = bottom - top;
-      ctx.fillStyle = (config.series[0].color || "#9FC0DE");
-      ctx.fillRect(xPx, top, rightBarWidth, h);
-    });
-
-    // Baseline for right chunk
-    ctx.beginPath();
-    ctx.moveTo(0, axisPx);
-    ctx.lineTo(rightWidthPx, axisPx);
-    ctx.stroke();
-
-    ctx.restore(); // end right chunk
-
-    // 4j) Y-axis line & ticks (on far left)
-    ctx.beginPath();
-    ctx.moveTo(0, 0);
-    ctx.lineTo(0, height);
-    ctx.strokeStyle = "#000";
-    ctx.stroke();
-    // y ticks
-    ctx.save();
-    ctx.textAlign = "right";
-    ctx.textBaseline = "middle";
-    ctx.font = "10px sans-serif";
-    yScale.ticks(5).forEach(t => {
-      const yPos = yScale(t);
-      ctx.beginPath();
-      ctx.moveTo(0, yPos);
-      ctx.lineTo(-5, yPos);
-      ctx.stroke();
-      ctx.fillText(t, -7, yPos);
-    });
-    ctx.restore();
-
-    // 4j.5) If screening => draw hatched bands ON TOP (first/last 1 Mb)
-    if (config.screening) {
-      const hatchColor = (config.series && config.series[0] && config.series[0].color) || "#9FC0DE";
-      const bandH = Math.min(HATCH_BAND_HEIGHT, Math.max(10, 0.25 * height));
-
-      // optional chromosome length for non-chimeric logic
-      let chromEndMb = null;
-      if (!config.isChimeric && window.chromosomeLengths && config.chromName) {
-        const bpLen = window.chromosomeLengths[config.chromName];
-        if (bpLen) chromEndMb = bpLen / 1e6;
-      }
-
-      // LEFT band
-      if (config.isChimeric || (chromEndMb && xMin < 1.0)) {
-        const leftFromMb = leftDomain[0];
-        const leftToMb   = config.isChimeric
-          ? Math.min(leftDomain[0] + 1.0, leftDomain[1])
-          : Math.min(1.0, leftDomain[1]);
-
-        const x0 = scaleLeft(leftFromMb);
-        const x1 = scaleLeft(leftToMb);
-        drawHatchedBand(ctx, x0, x1, bandH, hatchColor);
-      }
-
-      // RIGHT band
-      if (config.isChimeric || (chromEndMb && xMax > (chromEndMb - 1.0))) {
-        ctx.save();
-        ctx.translate(leftWidthPx + gapPx, 0);
-
-        const rightFromMb = config.isChimeric
-          ? Math.max(rightDomain[1] - 1.0, rightDomain[0])
-          : Math.max(chromEndMb - 1.0, rightDomain[0]);
-        const rightToMb   = rightDomain[1];
-
-        const x0 = scaleRight(rightFromMb);
-        const x1 = scaleRight(rightToMb);
-        drawHatchedBand(ctx, x0, x1, bandH, hatchColor);
-
-        ctx.restore();
-      }
-    }
-
-
-    // 4k) (Optional) Zigzag break line
-    if (!HIDE_X_AXIS_LABELS) {
+      // Right chunk
       ctx.save();
-      ctx.translate(leftWidthPx, axisPx);
-      ctx.beginPath();
-      ctx.moveTo(-3, 0);
-      ctx.lineTo(0, 6);
-      ctx.lineTo(3, 0);
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
+      ctx.translate(leftWidthPx, 0);
+      const rightSmooth = smoothSeriesXY(rightData, smoothing, PX_PER_MB);
+      drawLineAndArea(ctx, rightSmooth, scaleRight, yScale, axisPx, color, chartType === "area", stroke, areaAlpha);
+      ctx.beginPath(); ctx.moveTo(0, axisPx); ctx.lineTo(rightWidthPx, axisPx); ctx.strokeStyle = "#000"; ctx.stroke();
+      ctx.restore();
+    } else {
+      // === original bars (unchanged) ===
+      let leftCount = leftData.length;
+      let leftSpacing = (leftCount > 1) ? (leftWidthPx / (leftCount - 1)) : leftWidthPx;
+      let barMultiplier = config.screening ? 0.02 : 0.05;
+      let leftBarWidth = Math.min(Math.max(leftSpacing * barMultiplier, 1), 20);
+
+      leftData.forEach(d => {
+        const xPx = scaleLeft(d[0]) - leftBarWidth/2;
+        const yValPx = yScale(d[1]);
+        const top = Math.min(yValPx, axisPx), bottom = Math.max(yValPx, axisPx);
+        ctx.fillStyle = color;
+        ctx.fillRect(xPx, top, leftBarWidth, bottom - top);
+      });
+      ctx.beginPath(); ctx.moveTo(0, axisPx); ctx.lineTo(leftWidthPx, axisPx); ctx.strokeStyle = "#000"; ctx.stroke();
+
+      ctx.save();
+      ctx.translate(leftWidthPx, 0);
+      let rightCount = rightData.length;
+      let rightSpacing= (rightCount > 1) ? (rightWidthPx / (rightCount - 1)) : rightWidthPx;
+      let rightBarWidth = Math.min(Math.max(rightSpacing * barMultiplier, 1), 20);
+      rightData.forEach(d => {
+        const xPx = scaleRight(d[0]) - rightBarWidth/2;
+        const yValPx = yScale(d[1]);
+        const top = Math.min(yValPx, axisPx), bottom = Math.max(yValPx, axisPx);
+        ctx.fillStyle = color;
+        ctx.fillRect(xPx, top, rightBarWidth, bottom - top);
+      });
+      ctx.beginPath(); ctx.moveTo(0, axisPx); ctx.lineTo(rightWidthPx, axisPx); ctx.strokeStyle = "#000"; ctx.stroke();
       ctx.restore();
     }
 
-    // 4l) X-axis label & chart title if you want them
-    if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
-      ctx.textAlign = "center";
-      ctx.textBaseline = "bottom";
-      ctx.font = "12px sans-serif";
-      ctx.fillText(config.xAxis.title, totalWidthPx/2, height + margin.bottom - 5);
-    }
-    if (config.title && config.title.text) {
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-      ctx.font = "13px sans-serif";
-      ctx.fillText(config.title.text, totalWidthPx/2, -margin.top/2);
-    }
+    // Y axis
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, height); ctx.strokeStyle = "#000"; ctx.stroke();
+    ctx.save(); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.font = "10px sans-serif";
+    yScale.ticks(5).forEach(t => { const y = yScale(t); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(-5, y); ctx.stroke(); ctx.fillText(t, -7, y); });
+    ctx.restore();
 
     console.log("=== drawColumnChart END (two-scale) ===");
-    return;  // Done with the axisBreak case
-  }
-
-  // -----------------------------------------------------------------
-  // 5) Otherwise => Single-scale approach (original code EXACTLY)
-  // -----------------------------------------------------------------
-
-  // 5a) Compute fullWidth from domainSpanMb
-  let fullWidth = domainSpanMb * PX_PER_MB;
-  const canvasWidth  = fullWidth + margin.left + margin.right;
-  const canvasHeight = height    + margin.top  + margin.bottom;
-
-  // Create hi-res canvas
-  const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
-  if (!ctx) {
-    console.error("No 2D context returned; createHiResCanvas might have failed?");
     return;
   }
+
+  // ===== Single-scale =====
+  const fullWidth = domainSpanMb * PX_PER_MB;
+  const canvasWidth  = fullWidth + margin.left + margin.right;
+  const canvasHeight = height    + margin.top  + margin.bottom;
+  const { ctx } = createHiResCanvas(containerSelector, canvasWidth, canvasHeight);
   ctx.translate(margin.left, margin.top);
 
-  // 5b) Build the single xScale
-  const xScale = d3.scaleLinear()
-    .domain([xMin, xMax])
-    .range([0, fullWidth]);
-
-  // 5c) Build the yScale & axisPx
-  const yScale = d3.scaleLinear()
-    .domain([domainMin, domainMax])
-    .nice()
-    .range([height, 0]);
+  const xScale = d3.scaleLinear().domain([xMin, xMax]).range([0, fullWidth]);
+  const yScale = d3.scaleLinear().domain([domainMin, domainMax]).nice().range([height, 0]);
   const axisPx = yScale(axisValue);
-
-
-  // 5e) Decide bar spacing
-  let dataCount = data.length;
-  let spacingPixels = (dataCount > 1) ? (fullWidth / (dataCount - 1)) : fullWidth;
-  let barMultiplier = config.screening ? 0.02 : 0.05;
-  let barWidth = spacingPixels * barMultiplier;
-  barWidth = Math.min(barWidth, 20);
-  barWidth = Math.max(barWidth, 1);
-
-  // 5f) Draw bars
-  data.forEach(d => {
-    const xVal = d[0], yVal = d[1];
-    const xPx = xScale(xVal) - barWidth/2;
-    const yValPx = yScale(yVal);
-    const top    = Math.min(yValPx, axisPx);
-    const bottom = Math.max(yValPx, axisPx);
-    const h      = bottom - top;
-    ctx.fillStyle = config.series[0].color || "#9FC0DE";
-    ctx.fillRect(xPx, top, barWidth, h);
-  });
-
-  // 5f.5) If screening => draw hatched edge bands ON TOP (first/last 1 Mb)
-  if (config.screening) {
-    const hatchColor = (config.series && config.series[0] && config.series[0].color) || "#9FC0DE";
-    const bandH = Math.min(HATCH_BAND_HEIGHT, Math.max(10, 0.25 * height));
-
-    // sanity ping
-    console.log("[hatch] screening:", true, "isChimeric:", !!config.isChimeric, "xMin/xMax:", xMin, xMax);
-
-    if (config.isChimeric) {
-      // Always hatch first/last 1 Mb of the plotted span
-      const leftEndMb    = Math.min(xMax, xMin + 1.0);
-      const rightStartMb = Math.max(xMin, xMax - 1.0);
-      drawHatchedBand(ctx, xScale(xMin),         xScale(leftEndMb),    bandH, hatchColor);
-      drawHatchedBand(ctx, xScale(rightStartMb), xScale(xMax),         bandH, hatchColor);
-    } else {
-      // Only hatch if within 1 Mb of true chromosome ends
-      let chromEndMb = null;
-
-      if (config.chromName && window.chromosomeLengths) {
-        const bpLen = window.chromosomeLengths[config.chromName];
-        if (bpLen) chromEndMb = bpLen / 1e6;
-      }
-      if (!chromEndMb) {
-        const regionChrElem = document.getElementById("region_chr1");
-        if (regionChrElem && window.chromosomeLengths) {
-          const bpLen = window.chromosomeLengths[regionChrElem.value];
-          if (bpLen) chromEndMb = bpLen / 1e6;
-        }
-      }
-
-      console.log("[hatch] chromEndMb:", chromEndMb);
-
-      if (chromEndMb) {
-        if (xMin < 1.0) {
-          drawHatchedBand(ctx, xScale(xMin), xScale(Math.max(xMin, 1.0)), bandH, hatchColor);
-        }
-        if (xMax > (chromEndMb - 1.0)) {
-          drawHatchedBand(ctx, xScale(Math.min(xMax, chromEndMb - 1.0)), xScale(xMax), bandH, hatchColor);
-        }
-      }
-    }
+  if (isContinuous) {
+    const smoothXY = smoothSeriesXY(data, smoothing, PX_PER_MB);
+    drawLineAndArea(ctx, smoothXY, xScale, yScale, axisPx, color, chartType === "area", stroke, areaAlpha);
+  } else {
+    // original bars
+    let count = data.length;
+    let spacing = (count > 1) ? (fullWidth / (count - 1)) : fullWidth;
+    let barMultiplier = config.screening ? 0.02 : 0.05;
+    let barWidth = Math.min(Math.max(spacing * barMultiplier, 1), 20);
+    data.forEach(d => {
+      const xPx = xScale(d[0]) - barWidth/2;
+      const yValPx = yScale(d[1]);
+      const top = Math.min(yValPx, axisPx), bottom = Math.max(yValPx, axisPx);
+      ctx.fillStyle = color;
+      ctx.fillRect(xPx, top, barWidth, bottom - top);
+    });
   }
 
+  // Baseline
+  ctx.beginPath(); ctx.moveTo(0, axisPx); ctx.lineTo(fullWidth, axisPx); ctx.strokeStyle = "#000"; ctx.stroke();
 
-  // 5g) Horizontal axis line
-  ctx.beginPath();
-  ctx.moveTo(0, axisPx);
-  ctx.lineTo(fullWidth, axisPx);
-  ctx.strokeStyle = "#000";
-  ctx.stroke();
-
-  // remove this if you want to hide the x-axis labels
-  if (!HIDE_X_AXIS_LABELS) {
-    ctx.save();
-    ctx.translate(0, axisPx);
-    const ticks = xScale.ticks(5);
-    ctx.beginPath();
-    ticks.forEach(t => {
-      const x = xScale(t);
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, 6);
-    });
-    ctx.stroke();
-    ctx.font = "10px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ticks.forEach(t => {
-      const x = xScale(t);
-      ctx.fillText(d3.format(".2f")(t), x, 6);
-    });
-    ctx.restore();
-  }
-
-
-  // 5h) Y-axis line & ticks
-  ctx.save();
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(0, height);
-  ctx.strokeStyle = "#000";
-  ctx.stroke();
-  ctx.textAlign = "right";
-  ctx.textBaseline = "middle";
-  ctx.font = "10px sans-serif";
-  yScale.ticks(5).forEach(t => {
-    const yPos = yScale(t);
-    ctx.beginPath();
-    ctx.moveTo(0, yPos);
-    ctx.lineTo(-5, yPos);
-    ctx.stroke();
-    ctx.fillText(t, -7, yPos);
-  });
+  // Y axis
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, height); ctx.strokeStyle = "#000"; ctx.stroke();
+  ctx.save(); ctx.textAlign = "right"; ctx.textBaseline = "middle"; ctx.font = "10px sans-serif";
+  yScale.ticks(5).forEach(t => { const y = yScale(t); ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(-5, y); ctx.stroke(); ctx.fillText(t, -7, y); });
   ctx.restore();
-
-  // 5i) X-axis label & chart title
-  if (config.xAxis.title && !HIDE_X_AXIS_LABELS) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "bottom";
-    ctx.font = "12px sans-serif";
-    const titleText = (typeof config.xAxis.title === "string")
-      ? config.xAxis.title
-      : (config.xAxis.title.text || "");
-    ctx.fillText(titleText, fullWidth / 2, height + margin.bottom - 5);
-  }
-  if (config.title && config.title.text) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-    ctx.font = "13px sans-serif";
-    ctx.fillText(config.title.text, fullWidth / 2, -margin.top / 2);
-  }
 
   console.log("=== drawColumnChart END (single scale) ===");
 }
+
 
 
 

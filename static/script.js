@@ -57,59 +57,54 @@ function storeFormFields() {
 }
 
 function restoreFormFields() {
-  // Fields for first region and other parameters (excluding region_end1!)
   const fields = [
     "region_chr1", "region_start1",
-    "del_start", "del_width", 
-    "perturb_width", 
-    "model_select", "atac_bw_path", 
-    "ctcf_bw_path", "peaks_file_path", 
+    "del_start", "del_width",
+    "perturb_width",
+    "model_select", "atac_bw_path",
+    "ctcf_bw_path", "peaks_file_path",
     "genome_select"
   ];
   fields.forEach(field => {
     const storedVal = localStorage.getItem(field);
     const elem = document.getElementById(field);
-    if (storedVal && elem) {
-      elem.value = storedVal;
-    }
+    if (storedVal && elem) elem.value = storedVal;
   });
 
-  // Restore region_end1 ONLY if user explicitly typed a value
+  // region_end1
   const storedEnd1 = localStorage.getItem("region_end1");
   const endElem1 = document.getElementById("region_end1");
-  if (storedEnd1 && endElem1) {
-    endElem1.value = storedEnd1;
-  } else {
-    // user never typed it, so remain blank and show placeholder
-    endElem1.value = "";
+  if (endElem1) {
+    if (storedEnd1) endElem1.value = storedEnd1;
+    else endElem1.value = "";
   }
 
-  // Same idea for region_end2
+  // region_end2
   const storedEnd2 = localStorage.getItem("region_end2");
   const endElem2 = document.getElementById("region_end2");
-  if (storedEnd2 && endElem2) {
-    endElem2.value = storedEnd2;
-  } else {
-    endElem2.value = "";
+  if (endElem2) {
+    if (storedEnd2) endElem2.value = storedEnd2;
+    else endElem2.value = "";
   }
 
-  // Restore region_chr2 and region_start2
-  const secondFields = ["region_chr2", "region_start2"];
-  secondFields.forEach(field => {
+  // region 2 basics
+  ["region_chr2", "region_start2"].forEach(field => {
     const storedVal = localStorage.getItem(field);
     const elem = document.getElementById(field);
-    if (storedVal && elem) {
-      elem.value = storedVal;
-    }
+    if (storedVal && elem) elem.value = storedVal;
   });
 
-  // DS option
   const dsOption = localStorage.getItem("ds_option");
   if (dsOption) {
     const radioElem = document.getElementById("ds_" + dsOption);
     if (radioElem) radioElem.checked = true;
   }
 }
+
+/*************************************************************
+ * AWS flag (moved from inline HTML)
+ *************************************************************/
+const awsEnabled = document.body.getAttribute("data-aws-enabled") === "true";
 
 /*************************************************************
  * Form Behavior Helpers
@@ -952,30 +947,55 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById("peaks_file_upload").addEventListener("change", () => {
     ajaxUploadFile("peaks_file_upload", "peaks", "peaks_file_path");
   });
+  /*************************************************************
+   * Modal controls (Instructions / Report a bug)
+   *************************************************************/
+  const modal           = document.getElementById("instructions-modal");
+  const openInstrLink   = document.getElementById("openModal");
+  const openBugLink     = document.getElementById("openBugModal");
+  const closeBtn        = modal ? modal.querySelector(".close") : null;
+  const instrBody       = document.getElementById("instructions-body");
+  const bugBody         = document.getElementById("bug-body");
 
-  // Instructions modal
-  const modal = document.getElementById("instructions-modal");
-  const btn   = document.getElementById("openModal");
-  const span  = document.getElementsByClassName("close")[0];
-  if (btn) {
-    btn.onclick = (e) => {
+  function showModalSection(which /* 'instructions' | 'bug' */) {
+    if (!modal) return;
+    if (instrBody) instrBody.style.display = (which === "instructions") ? "block" : "none";
+    if (bugBody)   bugBody.style.display   = (which === "bug") ? "block" : "none";
+    modal.style.display = "block";
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.style.display = "none";
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  if (openInstrLink) {
+    openInstrLink.addEventListener("click", (e) => {
       e.preventDefault();
-      modal.style.display = "block";
-    };
+      showModalSection("instructions");
+    });
   }
-  if (span) {
-    span.onclick = () => {
-      modal.style.display = "none";
-    };
+
+  if (openBugLink) {
+    openBugLink.addEventListener("click", (e) => {
+      e.preventDefault();
+      showModalSection("bug");
+    });
   }
-  window.onclick = (event) => {
-    if (event.target === modal) {
-      modal.style.display = "none";
-    }
-  };
-  let runInProgress = false;
-  const submitBtn = document.querySelector('input[type="submit"].submit-button');
-  const formElem  = document.getElementById("corigami-form");
+
+  if (closeBtn) {
+    closeBtn.addEventListener("click", closeModal);
+  }
+
+  window.addEventListener("click", (e) => {
+    if (e.target === modal) closeModal();
+  });
+
+  window.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && modal && modal.style.display === "block") closeModal();
+  });
 
   // ATAC/CTCF normalization labels
   const atacCheckbox = document.getElementById("apply_atac_norm");
@@ -1053,6 +1073,82 @@ document.addEventListener('DOMContentLoaded', function() {
     updateNormLocks();
   });
 
+/********** AWS flag **********/
+const awsEnabled = document.body?.dataset?.awsEnabled === "true";
+
+/********** Submit handler wiring **********/
+const formElem = document.getElementById("corigami-form");
+let runInProgress = false;
+
+if (formElem) {
+  formElem.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (runInProgress) return;
+    if (!checkFormRequirements()) return;
+
+    runInProgress = true;
+    const container = document.getElementById("output-container");
+    container.innerHTML = '<div class="loader" style="display:block;margin:0 auto;"></div>';
+
+    // wipe 2nd-region inputs if the toggle is off
+    const toggle = document.getElementById("toggle-second-chr");
+    if (!toggle || !toggle.classList.contains("active")) {
+      ["region_chr2", "region_start2", "region_end2"].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.value = "";
+      });
+    }
+
+    let job_id;
+    try {
+      const resp = await fetch("/api/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(Object.fromEntries(new FormData(formElem))),
+      });
+      if (resp.status !== 202) throw new Error(`HTTP ${resp.status}`);
+      job_id = (await resp.json()).job_id;
+    } catch (err) {
+      console.error("predict launch failed:", err);
+      container.innerHTML = "<p style='color:red;'>Could not start job.</p>";
+      runInProgress = false;
+      return;
+    }
+
+    async function waitUntilDone(id) {
+      while (true) {
+        const res = await fetch(`/api/job/${id}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const { status } = await res.json();
+        if (status === "failed") throw new Error("worker failed");
+        if (status === "finished") return;
+        await new Promise(r => setTimeout(r, 1500));
+      }
+    }
+
+    try {
+      await waitUntilDone(job_id);
+    } catch (err) {
+      console.error("job failed:", err);
+      container.innerHTML = "<p style='color:red;'>Prediction job failed. Check logs.</p>";
+      runInProgress = false;
+      return;
+    }
+
+    try {
+      const html = await fetch(`/api/job/${job_id}/html`).then(r => r.text());
+      container.innerHTML = html;
+      executeScripts(container);
+    } catch (err) {
+      console.error("partial fetch failed:", err);
+      container.innerHTML = "<p style='color:red;'>Could not fetch results.</p>";
+    } finally {
+      runInProgress = false;
+    }
+  });
+} else {
+  console.error("Form #corigami-form not found; submit handler not attached.");
+}
 
   /* ─────────────────────────  SUBMIT HANDLER  ───────────────────────── */
 /*  SUBMIT HANDLER  –  drop‑in replacement  */

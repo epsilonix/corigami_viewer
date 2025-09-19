@@ -133,29 +133,48 @@ def prepare_plot_configs(
     ctcf_positions, ctcf_values = get_bigwig_signal(ctcf_bw_for_model, region_chr, region_start, region_end)
     ctcf_positions_mb = [p / 1e6 for p in ctcf_positions]
     ctcf_chart_config = {
-        "chart": {"height": 100},
+        "chart": {"height": 100, "type": "area"},           # <— add type
         "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
         "yAxis": {},
+        "areaAlpha": 0.95, 
+        "smoothing": {                                      # <— add smoothing
+            "method": "gaussian",
+            "windowMb": 0.015,        # ~50 kb
+            "sigmaMb": 0.005,
+            "resamplePx": 0.5
+        },
         "series": [{
             "name": "CTCF Signal",
             "data": [[x, y] for x, y in zip(ctcf_positions_mb, ctcf_values)],
             "color": "#779ECC"
         }]
     }
+    ctcf_chart_config["forceContinuous"] = True
+    ctcf_chart_config["stroke"] = False
 
-    # ATAC track
     atac_positions, atac_values = get_bigwig_signal(atac_bw_for_model, region_chr, region_start, region_end)
     atac_positions_mb = [p / 1e6 for p in atac_positions]
+
+    # ATAC track
     atac_chart_config = {
-        "chart": {"height": 100},
+        "chart": {"height": 100, "type": "area"},           # <— add type
         "xAxis": {"min": x_start_mb, "max": x_end_mb, "title": ""},
         "yAxis": {},
+        "areaAlpha": 0.95, 
+        "smoothing": {                                      # <— add smoothing
+            "method": "gaussian",
+            "windowMb": 0.015,
+            "sigmaMb": 0.005,
+            "resamplePx": 0.5
+        },
         "series": [{
             "name": "ATAC Signal",
             "data": [[x, y] for x, y in zip(atac_positions_mb, atac_values)],
             "color": "#FF985A"
         }]
     }
+    atac_chart_config["forceContinuous"] = True
+    atac_chart_config["stroke"] = False
 
     # If 'deletion' => hide x-axis on Hi-C and add axisBreak to CTCF/ATAC
     if ds_option == "deletion" and del_start is not None and del_width is not None:
@@ -445,7 +464,7 @@ def run_screening_endpoint():
     series_data = [[x,y] for x,y in zip(window_mb, impact)]
     screening_chart = {
       "screening": True,
-      "chart": {"type": "line", "height": 100},
+      "chart": {"type": "column", "height": 100},
       "xAxis": {"min": region_start/1e6, "max": region_end/1e6},
       "yAxis": {},
       "series": [{

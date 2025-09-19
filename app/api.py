@@ -99,12 +99,42 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
     # ════════════ ATAC & CTCF bigWigs ─────────────────────────────────────── #
     atac_pre_norm = atac_raw
 
+    # Get chimeric params early if needed
+    if chimeric:
+        chr2        = form["region_chr2"]
+        chr2_start  = int(form["region_start2"])
+        chr2_end    = int(form.get("region_end2") or chr2_start + WINDOW_WIDTH)
+        
+        chr1_start  = start1
+        chr1_end    = end1
+        
+        chr1_reverse = _truthy(form.get("first_reverse"))
+        chr1_flip    = _truthy(form.get("first_flip"))
+        chr2_reverse = _truthy(form.get("second_reverse"))
+        chr2_flip    = _truthy(form.get("second_flip"))
+
     # ----- CTCF prediction if requested/needed
     if predict_ctcf_f or ctcf_raw.lower() == "none":
-        ctcf_pred = os.path.join(outdir, "predicted_ctcf.bw")
-        ctcf_pre_norm = predict_ctcf(atac_raw, chr1, start1, end1, ctcf_pred)
+        if chimeric:
+            # Need to predict CTCF for BOTH regions
+            ctcf_pred1 = os.path.join(outdir, "predicted_ctcf_region1.bw")
+            ctcf_pred2 = os.path.join(outdir, "predicted_ctcf_region2.bw")
+            
+            # Predict for each region
+            predict_ctcf(atac_raw, chr1, chr1_start, chr1_end, ctcf_pred1)
+            predict_ctcf(atac_raw, chr2, chr2_start, chr2_end, ctcf_pred2)
+            
+            # Mark that we have predicted files for chimeric assembly
+            ctcf_pre_norm = None  # Signal for chimeric path
+            ctcf_predicted_files = (ctcf_pred1, ctcf_pred2)
+        else:
+            # Single region prediction
+            ctcf_pred = os.path.join(outdir, "predicted_ctcf.bw")
+            ctcf_pre_norm = predict_ctcf(atac_raw, chr1, start1, end1, ctcf_pred)
+            ctcf_predicted_files = None
     else:
         ctcf_pre_norm = ctcf_raw
+        ctcf_predicted_files = None
 
     # ════════════ deletion or chimeric bookkeeping ───────────────────────── #
     del_start = del_width = None
@@ -113,28 +143,21 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
         del_width = int(form.get("del_width",   500_000))
 
     if chimeric:
-        # second region from form
-        chr2        = form["region_chr2"]
-        chr2_start  = int(form["region_start2"])
-        chr2_end    = int(form.get("region_end2") or chr2_start + WINDOW_WIDTH)
-
-        # canonical for region 1
-        chr1_start  = start1
-        chr1_end    = end1
-
-        # map HTML checkboxes → canonical booleans
-        chr1_reverse = _truthy(form.get("first_reverse"))
-        chr1_flip    = _truthy(form.get("first_flip"))
-        chr2_reverse = _truthy(form.get("second_reverse"))
-        chr2_flip    = _truthy(form.get("second_flip"))
-
-        # splice ATAC/CTCF arrays → synthetic chrCHIM
+        # Extract ATAC arrays
         a1 = extract_bigwig_region_array(atac_raw, chr1, chr1_start, chr1_end, do_reverse=chr1_reverse)
         a2 = extract_bigwig_region_array(atac_raw, chr2, chr2_start, chr2_end, do_reverse=chr2_reverse)
-        c_src = ctcf_pre_norm  # predicted or provided CTCF *before* any per-window norm
-        c1 = extract_bigwig_region_array(c_src, chr1, chr1_start, chr1_end, do_reverse=chr1_reverse)
-        c2 = extract_bigwig_region_array(c_src, chr2, chr2_start, chr2_end, do_reverse=chr2_reverse)
+        
+        # Extract CTCF arrays - handle both predicted and provided cases
+        if ctcf_predicted_files:
+            # Use the separate predicted files
+            c1 = extract_bigwig_region_array(ctcf_predicted_files[0], chr1, chr1_start, chr1_end, do_reverse=chr1_reverse)
+            c2 = extract_bigwig_region_array(ctcf_predicted_files[1], chr2, chr2_start, chr2_end, do_reverse=chr2_reverse)
+        else:
+            # Use the provided CTCF file
+            c1 = extract_bigwig_region_array(ctcf_pre_norm, chr1, chr1_start, chr1_end, do_reverse=chr1_reverse)
+            c2 = extract_bigwig_region_array(ctcf_pre_norm, chr2, chr2_start, chr2_end, do_reverse=chr2_reverse)
 
+        # Write chimeric bigWigs
         atac_final, ctcf_final = write_chimeric_bigwig(
             np.concatenate([a1, a2]),
             np.concatenate([c1, c2]),
@@ -142,6 +165,8 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
         )
 
         chim_len = len(a1) + len(a2)
+        
+        # Apply normalization if needed
         if apply_atac_norm:
             atac_final = normalize_bigwig(
                 atac_final, "chrCHIM", 0, chim_len, req_atac_norm, outdir, prefix="chrCHIM_atac"
@@ -151,7 +176,7 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
                 ctcf_final, "chrCHIM", 0, chim_len, req_ctcf_norm, outdir, prefix="chrCHIM_ctcf"
             )
 
-        # synthetic FASTA (keyword flags use canonical names)
+        # synthetic FASTA
         assemble_chimeric_fasta(
             f"{seq_dir}/{chr1}.fa.gz", chr1_start, chr1_end,
             f"{seq_dir}/{chr2}.fa.gz", chr2_start, chr2_end,
@@ -174,7 +199,7 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
         }
 
     else:
-        # NON-CHIMERIC PATH - moved here so it doesn't execute for chimeric
+        # NON-CHIMERIC PATH
         if apply_atac_norm:
             atac_final = normalize_bigwig(
                 atac_pre_norm, chr1, start1, end1, req_atac_norm, outdir
@@ -219,7 +244,6 @@ def prepare_inputs(form: dict, outdir: str) -> tuple[dict, dict, dict]:
         screening_requested = ds_opt == "screening",
     )
     return run_args, axis_cfg, gene_cfg
-
 # ═════════════════════════════════ routes ═════════════════════════════════ #
 # ──────────────────────────────────────────────────────────
 #  app/api.py
