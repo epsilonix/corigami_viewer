@@ -2,11 +2,85 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>C.Origami Viewer</title>
+  <title>OrigamiLens</title>
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='favicon.ico') }}" />
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
 
-  <!-- External libraries only (no inline JS) -->
+  <!-- NYU guard: kill worker button & polling on NYU hosts (runs before deferred scripts) -->
+  <script>
+  (function(){
+    try {
+      var onNYU =
+        /^10\.185\./.test(location.hostname) ||           // NYU RFC1918
+        /(^|\.)nyumc\.org$/i.test(location.hostname);     // *.nyumc.org
+
+      // Optional manual kill-switch (works anywhere):
+      var kill = onNYU || (localStorage.getItem('disable_worker_polling') === '1');
+      if (!kill) return;
+
+      // 1) Remove the button & body flag once DOM is ready
+      document.addEventListener('DOMContentLoaded', function(){
+        try {
+          var btn = document.getElementById('worker-btn');
+          if (btn && btn.remove) btn.remove();
+          if (document.body && document.body.classList) {
+            document.body.classList.remove('show-worker');
+          }
+        } catch (e) {}
+      });
+
+      // 2) Stub fetch to short-circuit worker endpoints
+      var origFetch = window.fetch;
+      if (typeof origFetch === 'function') {
+        window.fetch = function(url, opts){
+          try {
+            var u = (typeof url === 'string') ? url : (url && (url.url || url.href)) || '';
+            if (/\/api\/(worker-status|start-worker)\b/.test(u)) {
+              return Promise.resolve(new Response(
+                JSON.stringify({ running:false, starting:false }),
+                { status:200, headers:{'Content-Type':'application/json'} }
+              ));
+            }
+          } catch(e) {}
+          return origFetch.apply(this, arguments);
+        };
+      }
+
+      // 3) Stub XHR too (in case any polling uses it)
+      (function(){
+        if (!window.XMLHttpRequest) return;
+        var _open = XMLHttpRequest.prototype.open;
+        var _send = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.open = function(method, url){
+          try {
+            if (typeof url === 'string' && /\/api\/(worker-status|start-worker)\b/.test(url)) {
+              this.__nyu_stub = true;
+            }
+          } catch(e) {}
+          return _open.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function(body){
+          if (this.__nyu_stub) {
+            var xhr = this;
+            setTimeout(function(){
+              try { Object.defineProperty(xhr, 'status', { value:200 }); } catch(e) { xhr.status = 200; }
+              xhr.readyState = 4;
+              xhr.responseText = JSON.stringify({ running:false, starting:false });
+              if (typeof xhr.onreadystatechange === 'function') xhr.onreadystatechange();
+              if (typeof xhr.onload === 'function') xhr.onload();
+            }, 0);
+            return;
+          }
+          return _send.apply(this, arguments);
+        };
+      })();
+
+      console.log('[NYU guard] worker button & polling disabled');
+    } catch(e) {}
+  })();
+  </script>
+
+  <!-- External libraries -->
   <script src="https://d3js.org/d3.v7.min.js" defer></script>
   <script src="{{ url_for('static', filename='d3_plots.js') }}" defer></script>
   <script src="{{ url_for('static', filename='script.js') }}" defer></script>
@@ -16,7 +90,8 @@
   <div class="container">
     <div class="form-container">
       <div class="form-header">
-        <h1>C.ORIGAMI VIEWER</h1>
+        <h1>OrigamiLens</h1>
+        <p class="subtitle">Predict, visualize, and perturb the 3D genome.</p>
 
         <!-- Header links (HTML-only open via query param) -->
         <p class="instructions-link">
@@ -25,7 +100,7 @@
           <a href="/?modal=bug" id="openBugModal">Report a bug</a>
         </p>
 
-        <button id="worker-btn" class="worker-button status-red">Connect to server</button>
+        <button id="worker-btn" class="worker-button status-red" hidden aria-hidden="true">Connect to server</button>
       </div>
 
       <!-- Unified modal: Instructions / Bug (HTML-only switching via ?modal=...) -->

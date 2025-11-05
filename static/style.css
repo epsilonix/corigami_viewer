@@ -7,7 +7,10 @@
      Accent Peach:  #FF985A
      Neutral BG:    #f8f8f8
    =================================================================== */
-
+/* default: never show the AWS button until JS decides */
+#worker-btn { display: none; }
+/* only show when JS adds this class to <body> */
+.show-worker #worker-btn { display: inline-flex; }
 
 /* ===========================
    0) RESETS & GLOBAL
@@ -464,18 +467,21 @@
    ul.global-error-list li::before      { background: url("/static/warning.svg") no-repeat center center; }
    ul.global-warning-list li::before,
    ul.model-requirements-list li::before{ background: url("/static/green-circle.svg") no-repeat center center; }
-   
+   p.instructions-link {
+    margin-top: 5px;
+}
    .instructions-link a{
      margin-bottom: 12px;
      font-size: 0.8em;
      text-decoration: underline;
-     color: #FF985A;
+     color: #779ECC;
+     transition: color 180ms ease;   /* fade */
+     margin-top:0;
    }
-   /* Base + smooth fade */
-    .instructions-link a {
-      color: #FF985A;                 /* current color */
-      transition: color 180ms ease;   /* fade */
-    }
+   .subtitle {
+    font-size: 0.8em;
+    margin-top: 0px;
+}
 
     /* Hover: ~12% darker */
     .instructions-link a:hover,
